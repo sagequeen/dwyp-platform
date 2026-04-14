@@ -1,0 +1,1698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>DWYP Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<style>
+/* ── TOKENS ─────────────────────────────────────────────────── */
+:root {
+  --red:        #D12225;
+  --red-light:  #f5e6e6;
+  --gold:       #FAB016;
+  --gold-light: #fef6e4;
+  --bg:         #F7F5F2;
+  --surface:    #FFFFFF;
+  --surface-2:  #F2EFEB;
+  --border:     #E8E3DC;
+  --text:       #1A1714;
+  --text-2:     #6B6460;
+  --text-3:     #A09890;
+  --radius:     12px;
+  --radius-sm:  8px;
+  --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+  --shadow-md:  0 2px 8px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.06);
+  --font-display: 'Libre Baskerville', Georgia, serif;
+  --font-body:    'Nunito', system-ui, sans-serif;
+  --transition:   0.18s ease;
+  --nav-height:   60px;
+}
+
+/* ── RESET ──────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: var(--font-body); cursor: pointer; border: none; background: none; }
+a { color: inherit; text-decoration: none; }
+svg { display: block; flex-shrink: 0; }
+
+/* ── LAYOUT ─────────────────────────────────────────────────── */
+#app {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.header-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.back-btn {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--red);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.back-btn.visible { display: flex; }
+.header-logo {
+  width: 36px;
+  height: 17px;
+  flex-shrink: 0;
+}
+
+/* ── MAIN CONTENT ───────────────────────────────────────────── */
+.view {
+  display: none;
+  flex: 1;
+  padding: 16px 16px calc(var(--nav-height) + 16px);
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.view.active { display: flex; }
+
+/* ── BOTTOM NAV ─────────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+  height: var(--nav-height);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 100;
+}
+.nav-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  background: none;
+  transition: color var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-tab.active { color: var(--red); }
+.nav-tab svg { transition: color var(--transition); }
+
+/* ── LOADING / EMPTY ────────────────────────────────────────── */
+.loading-state, .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--text-3);
+  font-size: 14px;
+  text-align: center;
+}
+.loading-state .spinner {
+  width: 24px; height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── VIEW LABEL ─────────────────────────────────────────────── */
+.view-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 0 2px;
+}
+
+/* ── EPISODE LIST CARDS ─────────────────────────────────────── */
+.episode-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  display: flex;
+  gap: 12px;
+  cursor: pointer;
+  transition: transform var(--transition), box-shadow var(--transition);
+  border: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+}
+.episode-card:active { transform: scale(0.985); }
+.episode-card:hover  { box-shadow: var(--shadow-md); }
+
+.ep-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ep-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.ep-body { flex: 1; min-width: 0; }
+
+.ep-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.ep-name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ep-seq {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ep-blocking {
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+  max-width: 100%;
+}
+
+.ep-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ep-pipeline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ep-pipeline.urgent { color: var(--red); }
+.ep-pipeline.good   { color: #2a8a4a; }
+
+.ep-icons {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+.ep-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.ep-icon.alert    { background: #ffeaea; color: var(--red); }
+.ep-icon.review   { background: var(--gold-light); color: #B8860B; }
+.ep-icon.approved { background: #e6f4ec; color: #2a8a4a; }
+
+/* ── EPISODE DETAIL ─────────────────────────────────────────── */
+.ep-detail-hero {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ep-detail-headshot {
+  width: 100%;
+  height: 160px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  overflow: hidden;
+}
+.ep-detail-headshot img { width: 100%; height: 100%; object-fit: cover; }
+.ep-detail-body {
+  padding: 16px;
+}
+.ep-detail-guest {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.ep-detail-meta {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 2px;
+}
+.ep-detail-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Review section */
+.review-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+}
+.review-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 12px;
+}
+.review-icons-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.review-icon-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+}
+.review-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  position: relative;
+  transition: background var(--transition);
+}
+.review-icon-btn.has-review .review-icon-wrap {
+  background: var(--gold-light);
+  color: #8a6400;
+}
+.review-icon-btn.has-review .review-icon-wrap::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  background: var(--gold);
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.review-icon-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.btn-review-assets {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px;
+  background: var(--red);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  border: none;
+  transition: opacity var(--transition);
+}
+.btn-review-assets:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Quick links */
+.quick-links {
+  display: flex;
+  gap: 8px;
+}
+.quick-link {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: background var(--transition), color var(--transition);
+  cursor: pointer;
+}
+.quick-link:hover { background: var(--surface-2); color: var(--text); }
+.quick-link.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* Section label */
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 4px 2px 0;
+}
+
+/* ── TASK CARDS ─────────────────────────────────────────────── */
+.task-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeUp 0.2s ease both;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.task-card.urgent { border-left: 3px solid var(--red); }
+
+.task-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-title {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--text);
+  flex: 1;
+}
+.task-priority-icon { color: var(--red); flex-shrink: 0; }
+
+/* Episode context line (Tasks view only) */
+.task-episode-context {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.task-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.task-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.task-meta-item.overdue { color: var(--red); font-weight: 700; }
+
+/* Summary — collapsible */
+.task-summary {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.task-summary.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.task-expand-btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  align-self: flex-start;
+}
+.task-expand-btn:hover { color: var(--text); }
+
+.task-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── FILTER BAR (Tasks view) ─────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.filter-group {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.filter-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+.filter-btn.active {
+  background: var(--red);
+  color: white;
+}
+
+/* ── ACTION BUTTONS ─────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: opacity var(--transition), transform var(--transition);
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+.btn:active { opacity: 0.85; transform: scale(0.97); }
+.btn-approve  { background: var(--red); color: white; border: none; }
+.btn-complete { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-complete:hover { background: var(--border); }
+.btn-open-link {
+  background: var(--gold-light);
+  color: #8a6400;
+  border: 1px solid #f0d080;
+}
+.btn-delete {
+  background: transparent;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+}
+.btn-delete:hover { color: var(--red); border-color: var(--red); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+/* ── TOAST ──────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--text);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 999;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--red); }
+
+/* ── NEW TASK BUTTON ────────────────────────────────────────── */
+.tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.btn-new-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-new-task:active { opacity: 0.85; }
+
+/* ── MODAL ──────────────────────────────────────────────────── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 200;
+  align-items: flex-end;
+  justify-content: center;
+}
+.modal-backdrop.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 20px 20px calc(var(--nav-height) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+.modal-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-3);
+  padding: 4px;
+}
+.modal-close:hover { color: var(--text); }
+
+/* Form fields */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.form-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.form-label .required { color: var(--red); margin-left: 2px; }
+.form-input, .form-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  appearance: none;
+  -webkit-appearance: none;
+}
+.form-input:focus, .form-select:focus {
+  outline: none;
+  border-color: var(--red);
+}
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Urgent toggle */
+.urgent-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-3);
+  background: var(--surface);
+  cursor: pointer;
+  transition: all var(--transition);
+  align-self: flex-start;
+}
+.urgent-toggle.active {
+  background: #ffeaea;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Modal submit */
+.btn-submit {
+  width: 100%;
+  padding: 12px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-submit:active { opacity: 0.85; }
+</style>
+</head>
+
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <button class="back-btn" id="backBtn" onclick="showEpisodeList()">
+        <svg width="18" height="18" data-lucide="chevron-left"></svg>
+      </button>
+      <span class="header-title" id="headerTitle">Episodes</span>
+    </div>
+    <!-- Ouroboros logo (clean vector, two paths + radial gradient) -->
+    <svg class="header-logo" viewBox="0 0 346.09 159.16" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="logo-radial-gradient" cx="45.76" cy="45.59" fx="45.76" fy="45.59" r="301.84" gradientUnits="userSpaceOnUse">
+          <stop offset=".34" stop-color="#d12026"/>
+          <stop offset="1" stop-color="#faae17"/>
+        </radialGradient>
+      </defs>
+      <path d="M330.51,34.67c-28.92-43.39-123.4-54.53-156.66,16.77-16.94,36.31-28.06,84.11-84,83.41-39.99-2.21-60.46-30.16-62.56-53.72-3.03-25.8,24.32-59.88,52.47-57.05,5.26.53,10.09,3.19,13.49,7.23,4.15,4.92,7.89,10.75,12.72,17.82,3.55,5.19,9.55,8.19,15.83,8.17,9.74.21,15.8.36,19.45-1.01,6.52,5.96,13.01,12.4,14.39,15.54.36-3.26-6.05-13.46-6.33-13.87.45.2,11.66,4.64,14.8,3.69-3.39-.8-11.12-6.17-18.27-11.58.45-2.92.27-6.93-.26-12.53-1.95-20.59-9.84-20.59-21.38-24.93-7.09-2.66-13.37-5.47-22.32-9.88C76.25-6.65,24.38,7.94,6.62,48.34.46,61.84-1.46,76.99,1.11,91.61c2.6,14.77,9.77,28.93,28.95,46.93,35.79,33.58,124.23,24.34,149.47-40.62,15.29-45.69,36.67-84.07,91.75-75.57,47.16,6.61,66.37,58.38,45.98,91.53-26.44,45.92-97.96,43.08-128.46-.9,20.35,63.5,97,47.61,117.55,33.15,28.71-20.21,58.88-59.35,24.15-111.45Z" fill="url(#logo-radial-gradient)"/>
+      <path d="M262.55,32.59c-24.97,0-50.01,5.78-69.26,64.17,7.25,18.53,31.73,39.57,69.26,38.11,27.81,0,50.35-24.12,50.35-51.93s-22.54-50.35-50.35-50.35ZM256.86,98.96c-8.83,0-15.99-7.16-15.99-15.99s7.16-15.98,15.99-15.98,15.99,7.15,15.99,15.98-7.16,15.99-15.99,15.99Z"/>
+    </svg>
+  </header>
+
+  <!-- Episode List View -->
+  <main class="view active" id="episodeListView">
+    <div class="view-label">Active Episodes</div>
+    <div id="episodeListContent">
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <span>Loading episodes&hellip;</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Episode Detail View -->
+  <main class="view" id="episodeDetailView">
+    <div id="episodeDetailContent"></div>
+  </main>
+
+  <!-- Tasks View -->
+  <main class="view" id="tasksView">
+    <div class="tasks-header">
+      <button class="btn-new-task" onclick="openNewTaskModal()">
+        <svg width="13" height="13" data-lucide="plus"></svg>
+        New Task
+      </button>
+    </div>
+    <div class="filter-bar" id="filterBar">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="assignee" data-value="me"    onclick="setFilter('assignee','me')">Me</button>
+        <button class="filter-btn"        data-filter="assignee" data-value="all"   onclick="setFilter('assignee','all')">All</button>
+        <button class="filter-btn"        data-filter="assignee" data-value="none"  onclick="setFilter('assignee','none')">Unassigned</button>
+      </div>
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="status" data-value="active"  onclick="setFilter('status','active')">Open</button>
+        <button class="filter-btn"        data-filter="status" data-value="all"     onclick="setFilter('status','all')">All</button>
+      </div>
+    </div>
+    <div id="tasksListContent">
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <span>Loading tasks&hellip;</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom nav -->
+  <nav class="bottom-nav">
+    <button class="nav-tab active" id="navEpisodes" onclick="switchTab('episodes')">
+      <svg width="20" height="20" data-lucide="headphones"></svg>
+      Episodes
+    </button>
+    <button class="nav-tab" id="navTasks" onclick="switchTab('tasks')">
+      <svg width="20" height="20" data-lucide="square-check-big"></svg>
+      Tasks
+    </button>
+  </nav>
+
+</div>
+
+<!-- New Task Modal -->
+<div class="modal-backdrop" id="newTaskModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">New Task</span>
+      <button class="modal-close" onclick="closeNewTaskModal()">
+        <svg width="18" height="18" data-lucide="x"></svg>
+      </button>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Assignee<span class="required">*</span></label>
+      <select class="form-select" id="ntAssignee">
+        <option value="">Loading&hellip;</option>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Episode</label>
+      <select class="form-select" id="ntEpisode">
+        <option value="">No episode</option>
+      </select>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Due Date</label>
+      <input type="date" class="form-input" id="ntDueDate">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Task Title<span class="required">*</span></label>
+      <input type="text" class="form-input" id="ntTitle" placeholder="What needs to happen?">
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Description</label>
+      <textarea class="form-input form-textarea" id="ntDescription" placeholder="Optional context&hellip;"></textarea>
+    </div>
+
+    <div class="form-field">
+      <label class="form-label">Priority</label>
+      <button class="urgent-toggle" id="ntUrgentBtn" onclick="toggleUrgent()">
+        <svg width="13" height="13" data-lucide="rabbit"></svg>
+        Urgent
+      </button>
+    </div>
+
+    <button class="btn-submit" id="ntSubmitBtn" onclick="submitNewTask()">Create Task</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── CONFIG ───────────────────────────────────────────────────
+var APP_CONFIG = {
+  sheetId:       <?= JSON.stringify(sheetId) ?>,
+  userEmail:     <?= JSON.stringify(userEmail) ?>,
+  deployedUrl:   <?= JSON.stringify(deployedUrl) ?>,
+  hostEmail:     <?= JSON.stringify(hostEmail) ?>,
+  gemsUrl:       <?= JSON.stringify(gemsUrl) ?>,
+  notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>
+};
+
+// ── STATE ────────────────────────────────────────────────────
+var state = {
+  episodes:       [],
+  tasks:          [],
+  currentEpisode: null,
+  currentTab:     "episodes",
+  loaded:         false,
+  filters: {
+    assignee: "me",   // me | all | none
+    status:   "active" // active | all
+  },
+  expanded: {}        // taskId -> bool
+};
+
+// ── REVIEW STEP CONSTANTS ────────────────────────────────────
+var REVIEW_STEPS_ALL = [
+  "Review_Guest_Brief", "Review_Episode", "Review_Host_Graphics",
+  "Review_Guest_Graphics", "Review_Thumbnails", "Review_Reels",
+  "Review_Episode_Card", "Review_Social_Assets"
+];
+var REVIEW_STEPS_WITH_LINK = [
+  "Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics",
+  "Review_Thumbnails", "Review_Reels", "Review_Episode_Card",
+  "Review_Social_Assets"
+];
+var APPROVE_STEPS = REVIEW_STEPS_ALL;
+
+// ── INIT ─────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", function() {
+  lucide.createIcons();
+  loadData();
+});
+
+function loadData() {
+  google.script.run
+    .withSuccessHandler(function(episodes) {
+      state.episodes = episodes || [];
+      google.script.run
+        .withSuccessHandler(function(tasks) {
+          state.tasks  = tasks || [];
+          state.loaded = true;
+          renderEpisodeList();
+        })
+        .withFailureHandler(handleLoadError)
+        .getTasks();
+    })
+    .withFailureHandler(handleLoadError)
+    .getEpisodes();
+}
+
+function handleLoadError(err) {
+  document.getElementById("episodeListContent").innerHTML =
+    '<div class="empty-state"><p>Could not load data. Please refresh.</p><small>' +
+    (err.message || err) + "</small></div>";
+}
+
+// ── SECURITY FILTER ──────────────────────────────────────────
+function isJT() {
+  return APP_CONFIG.hostEmail &&
+         APP_CONFIG.userEmail.toLowerCase() === APP_CONFIG.hostEmail.toLowerCase();
+}
+
+function securityFilter(tasks) {
+  if (!isJT()) return tasks;
+  var email = APP_CONFIG.userEmail.toLowerCase();
+  return tasks.filter(function(t) {
+    var assignee = (t.Assignee || "").toLowerCase();
+    return assignee === email || assignee === "";
+  });
+}
+
+// ── TASK FILTER (Tasks view) ─────────────────────────────────
+function applyFilters(tasks) {
+  var filtered = securityFilter(tasks);
+  var email    = APP_CONFIG.userEmail.toLowerCase();
+
+  if (state.filters.assignee === "me") {
+    filtered = filtered.filter(function(t) {
+      return (t.Assignee || "").toLowerCase() === email;
+    });
+  } else if (state.filters.assignee === "none") {
+    filtered = filtered.filter(function(t) {
+      return (t.Assignee || "").trim() === "";
+    });
+  }
+
+  if (state.filters.status === "active") {
+    filtered = filtered.filter(function(t) {
+      return t.Status === "open" || t.Status === "in_progress";
+    });
+  }
+
+  return filtered;
+}
+
+function setFilter(type, value) {
+  state.filters[type] = value;
+
+  // Update button active states
+  var btns = document.querySelectorAll('[data-filter="' + type + '"]');
+  btns.forEach(function(btn) {
+    btn.classList.toggle("active", btn.dataset.value === value);
+  });
+
+  renderTasksList();
+}
+
+// ── ROUTING / TAB SWITCHING ──────────────────────────────────
+function switchTab(tab) {
+  state.currentTab     = tab;
+  state.currentEpisode = null;
+
+  document.getElementById("episodeListView").classList.toggle("active", tab === "episodes");
+  document.getElementById("episodeDetailView").classList.remove("active");
+  document.getElementById("tasksView").classList.toggle("active", tab === "tasks");
+
+  document.getElementById("backBtn").classList.remove("visible");
+  document.getElementById("headerTitle").textContent = tab === "episodes" ? "Episodes" : "Tasks";
+
+  document.getElementById("navEpisodes").classList.toggle("active", tab === "episodes");
+  document.getElementById("navTasks").classList.toggle("active", tab === "tasks");
+
+  if (tab === "tasks") renderTasksList();
+}
+
+function showEpisodeList() {
+  state.currentEpisode = null;
+  document.getElementById("episodeListView").classList.add("active");
+  document.getElementById("episodeDetailView").classList.remove("active");
+  document.getElementById("backBtn").classList.remove("visible");
+  document.getElementById("headerTitle").textContent = "Episodes";
+}
+
+function showEpisodeDetail(episodeUid) {
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  if (!ep) return;
+  state.currentEpisode = ep;
+
+  document.getElementById("episodeListView").classList.remove("active");
+  document.getElementById("episodeDetailView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = "";
+
+  renderEpisodeDetail(ep);
+}
+
+// ── BADGE / PIPELINE LOGIC ───────────────────────────────────
+function getEpisodeBadges(ep) {
+  var epTasks = state.tasks.filter(function(t) {
+    return t.Episode_UID === ep.Episode_UID;
+  });
+
+  var b = {
+    hasRevision:  false,
+    hasReel:      false,
+    hasImage:     false,
+    hasAudio:     false,
+    hasBrief:     false,
+    hasCard:      false,
+    allApproved:  false
+  };
+
+  epTasks.forEach(function(t) {
+    var ws = t.Workflow_Step;
+    if (ws === "Review_Reels")                                    b.hasReel    = true;
+    if (ws === "Review_Host_Graphics" || ws === "Review_Guest_Graphics" ||
+        ws === "Review_Thumbnails")                               b.hasImage   = true;
+    if (ws === "Review_Episode")                                  b.hasAudio   = true;
+    if (ws === "Review_Guest_Brief")                              b.hasBrief   = true;
+    if (ws === "Review_Episode_Card")                             b.hasCard    = true;
+  });
+
+  b.hasRevision =
+    ep.Video_Status === "revision_requested" ||
+    ep.Images_Status === "revision_requested";
+
+  b.allApproved =
+    ep.Video_Status  === "approved" &&
+    ep.Images_Status === "approved" &&
+    !epTasks.some(function(t) { return REVIEW_STEPS_ALL.indexOf(t.Workflow_Step) !== -1; });
+
+  return b;
+}
+
+function getPipelineLabel(ep, b) {
+  if (b.hasRevision)  return { label: "Revision Needed", cls: "urgent" };
+  if (b.allApproved)  return { label: "Ready to File",   cls: "good" };
+  return { label: "In Production", cls: "" };
+}
+
+function getBlockingTask(tasks) {
+  var urgent = tasks.filter(function(t) { return t.Priority === "urgent"; });
+  var open   = tasks.filter(function(t) { return t.Status === "open"; });
+  return urgent[0] || open[0] || tasks[0] || null;
+}
+
+// ── RENDER: EPISODE LIST ─────────────────────────────────────
+function renderEpisodeList() {
+  var container = document.getElementById("episodeListContent");
+  if (!state.episodes.length) {
+    container.innerHTML = '<div class="empty-state"><p>No active episodes.</p></div>';
+    return;
+  }
+
+  var html = "";
+  state.episodes.forEach(function(ep) {
+    var b        = getEpisodeBadges(ep);
+    var pipeline = getPipelineLabel(ep, b);
+    var epTasks  = state.tasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
+    var blocking = getBlockingTask(epTasks);
+    var blockingText = blocking ? truncate(blocking.Action_Title, 50) : "";
+
+    html += '<div class="episode-card" onclick="showEpisodeDetail(\'' + esc(ep.Episode_UID) + '\')">';
+    html += '  <div class="ep-avatar"><svg width="20" height="20" data-lucide="headphones"></svg></div>';
+    html += '  <div class="ep-body">';
+
+    html += '    <div class="ep-top">';
+    html += '      <div class="ep-name">' + esc(ep.Guest_Name || "Unknown Guest") + "</div>";
+    if (ep.Episode_Sequence) {
+      html += '      <div class="ep-seq">EP ' + ep.Episode_Sequence + "</div>";
+    }
+    html += "    </div>";
+
+    if (blockingText) {
+      html += '    <div class="ep-blocking">' + esc(blockingText) + "</div>";
+    }
+
+    html += '    <div class="ep-bottom">';
+    html += '      <div class="ep-pipeline ' + pipeline.cls + '">';
+    html += '        <svg width="8" height="8" data-lucide="circle-dot"></svg>';
+    html += "        " + pipeline.label;
+    html += "      </div>";
+    html += '      <div class="ep-icons">';
+
+    if (b.hasRevision) html += '<div class="ep-icon alert" title="Revision requested"><svg width="12" height="12" data-lucide="triangle-alert"></svg></div>';
+    if (b.hasReel)     html += '<div class="ep-icon review" title="Reels to review"><svg width="12" height="12" data-lucide="film"></svg></div>';
+    if (b.hasImage)    html += '<div class="ep-icon review" title="Images to review"><svg width="12" height="12" data-lucide="image"></svg></div>';
+    if (b.hasAudio)    html += '<div class="ep-icon review" title="Episode to review"><svg width="12" height="12" data-lucide="headphones"></svg></div>';
+    if (b.hasBrief)    html += '<div class="ep-icon review" title="Guest brief to review"><svg width="12" height="12" data-lucide="file-text"></svg></div>';
+    if (b.hasCard)     html += '<div class="ep-icon review" title="Episode card to review"><svg width="12" height="12" data-lucide="layout"></svg></div>';
+    if (b.allApproved) html += '<div class="ep-icon approved" title="All approved"><svg width="12" height="12" data-lucide="party-popper"></svg></div>';
+
+    html += "      </div>";
+    html += "    </div>";
+    html += "  </div>";
+    html += "</div>";
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ── RENDER: EPISODE DETAIL ───────────────────────────────────
+function renderEpisodeDetail(ep) {
+  var container = document.getElementById("episodeDetailContent");
+  var epTasks   = securityFilter(
+    state.tasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; })
+  );
+
+  // Review section data
+  var reelTask  = epTasks.find(function(t) { return t.Workflow_Step === "Review_Reels"; });
+  var imageTask = epTasks.find(function(t) {
+    return t.Workflow_Step === "Review_Host_Graphics" ||
+           t.Workflow_Step === "Review_Guest_Graphics" ||
+           t.Workflow_Step === "Review_Thumbnails";
+  });
+  var audioTask = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
+
+  // First available Frame.io link for REVIEW ASSETS button
+  var frameioLink = null;
+  [reelTask, imageTask, audioTask].forEach(function(t) {
+    if (!frameioLink && t && t.Payload_Link) frameioLink = t.Payload_Link;
+  });
+
+  // Drive folder URL
+  var driveUrl = ep.Production_Folder_ID
+    ? "https://drive.google.com/drive/folders/" + ep.Production_Folder_ID
+    : "";
+
+  // Episode status label (gold text)
+  var statusDisplay = ep.Status ? ep.Status.replace(/_/g, " ") : "";
+
+  // Recording date
+  var recDate = ep.Recording_Date ? formatDate(ep.Recording_Date) : null;
+
+  var html = "";
+
+  // Hero card
+  html += '<div class="ep-detail-hero">';
+  html += '  <div class="ep-detail-headshot">';
+  // Placeholder — Contact_ID carried for future headshot join
+  html += '    <svg width="48" height="48" data-lucide="headphones"></svg>';
+  html += '  </div>';
+  html += '  <div class="ep-detail-body">';
+  html += '    <div class="ep-detail-guest">' + esc(ep.Guest_Name || "Unknown Guest") + "</div>";
+  var metaParts = [];
+  if (ep.Episode_Sequence) metaParts.push("Episode " + ep.Episode_Sequence);
+  if (recDate)             metaParts.push("Recorded " + recDate);
+  if (metaParts.length) {
+    html += '    <div class="ep-detail-meta">' + metaParts.join(" &middot; ") + "</div>";
+  }
+  if (statusDisplay) {
+    html += '    <div class="ep-detail-status">' + esc(statusDisplay) + "</div>";
+  }
+  html += "  </div>";
+  html += "</div>";
+
+  // Review section
+  html += '<div class="review-section">';
+  html += '  <div class="review-section-label">Frame.io Review</div>';
+  html += '  <div class="review-icons-row">';
+  html += reviewIconBtn("Reels",  "film",       reelTask);
+  html += reviewIconBtn("Images", "image",      imageTask);
+  html += reviewIconBtn("Episode", "headphones", audioTask);
+  html += "  </div>";
+  if (frameioLink) {
+    html += '  <button class="btn-review-assets" onclick="window.open(\'' + esc(frameioLink) + "','_blank')\">";
+    html += '    <svg width="14" height="14" data-lucide="play"></svg> Review Assets';
+    html += "  </button>";
+  } else {
+    html += '  <button class="btn-review-assets" disabled>';
+    html += '    <svg width="14" height="14" data-lucide="play"></svg> Review Assets';
+    html += "  </button>";
+  }
+  html += "</div>";
+
+  // Quick links
+  html += '<div class="quick-links">';
+  html += quickLink("folder-open", "Drive",       driveUrl);
+  html += quickLink("sparkles",    "Gems",        APP_CONFIG.gemsUrl);
+  html += quickLink("book-open",   "NotebookLM",  APP_CONFIG.notebooklmUrl);
+  html += "</div>";
+
+  // Task list
+  if (epTasks.length) {
+    html += '<div class="section-label">Tasks</div>';
+    // Sort: urgent first, then open, then in_progress, then by due date
+    var sorted = sortTasks(epTasks);
+    sorted.forEach(function(task, idx) {
+      html += renderTaskCard(task, idx, false);
+    });
+  } else {
+    html += '<div class="empty-state" style="padding:30px 0"><p>No open tasks for this episode.</p></div>';
+  }
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+function reviewIconBtn(label, icon, task) {
+  var hasReview = !!task;
+  var link      = task && task.Payload_Link ? task.Payload_Link : null;
+  var cls       = hasReview ? " has-review" : "";
+  var onclick   = link ? 'window.open(\'' + esc(link) + "','_blank')" : "";
+  var cursor    = link ? "" : " style='cursor:default'";
+
+  return '<button class="review-icon-btn' + cls + '"' + (onclick ? ' onclick="' + onclick + '"' : "") + cursor + '>' +
+         '  <div class="review-icon-wrap"><svg width="20" height="20" data-lucide="' + icon + '"></svg></div>' +
+         '  <span class="review-icon-label">' + label + '</span>' +
+         '</button>';
+}
+
+function quickLink(icon, label, url) {
+  var cls = url ? "quick-link" : "quick-link disabled";
+  var tag = url ? '<a class="' + cls + '" href="' + esc(url) + '" target="_blank">' : '<div class="' + cls + '">';
+  var end = url ? "</a>" : "</div>";
+  return tag +
+    '<svg width="16" height="16" data-lucide="' + icon + '"></svg>' +
+    label +
+    end;
+}
+
+// ── RENDER: TASKS VIEW ───────────────────────────────────────
+function renderTasksList() {
+  var container = document.getElementById("tasksListContent");
+  var filtered  = applyFilters(state.tasks);
+
+  // Sort: urgent first, then by due date ascending
+  var sorted = sortTasks(filtered);
+
+  if (!sorted.length) {
+    container.innerHTML = '<div class="empty-state"><p>No tasks match this filter.</p></div>';
+    lucide.createIcons();
+    return;
+  }
+
+  var html = "";
+  sorted.forEach(function(task, idx) {
+    html += renderTaskCard(task, idx, true);
+  });
+
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+// ── RENDER: TASK CARD ────────────────────────────────────────
+function renderTaskCard(task, idx, showEpisodeContext) {
+  var isUrgent   = task.Priority === "urgent";
+  var dueInfo    = getDueInfo(task.Due_Date);
+  var animDelay  = (idx * 0.04).toFixed(2) + "s";
+  var tid        = esc(task.Task_ID);
+  var isExpanded = !!state.expanded[task.Task_ID];
+
+  var html = '<div class="task-card' + (isUrgent ? " urgent" : "") +
+             '" style="animation-delay:' + animDelay + '" id="card-' + tid + '">';
+
+  html += '<div class="task-top">';
+  html += '  <div class="task-title">' + esc(task.Action_Title) + "</div>";
+  if (isUrgent) {
+    html += '  <div class="task-priority-icon"><svg width="15" height="15" data-lucide="rabbit"></svg></div>';
+  }
+  html += "</div>";
+
+  // Episode context (Tasks view only)
+  if (showEpisodeContext && task.Episode_UID) {
+    var ep = state.episodes.find(function(e) { return e.Episode_UID === task.Episode_UID; });
+    var ctxLabel = ep ? esc(ep.Guest_Name || task.Episode_UID) : esc(task.Episode_UID);
+    html += '<div class="task-episode-context">' + ctxLabel + "</div>";
+  }
+
+  // Meta
+  html += '<div class="task-meta">';
+  if (dueInfo) {
+    html += '<div class="task-meta-item' + (dueInfo.overdue ? " overdue" : "") + '">';
+    html += '  <svg width="11" height="11" data-lucide="' + dueInfo.icon + '"></svg> ' + dueInfo.label;
+    html += "</div>";
+  }
+  if (task.Status === "in_progress") {
+    html += '<div class="task-meta-item"><svg width="11" height="11" data-lucide="loader-circle"></svg> In Progress</div>';
+  }
+  html += "</div>";
+
+  // Summary (collapsible)
+  if (task.Executive_Summary) {
+    var collapsed = !isExpanded ? " collapsed" : "";
+    html += '<div class="task-summary' + collapsed + '" id="summary-' + tid + '">' +
+            esc(task.Executive_Summary) + "</div>";
+    html += '<button class="task-expand-btn" onclick="toggleExpand(\'' + tid + '\')">' +
+            (isExpanded ? "Less" : "More") + "</button>";
+  }
+
+  // Actions
+  html += '<div class="task-actions">';
+  html += renderTaskButtons(task);
+  html += "</div>";
+
+  html += "</div>";
+  return html;
+}
+
+// ── TASK BUTTONS ─────────────────────────────────────────────
+function renderTaskButtons(task) {
+  var ws   = task.Workflow_Step || "";
+  var html = "";
+  var tid  = esc(task.Task_ID);
+  var ridx = task._rowIndex;
+
+  // Review link button
+  if (task.Payload_Link && REVIEW_STEPS_WITH_LINK.indexOf(ws) !== -1) {
+    html += '<a href="' + esc(task.Payload_Link) + '" target="_blank" class="btn btn-open-link">';
+    html += '  <svg width="12" height="12" data-lucide="play"></svg> Review';
+    html += "</a>";
+  }
+  // Review_Guest_Brief: Payload_Link to Drive doc if present
+  if (ws === "Review_Guest_Brief" && task.Payload_Link) {
+    html += '<a href="' + esc(task.Payload_Link) + '" target="_blank" class="btn btn-open-link">';
+    html += '  <svg width="12" height="12" data-lucide="file-text"></svg> Open Brief';
+    html += "</a>";
+  }
+
+  // Approve button
+  if (APPROVE_STEPS.indexOf(ws) !== -1) {
+    html += '<button class="btn btn-approve" id="approve-' + tid + '" onclick="approveTask(\'' + tid + "'," + ridx + ')">';
+    html += '  <svg width="12" height="12" data-lucide="square-check-big"></svg> Approve';
+    html += "</button>";
+  }
+
+  // Complete button
+  var completeSteps = ["Produce_Episode", "Custom_Images", "Post_Social", "Filing"];
+  if (completeSteps.indexOf(ws) !== -1 || task.Assigned_By !== "The Fairy Team") {
+    html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeTask(\'' + tid + "'," + ridx + ')">';
+    html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
+    html += "</button>";
+  }
+
+  // Delete button (manual tasks only)
+  if (task.Assigned_By !== "The Fairy Team") {
+    html += '<button class="btn btn-delete" id="delete-' + tid + '" onclick="deleteTask(\'' + tid + "'," + ridx + ')">';
+    html += '  <svg width="12" height="12" data-lucide="trash-2"></svg>';
+    html += "</button>";
+  }
+
+  return html;
+}
+
+// ── TASK ACTIONS ─────────────────────────────────────────────
+function approveTask(taskId, rowIndex) {
+  setButtonLoading("approve-"  + taskId, true);
+  setButtonLoading("complete-" + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        removeTaskFromState(taskId);
+        showToast("Approved");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        setButtonLoading("approve-"  + taskId, false);
+        setButtonLoading("complete-" + taskId, false);
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("approve-" + taskId, false);
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+function completeTask(taskId, rowIndex) {
+  setButtonLoading("complete-" + taskId, true);
+  setButtonLoading("approve-"  + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        removeTaskFromState(taskId);
+        showToast("Marked complete");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        setButtonLoading("complete-" + taskId, false);
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("complete-" + taskId, false);
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+function deleteTask(taskId, rowIndex) {
+  if (!confirm("Delete this task? This cannot be undone.")) return;
+  setButtonLoading("delete-" + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        removeTaskFromState(taskId);
+        showToast("Task deleted");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        setButtonLoading("delete-" + taskId, false);
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("delete-" + taskId, false);
+    })
+    .deleteTaskRow(rowIndex);
+}
+
+// ── EXPAND / COLLAPSE ────────────────────────────────────────
+function toggleExpand(taskId) {
+  state.expanded[taskId] = !state.expanded[taskId];
+  // Re-render just this card's summary in place
+  var summaryEl = document.getElementById("summary-" + taskId);
+  var btnEl     = summaryEl ? summaryEl.nextElementSibling : null;
+  if (summaryEl) summaryEl.classList.toggle("collapsed", !state.expanded[taskId]);
+  if (btnEl)     btnEl.textContent = state.expanded[taskId] ? "Less" : "More";
+}
+
+// ── HELPERS ──────────────────────────────────────────────────
+function sortTasks(tasks) {
+  return tasks.slice().sort(function(a, b) {
+    var urgA = a.Priority === "urgent" ? 0 : 1;
+    var urgB = b.Priority === "urgent" ? 0 : 1;
+    if (urgA !== urgB) return urgA - urgB;
+    var dA = a.Due_Date ? new Date(a.Due_Date).getTime() : Infinity;
+    var dB = b.Due_Date ? new Date(b.Due_Date).getTime() : Infinity;
+    return dA - dB;
+  });
+}
+
+function removeTaskFromState(taskId) {
+  state.tasks = state.tasks.filter(function(t) { return t.Task_ID !== taskId; });
+}
+
+function refreshCurrentView() {
+  if (state.currentEpisode) {
+    renderEpisodeDetail(state.currentEpisode);
+  } else if (state.currentTab === "tasks") {
+    renderTasksList();
+  } else {
+    renderEpisodeList();
+  }
+}
+
+function getDueInfo(rawDate) {
+  if (!rawDate) return null;
+  var due = new Date(rawDate);
+  if (isNaN(due.getTime())) return null;
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  due.setHours(0,0,0,0);
+  var diff = Math.round((due - today) / 86400000);
+  if (diff < 0)   return { label: "Overdue",     icon: "shield-alert", overdue: true };
+  if (diff === 0) return { label: "Due today",    icon: "shield-alert", overdue: true };
+  if (diff === 1) return { label: "Due tomorrow", icon: "shield-alert", overdue: false };
+  return { label: "Due " + formatDate(rawDate), icon: "calendar", overdue: false };
+}
+
+function formatDate(raw) {
+  if (!raw) return "";
+  var d = new Date(raw);
+  if (isNaN(d.getTime())) return String(raw).split("T")[0];
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function truncate(str, len) {
+  if (!str) return "";
+  str = String(str);
+  return str.length > len ? str.slice(0, len).trimEnd() + "…" : str;
+}
+
+function esc(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function setButtonLoading(id, loading) {
+  var el = document.getElementById(id);
+  if (el) el.disabled = loading;
+}
+
+function showToast(msg, isError) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className   = "toast" + (isError ? " error" : "");
+  void el.offsetWidth;
+  el.classList.add("show");
+  setTimeout(function() { el.classList.remove("show"); }, 2800);
+}
+
+// ── NEW TASK MODAL ───────────────────────────────────────────
+var ntState = {
+  urgent:  false,
+  users:   []
+};
+
+function openNewTaskModal() {
+  // Reset form
+  ntState.urgent = false;
+  document.getElementById("ntUrgentBtn").classList.remove("active");
+  document.getElementById("ntTitle").value       = "";
+  document.getElementById("ntDescription").value = "";
+  document.getElementById("ntDueDate").value      = "";
+  document.getElementById("ntSubmitBtn").disabled = false;
+
+  // Populate episode dropdown
+  var epSel = document.getElementById("ntEpisode");
+  epSel.innerHTML = '<option value="">No episode</option>';
+  state.episodes.forEach(function(ep) {
+    var opt = document.createElement("option");
+    opt.value       = ep.Episode_UID;
+    opt.textContent = ep.Guest_Name + (ep.Episode_Sequence ? " (EP " + ep.Episode_Sequence + ")" : "");
+    epSel.appendChild(opt);
+  });
+
+  // Populate assignee dropdown — fetch users if not yet loaded
+  var assigneeSel = document.getElementById("ntAssignee");
+  if (ntState.users.length) {
+    populateAssigneeDropdown();
+  } else {
+    assigneeSel.innerHTML = '<option value="">Loading&hellip;</option>';
+    google.script.run
+      .withSuccessHandler(function(users) {
+        ntState.users = users || [];
+        populateAssigneeDropdown();
+      })
+      .withFailureHandler(function(err) {
+        assigneeSel.innerHTML = '<option value="">Could not load users</option>';
+      })
+      .getUsers();
+  }
+
+  document.getElementById("newTaskModal").classList.add("open");
+  lucide.createIcons();
+}
+
+function populateAssigneeDropdown() {
+  var sel = document.getElementById("ntAssignee");
+  sel.innerHTML = '<option value="">Select assignee&hellip;</option>';
+  ntState.users.forEach(function(u) {
+    var opt = document.createElement("option");
+    opt.value       = u.userId;
+    opt.textContent = u.displayName;
+    // Default to current user
+    if (u.userId.toLowerCase() === APP_CONFIG.userEmail.toLowerCase()) {
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  });
+}
+
+function closeNewTaskModal() {
+  document.getElementById("newTaskModal").classList.remove("open");
+}
+
+function toggleUrgent() {
+  ntState.urgent = !ntState.urgent;
+  document.getElementById("ntUrgentBtn").classList.toggle("active", ntState.urgent);
+}
+
+function submitNewTask() {
+  var assignee = document.getElementById("ntAssignee").value.trim();
+  var title    = document.getElementById("ntTitle").value.trim();
+
+  if (!assignee) { showToast("Assignee is required", true); return; }
+  if (!title)    { showToast("Task title is required", true); return; }
+
+  var submitBtn = document.getElementById("ntSubmitBtn");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Creating…";
+
+  var payload = {
+    assignee:         assignee,
+    episodeUid:       document.getElementById("ntEpisode").value.trim(),
+    dueDate:          document.getElementById("ntDueDate").value,
+    actionTitle:      title,
+    executiveSummary: document.getElementById("ntDescription").value.trim(),
+    priority:         ntState.urgent ? "urgent" : "normal",
+    createdBy:        APP_CONFIG.userEmail
+  };
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        // Add new task to local state so it appears immediately
+        state.tasks.push({
+          _rowIndex:         null, // unknown until next full load; delete not available until refresh
+          Task_ID:           result.taskId,
+          Action_Title:      payload.actionTitle,
+          Assignee:          payload.assignee,
+          Assigned_By:       payload.createdBy,
+          Status:            "open",
+          Priority:          payload.priority,
+          Due_Date:          payload.dueDate,
+          Contact_ID:        "",
+          Episode_UID:       payload.episodeUid,
+          Workflow_Step:     "",
+          Executive_Summary: payload.executiveSummary,
+          Payload_Link:      ""
+        });
+        closeNewTaskModal();
+        showToast("Task created");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        submitBtn.disabled  = false;
+        submitBtn.textContent = "Create Task";
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      submitBtn.disabled    = false;
+      submitBtn.textContent = "Create Task";
+    })
+    .createTask(payload);
+}
+</script>
+</body>
+</html>

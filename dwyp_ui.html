@@ -912,12 +912,13 @@ svg { display: block; flex-shrink: 0; }
 <script>
 // ── CONFIG ───────────────────────────────────────────────────
 var APP_CONFIG = {
-  sheetId:       <?= JSON.stringify(sheetId) ?>,
-  userEmail:     <?= JSON.stringify(userEmail) ?>,
-  deployedUrl:   <?= JSON.stringify(deployedUrl) ?>,
-  hostEmail:     <?= JSON.stringify(hostEmail) ?>,
-  gemsUrl:       <?= JSON.stringify(gemsUrl) ?>,
-  notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>
+  sheetId:          <?= JSON.stringify(sheetId) ?>,
+  userEmail:        <?= JSON.stringify(userEmail) ?>,
+  deployedUrl:      <?= JSON.stringify(deployedUrl) ?>,
+  myAssigneeEmail:  <?= JSON.stringify(myAssigneeEmail) ?>,
+  userRole:         <?= JSON.stringify(userRole) ?>,
+  gemsUrl:          <?= JSON.stringify(gemsUrl) ?>,
+  notebooklmUrl:    <?= JSON.stringify(notebooklmUrl) ?>
 };
 
 // ── STATE ────────────────────────────────────────────────────
@@ -978,15 +979,20 @@ function handleLoadError(err) {
 
 // ── SECURITY FILTER ──────────────────────────────────────────
 function isJT() {
-  return APP_CONFIG.hostEmail &&
-         APP_CONFIG.userEmail.toLowerCase() === APP_CONFIG.hostEmail.toLowerCase();
+  return APP_CONFIG.userRole === "host";
+}
+
+// Returns the canonical assignee email for the current user — the exact
+// User_ID from User_Registry, which matches what is stored in task rows.
+function getMyAssigneeEmail() {
+  return (APP_CONFIG.myAssigneeEmail || APP_CONFIG.userEmail).toLowerCase();
 }
 
 function securityFilter(tasks) {
   if (!isJT()) return tasks;
-  var email = APP_CONFIG.userEmail.toLowerCase();
+  var email = getMyAssigneeEmail();
   return tasks.filter(function(t) {
-    var assignee = (t.Assignee || "").toLowerCase();
+    var assignee = (t.Assignee || "").trim().toLowerCase();
     return assignee === email || assignee === "";
   });
 }
@@ -994,11 +1000,11 @@ function securityFilter(tasks) {
 // ── TASK FILTER (Tasks view) ─────────────────────────────────
 function applyFilters(tasks) {
   var filtered = securityFilter(tasks);
-  var email    = APP_CONFIG.userEmail.toLowerCase();
 
   if (state.filters.assignee === "me") {
+    var myEmail = getMyAssigneeEmail();
     filtered = filtered.filter(function(t) {
-      return (t.Assignee || "").trim().toLowerCase() === email.trim();
+      return (t.Assignee || "").trim().toLowerCase() === myEmail;
     });
   } else if (state.filters.assignee === "none") {
     filtered = filtered.filter(function(t) {

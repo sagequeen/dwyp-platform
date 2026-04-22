@@ -109,17 +109,32 @@ function doGet(e) {
     govMap[govData[i][0]] = govData[i][1];
   }
 
-  var hostEmail      = govMap["HOST_EMAIL"]         || "";
-  var gemsUrl        = govMap["IMAGE_WORKSHOP_GEM"] || "";
-  var notebooklmUrl  = govMap["NOTEBOOKLM_LINK"]   || "";
+  var gemsUrl       = govMap["IMAGE_WORKSHOP_GEM"] || "";
+  var notebooklmUrl = govMap["NOTEBOOKLM_LINK"]   || "";
+
+  // Resolve canonical assignee email and role from User_Registry.
+  // Case-insensitive match so login-email capitalisation never matters.
+  var regSheet        = ss.getSheetByName("User_Registry");
+  var regData         = regSheet.getDataRange().getValues();
+  var myAssigneeEmail = userEmail;  // fallback: session email
+  var userRole        = "";
+  var userEmailLower  = userEmail.toLowerCase();
+  for (var j = 1; j < regData.length; j++) {
+    if ((regData[j][0] || "").toLowerCase() === userEmailLower) {
+      myAssigneeEmail = regData[j][0];  // exact User_ID as stored in task rows
+      userRole        = regData[j][2] || "";
+      break;
+    }
+  }
 
   var template = HtmlService.createTemplateFromFile("dwyp_ui");
-  template.sheetId        = sheetId;
-  template.userEmail      = userEmail;
-  template.deployedUrl    = deployedUrl;
-  template.hostEmail      = hostEmail;
-  template.gemsUrl        = gemsUrl;
-  template.notebooklmUrl  = notebooklmUrl;
+  template.sheetId         = sheetId;
+  template.userEmail       = userEmail;
+  template.deployedUrl     = deployedUrl;
+  template.myAssigneeEmail = myAssigneeEmail;
+  template.userRole        = userRole;
+  template.gemsUrl         = gemsUrl;
+  template.notebooklmUrl   = notebooklmUrl;
 
   return template.evaluate()
     .setTitle("DWYP Operations")

@@ -28,8 +28,8 @@
  *   - JT task security filter: deferred to v2 (requires HOST_EMAIL from governance).
  *
  * Deployment:
- *   Execute as: User accessing the web app
- *   Access: Any Google account
+ *   Execute as: Me (Audra)
+ *   Access: Specific Google accounts
  *   Entry point: doGet() — no conflict with clerk_fairy doPost()
  *   HTML: dwyp_app.html (separate file in same GAS project)
  *
@@ -96,8 +96,7 @@ var EPISODES_COLS = {
  */
 function doGet(e) {
   var sheetId     = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
-  var userEmail   = Session.getEffectiveUser().getEmail();
-  Logger.log("[DEBUG doGet] userEmail resolved: " + userEmail);
+  var userEmail   = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
   var deployedUrl = ScriptApp.getService().getUrl();
 
   // Fetch governance keys for client injection
@@ -110,32 +109,17 @@ function doGet(e) {
     govMap[govData[i][0]] = govData[i][1];
   }
 
-  var gemsUrl       = govMap["IMAGE_WORKSHOP_GEM"] || "";
-  var notebooklmUrl = govMap["NOTEBOOKLM_LINK"]   || "";
-
-  // Resolve canonical assignee email and role from User_Registry.
-  // Case-insensitive match so login-email capitalisation never matters.
-  var regSheet        = ss.getSheetByName("User_Registry");
-  var regData         = regSheet.getDataRange().getValues();
-  var myAssigneeEmail = userEmail;  // fallback: session email
-  var userRole        = "";
-  var userEmailLower  = userEmail.toLowerCase();
-  for (var j = 1; j < regData.length; j++) {
-    if ((regData[j][0] || "").toLowerCase() === userEmailLower) {
-      myAssigneeEmail = regData[j][0];  // exact User_ID as stored in task rows
-      userRole        = regData[j][2] || "";
-      break;
-    }
-  }
+  var hostEmail      = govMap["HOST_EMAIL"]         || "";
+  var gemsUrl        = govMap["IMAGE_WORKSHOP_GEM"] || "";
+  var notebooklmUrl  = govMap["NOTEBOOKLM_LINK"]   || "";
 
   var template = HtmlService.createTemplateFromFile("dwyp_ui");
-  template.sheetId         = sheetId;
-  template.userEmail       = userEmail;
-  template.deployedUrl     = deployedUrl;
-  template.myAssigneeEmail = myAssigneeEmail;
-  template.userRole        = userRole;
-  template.gemsUrl         = gemsUrl;
-  template.notebooklmUrl   = notebooklmUrl;
+  template.sheetId        = sheetId;
+  template.userEmail      = userEmail;
+  template.deployedUrl    = deployedUrl;
+  template.hostEmail      = hostEmail;
+  template.gemsUrl        = gemsUrl;
+  template.notebooklmUrl  = notebooklmUrl;
 
   return template.evaluate()
     .setTitle("DWYP Operations")

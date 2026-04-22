@@ -28,8 +28,8 @@
  *   - JT task security filter: deferred to v2 (requires HOST_EMAIL from governance).
  *
  * Deployment:
- *   Execute as: Me (Audra)
- *   Access: Specific Google accounts
+ *   Execute as: User accessing the web app
+ *   Access: Any Google account
  *   Entry point: doGet() — no conflict with clerk_fairy doPost()
  *   HTML: dwyp_app.html (separate file in same GAS project)
  *
@@ -96,7 +96,7 @@ var EPISODES_COLS = {
  */
 function doGet(e) {
   var sheetId     = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
-  var userEmail   = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+  var userEmail   = Session.getEffectiveUser().getEmail();
   var deployedUrl = ScriptApp.getService().getUrl();
 
   // Fetch governance keys for client injection

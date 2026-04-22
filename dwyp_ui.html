@@ -998,7 +998,7 @@ function applyFilters(tasks) {
 
   if (state.filters.assignee === "me") {
     filtered = filtered.filter(function(t) {
-      return (t.Assignee || "").toLowerCase() === email;
+      return (t.Assignee || "").trim().toLowerCase() === email.trim();
     });
   } else if (state.filters.assignee === "none") {
     filtered = filtered.filter(function(t) {

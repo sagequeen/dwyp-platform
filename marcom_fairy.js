@@ -111,7 +111,7 @@ function runMarcom(epUid) {
       `runMarcom failed: ${err.message}`, "error");
     spawnTask({
       actionTitle:  `Marcom Fairy failed: ${epUid}`,
-      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:     getAssigneeByRole("producer"),
       assignedBy:   "The Fairy Team",
       status:       "open",
       priority:     "urgent",
@@ -192,7 +192,7 @@ function gatherEpisodeContext(epUid, agentName) {
         "No transcript found in Staging folder. Marcom cannot run without a finished transcript.", "error");
       spawnTask({
         actionTitle:      `Transcript missing — Marcom blocked: ${manifest.guest_name || epUid}`,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",

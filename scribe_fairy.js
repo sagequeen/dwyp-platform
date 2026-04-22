@@ -50,7 +50,7 @@ function scribeLetSchedule(contactId, episodeUid) {
       spawnTask({
         actionTitle:      "Scribe template missing — Let's Schedule — " + guestName + " (" + episodeUid + ")",
         priority:         "urgent",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         contactId:        contactId,
@@ -106,7 +106,7 @@ function scribeConfirmTech(contactId, episodeUid) {
       spawnTask({
         actionTitle:      "Scribe template missing — Confirm and Tech — " + guestName + " (" + episodeUid + ")",
         priority:         "urgent",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         contactId:        contactId,
@@ -162,7 +162,7 @@ function scribeGreatInterview(contactId, episodeUid) {
       spawnTask({
         actionTitle:      "Scribe template missing — Great Interview — " + guestName + " (" + episodeUid + ")",
         priority:         "urgent",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         contactId:        contactId,
@@ -219,7 +219,7 @@ function scribeReviewEpisode(contactId, episodeUid) {
       spawnTask({
         actionTitle:      "Scribe template missing — Review Your Episode — " + guestName + " (" + episodeUid + ")",
         priority:         "urgent",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         contactId:        contactId,
@@ -278,7 +278,7 @@ function scribeWereLive(contactId, episodeUid) {
       spawnTask({
         actionTitle:      "Scribe template missing — We're Live — " + guestName + " (" + episodeUid + ")",
         priority:         "urgent",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         contactId:        contactId,

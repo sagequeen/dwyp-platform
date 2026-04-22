@@ -771,6 +771,87 @@ svg { display: block; flex-shrink: 0; }
 }
 .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-submit:active { opacity: 0.85; }
+
+/* ── PIPELINE LABEL — REVIEW STATE ─────────────────────────── */
+.ep-pipeline.review-state { color: var(--gold); }
+
+/* ── IMAGE REVIEW ───────────────────────────────────────────── */
+.img-review-area {
+  margin-top: 4px;
+}
+.image-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.image-tile {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  position: relative;
+  background: var(--surface-2);
+}
+.image-tile .image-link img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+  transition: opacity var(--transition);
+}
+.image-tile.actioned .image-link img { opacity: 0.45; }
+.img-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 2px solid white;
+}
+.image-tile.use    .img-badge { display: flex; background: #2a8a4a; color: white; }
+.image-tile.remove .img-badge { display: flex; background: var(--red); color: white; }
+.img-action-btns {
+  display: flex;
+  border-top: 1px solid var(--border);
+}
+.btn-img-action {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  border: none;
+  cursor: pointer;
+  background: var(--surface);
+  color: var(--text-2);
+  transition: background var(--transition), color var(--transition);
+}
+.btn-img-action + .btn-img-action { border-left: 1px solid var(--border); }
+.btn-img-action:hover { background: var(--surface-2); color: var(--text); }
+.image-tile.use    .btn-img-action[data-action="use"]    { background: #e6f4ec; color: #2a8a4a; }
+.image-tile.remove .btn-img-action[data-action="remove"] { background: #ffeaea; color: var(--red); }
+.btn-done-reviewing {
+  width: 100%;
+  padding: 10px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  display: none;
+}
+.btn-done-reviewing.visible { display: block; }
+.btn-done-reviewing:disabled { opacity: 0.45; cursor: not-allowed; }
 </style>
 </head>
 
@@ -931,21 +1012,26 @@ var state = {
     assignee: "me",   // me | all | none
     status:   "active" // active | all
   },
-  expanded: {}        // taskId -> bool
+  expanded:     {},   // taskId -> bool
+  imageReviews: {}    // taskId -> { loading, loaded, workflowStep, images: [{fileId, fileName, thumbnailUrl, action}] }
 };
 
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
 var REVIEW_STEPS_ALL = [
   "Review_Guest_Brief", "Review_Episode", "Review_Host_Graphics",
   "Review_Guest_Graphics", "Review_Thumbnails", "Review_Reels",
-  "Review_Episode_Card", "Review_Social_Assets"
+  "Review_Episode_Card", "Review_Social_Assets", "Review_Social_Images"
 ];
+// Steps that use a Payload_Link to open an external review tool.
+// Review_Thumbnails and Review_Social_Images are excluded — they use the
+// in-app image grid instead of a Payload_Link.
 var REVIEW_STEPS_WITH_LINK = [
   "Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics",
-  "Review_Thumbnails", "Review_Reels", "Review_Episode_Card",
-  "Review_Social_Assets"
+  "Review_Reels", "Review_Episode_Card", "Review_Social_Assets"
 ];
 var APPROVE_STEPS = REVIEW_STEPS_ALL;
+// Steps that use the in-app image grid review flow.
+var IMAGE_REVIEW_STEPS = ["Review_Social_Images", "Review_Thumbnails"];
 
 // ── INIT ─────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", function() {
@@ -1086,7 +1172,7 @@ function getEpisodeBadges(ep) {
     var ws = t.Workflow_Step;
     if (ws === "Review_Reels")                                    b.hasReel    = true;
     if (ws === "Review_Host_Graphics" || ws === "Review_Guest_Graphics" ||
-        ws === "Review_Thumbnails")                               b.hasImage   = true;
+        ws === "Review_Thumbnails"    || ws === "Review_Social_Images")  b.hasImage = true;
     if (ws === "Review_Episode")                                  b.hasAudio   = true;
     if (ws === "Review_Guest_Brief")                              b.hasBrief   = true;
     if (ws === "Review_Episode_Card")                             b.hasCard    = true;
@@ -1104,10 +1190,33 @@ function getEpisodeBadges(ep) {
   return b;
 }
 
-function getPipelineLabel(ep, b) {
-  if (b.hasRevision)  return { label: "Revision Needed", cls: "urgent" };
-  if (b.allApproved)  return { label: "Ready to File",   cls: "good" };
-  return { label: "In Production", cls: "" };
+function getPipelineLabel(ep, epTasks) {
+  // No open tasks at all — brand new or dormant episode
+  if (!epTasks || !epTasks.length) {
+    return { label: "Intake", cls: "" };
+  }
+  // At least one open Review_ task
+  var hasReview = epTasks.some(function(t) {
+    return (t.Workflow_Step || "").indexOf("Review_") === 0;
+  });
+  if (hasReview) {
+    return { label: "Review", cls: "review-state" };
+  }
+  // Filing task open, all reviews done
+  var hasFiling = epTasks.some(function(t) {
+    return t.Workflow_Step === "Filing";
+  });
+  if (hasFiling) {
+    return { label: "Ready", cls: "good" };
+  }
+  // Only fairy-spawned tasks open (no human tasks)
+  var hasNonFairy = epTasks.some(function(t) {
+    return t.Assigned_By !== "The Fairy Team";
+  });
+  if (!hasNonFairy) {
+    return { label: "Intake", cls: "" };
+  }
+  return { label: "Production", cls: "" };
 }
 
 function getBlockingTask(tasks) {
@@ -1126,9 +1235,9 @@ function renderEpisodeList() {
 
   var html = "";
   state.episodes.forEach(function(ep) {
-    var b        = getEpisodeBadges(ep);
-    var pipeline = getPipelineLabel(ep, b);
     var epTasks  = state.tasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
+    var b        = getEpisodeBadges(ep);
+    var pipeline = getPipelineLabel(ep, epTasks);
     var blocking = getBlockingTask(epTasks);
     var blockingText = blocking ? truncate(blocking.Action_Title, 50) : "";
 
@@ -1199,8 +1308,8 @@ function renderEpisodeDetail(ep) {
     ? "https://drive.google.com/drive/folders/" + ep.Production_Folder_ID
     : "";
 
-  // Episode status label (gold text)
-  var statusDisplay = ep.Status ? ep.Status.replace(/_/g, " ") : "";
+  // Pipeline label (replaces raw Episodes.Status in the hero card)
+  var statusDisplay = getPipelineLabel(ep, epTasks).label;
 
   // Recording date
   var recDate = ep.Recording_Date ? formatDate(ep.Recording_Date) : null;
@@ -1352,8 +1461,11 @@ function renderTaskCard(task, idx, showEpisodeContext) {
   }
   html += "</div>";
 
-  // Summary (collapsible)
-  if (task.Executive_Summary) {
+  // Summary — image review steps show the image grid area instead of text
+  var ws = task.Workflow_Step || "";
+  if (IMAGE_REVIEW_STEPS.indexOf(ws) !== -1) {
+    html += '<div class="img-review-area" id="img-area-' + tid + '"></div>';
+  } else if (task.Executive_Summary) {
     var collapsed = !isExpanded ? " collapsed" : "";
     html += '<div class="task-summary' + collapsed + '" id="summary-' + tid + '">' +
             esc(task.Executive_Summary) + "</div>";
@@ -1376,6 +1488,25 @@ function renderTaskButtons(task) {
   var html = "";
   var tid  = esc(task.Task_ID);
   var ridx = task._rowIndex;
+
+  // ── Image review steps: separate flow, early return ─────────
+  if (IMAGE_REVIEW_STEPS.indexOf(ws) !== -1) {
+    var ir = state.imageReviews[task.Task_ID];
+    if (!ir) {
+      // Not yet started — show the trigger button
+      html += '<button class="btn btn-approve" id="btn-review-imgs-' + tid + '" ' +
+              'onclick="startImageReview(\'' + tid + '\',\'' + esc(task.Episode_UID) + '\',\'' + esc(ws) + '\')">' +
+              '<svg width="12" height="12" data-lucide="images"></svg> Review Images' +
+              '</button>';
+    }
+    // Manual tasks still get a delete button
+    if (task.Assigned_By !== "The Fairy Team") {
+      html += '<button class="btn btn-delete" id="delete-' + tid + '" onclick="deleteTask(\'' + tid + "'," + ridx + ')">';
+      html += '  <svg width="12" height="12" data-lucide="trash-2"></svg>';
+      html += '</button>';
+    }
+    return html;
+  }
 
   // Review link button
   if (task.Payload_Link && REVIEW_STEPS_WITH_LINK.indexOf(ws) !== -1) {
@@ -1636,6 +1767,205 @@ function toggleUrgent() {
   ntState.urgent = !ntState.urgent;
   document.getElementById("ntUrgentBtn").classList.toggle("active", ntState.urgent);
 }
+
+// ── IMAGE REVIEW ─────────────────────────────────────────────
+
+/**
+ * Initiates the image review flow for a task card.
+ * Injects a loading state into the card's img-review-area, then fetches
+ * images from the server. On success, renders the image grid in-place.
+ */
+function startImageReview(taskId, episodeUid, workflowStep) {
+  state.imageReviews[taskId] = {
+    loading:      true,
+    loaded:       false,
+    workflowStep: workflowStep,
+    images:       []
+  };
+
+  var areaEl = document.getElementById("img-area-" + taskId);
+  if (areaEl) {
+    areaEl.innerHTML =
+      '<div class="loading-state" style="padding:20px 0">' +
+      '<div class="spinner"></div><span>Loading images\u2026</span></div>';
+  }
+  var btnEl = document.getElementById("btn-review-imgs-" + taskId);
+  if (btnEl) btnEl.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(images) {
+      var ir     = state.imageReviews[taskId];
+      ir.loading = false;
+      ir.loaded  = true;
+      ir.images  = (images || []).map(function(img) {
+        return {
+          fileId:       img.fileId,
+          fileName:     img.fileName,
+          thumbnailUrl: img.thumbnailUrl,
+          action:       "none"
+        };
+      });
+      renderImageGrid(taskId);
+    })
+    .withFailureHandler(function(err) {
+      var ir     = state.imageReviews[taskId];
+      ir.loading = false;
+      ir.loaded  = true;
+      var aEl = document.getElementById("img-area-" + taskId);
+      if (aEl) {
+        aEl.innerHTML =
+          '<p style="font-size:13px;color:var(--text-2);padding:8px 0">Could not load images: ' +
+          esc(err.message || String(err)) + '</p>';
+      }
+    })
+    .getImagesForReview(episodeUid, workflowStep);
+}
+
+/**
+ * Renders the image grid into the card's img-review-area based on current state.
+ * Called after images load and after the grid needs a full refresh (e.g. on
+ * view re-render). DOM updates for individual tile state changes use
+ * setImageAction() instead.
+ */
+function renderImageGrid(taskId) {
+  var areaEl = document.getElementById("img-area-" + taskId);
+  if (!areaEl) return;
+
+  var ir = state.imageReviews[taskId];
+  if (!ir || !ir.loaded) return;
+
+  if (!ir.images.length) {
+    areaEl.innerHTML =
+      '<p style="font-size:13px;color:var(--text-2);padding:8px 0">No images found in this folder.</p>';
+    return;
+  }
+
+  var html = '<div class="image-grid">';
+  ir.images.forEach(function(img) {
+    var fileUrl = "https://drive.google.com/file/d/" + esc(img.fileId) + "/view";
+    var tileCls = "image-tile";
+    if (img.action === "use")    tileCls += " actioned use";
+    if (img.action === "remove") tileCls += " actioned remove";
+
+    html += '<div class="' + tileCls + '" id="tile-' + esc(img.fileId) + '">';
+
+    // Thumbnail — tapping opens file in Drive
+    html += '<a class="image-link" href="' + fileUrl + '" target="_blank">';
+    if (img.thumbnailUrl) {
+      html += '<img src="' + esc(img.thumbnailUrl) + '" alt="' + esc(img.fileName) + '">';
+    } else {
+      html += '<div style="width:100%;aspect-ratio:1;display:flex;align-items:center;' +
+              'justify-content:center;background:var(--surface-2);color:var(--text-3)">' +
+              '<svg width="24" height="24" data-lucide="image"></svg></div>';
+    }
+    html += '</a>';
+
+    // Actioned badge (✓ = Use, ✕ = Remove)
+    var badgeChar = img.action === "use" ? "\u2713" : img.action === "remove" ? "\u2715" : "";
+    html += '<div class="img-badge">' + badgeChar + '</div>';
+
+    // Use / Remove buttons
+    html += '<div class="img-action-btns">';
+    html += '<button class="btn-img-action" data-action="use" ' +
+            'onclick="setImageAction(\'' + taskId + '\',\'' + esc(img.fileId) + '\',\'use\')">Use</button>';
+    html += '<button class="btn-img-action" data-action="remove" ' +
+            'onclick="setImageAction(\'' + taskId + '\',\'' + esc(img.fileId) + '\',\'remove\')">Remove</button>';
+    html += '</div>';
+
+    html += '</div>'; // .image-tile
+  });
+  html += '</div>'; // .image-grid
+
+  // Done Reviewing button — hidden until at least one image is actioned
+  var anyActioned = ir.images.some(function(img) { return img.action !== "none"; });
+  html += '<button class="btn-done-reviewing' + (anyActioned ? " visible" : "") + '" ' +
+          'id="btn-done-' + taskId + '" ' +
+          'onclick="submitImageReviewAction(\'' + taskId + '\')">' +
+          'Done Reviewing</button>';
+
+  areaEl.innerHTML = html;
+  lucide.createIcons();
+}
+
+/**
+ * Records a Use or Remove action for a single image tile.
+ * For Review_Thumbnails (single-select): Use on one auto-marks all others Remove.
+ * Updates state and patches the DOM in-place without a full grid re-render.
+ */
+function setImageAction(taskId, fileId, action) {
+  var ir = state.imageReviews[taskId];
+  if (!ir) return;
+
+  var isSingleSelect = ir.workflowStep === "Review_Thumbnails";
+
+  // Update state
+  ir.images.forEach(function(img) {
+    if (img.fileId === fileId) {
+      img.action = action;
+    } else if (isSingleSelect && action === "use") {
+      img.action = "remove";
+    }
+  });
+
+  // Patch DOM for each tile
+  ir.images.forEach(function(img) {
+    var tileEl = document.getElementById("tile-" + img.fileId);
+    if (!tileEl) return;
+
+    tileEl.className = "image-tile";
+    if (img.action !== "none") tileEl.className += " actioned " + img.action;
+
+    var badgeEl = tileEl.querySelector(".img-badge");
+    if (badgeEl) {
+      badgeEl.textContent =
+        img.action === "use" ? "\u2713" : img.action === "remove" ? "\u2715" : "";
+    }
+  });
+
+  // Show Done Reviewing button once any image is actioned
+  var anyActioned = ir.images.some(function(img) { return img.action !== "none"; });
+  var doneBtn = document.getElementById("btn-done-" + taskId);
+  if (doneBtn) doneBtn.classList.toggle("visible", anyActioned);
+}
+
+/**
+ * Submits the image review: calls submitImageReview() on the server with the
+ * list of declined (Remove) file IDs, then clears the task from local state.
+ */
+function submitImageReviewAction(taskId) {
+  var ir = state.imageReviews[taskId];
+  if (!ir) return;
+
+  var task = state.tasks.find(function(t) { return t.Task_ID === taskId; });
+  if (!task) { showToast("Task not found", true); return; }
+
+  var declinedFileIds = ir.images
+    .filter(function(img) { return img.action === "remove"; })
+    .map(function(img) { return img.fileId; });
+
+  var doneBtn = document.getElementById("btn-done-" + taskId);
+  if (doneBtn) doneBtn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        removeTaskFromState(taskId);
+        delete state.imageReviews[taskId];
+        showToast("Review submitted");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        if (doneBtn) doneBtn.disabled = false;
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      if (doneBtn) doneBtn.disabled = false;
+    })
+    .submitImageReview(task.Episode_UID, taskId, declinedFileIds);
+}
+
+// ── NEW TASK MODAL ───────────────────────────────────────────
 
 function submitNewTask() {
   var assignee = document.getElementById("ntAssignee").value.trim();

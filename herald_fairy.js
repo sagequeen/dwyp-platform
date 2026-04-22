@@ -175,7 +175,7 @@ function runHeraldBio(contactId) {
       `Contact Library subfolder error: ${e.message}`, "WARNING");
     spawnTask({
       actionTitle:      "Herald: Contact Library folder creation failed — check manually",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -336,7 +336,7 @@ ${researchOutput}`;
       "HERALD_BIO_PROMPT_KEY not set in Governance_Config. Bio_Summary not updated.", "WARNING");
     spawnTask({
       actionTitle:      "Herald: Bio prompt key missing — Bio_Summary not updated",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -423,7 +423,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `Contact Library folder ID not found for ${displayName}. Cannot write guest brief. Was runHeraldBio() called first?`, "ERROR");
     spawnTask({
       actionTitle:      "Herald: Contact Library folder missing — guest brief not written",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -488,7 +488,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `No Production_Folder_ID found for episode ${episodeUid}. Cannot create Guest Swipe folder or brief.`, "ERROR");
     spawnTask({
       actionTitle:      "Herald: Staging folder missing — cannot generate guest brief",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -512,7 +512,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `Guest Swipe folder error: ${e.message}`, "WARNING");
     spawnTask({
       actionTitle:      "Herald: Guest Swipe folder creation failed — check manually",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -535,7 +535,7 @@ function runHeraldBrief(contactId, episodeUid) {
       "HERALD_BRIEF_PROMPT_KEY not set in Governance_Config. Guest brief not generated.", "WARNING");
     spawnTask({
       actionTitle:      "Herald: Brief prompt key missing — guest brief not generated",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -555,7 +555,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `Brand Voice doc could not be loaded: ${e.message}`, "WARNING");
     spawnTask({
       actionTitle:      "Herald: Brand Voice doc failed to load — brief generated without it",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -589,7 +589,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `Gemini brief generation failed: ${e.message}`, "ERROR");
     spawnTask({
       actionTitle:      "Herald: Guest brief generation failed",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -611,7 +611,7 @@ function runHeraldBrief(contactId, episodeUid) {
       `Failed to write guest brief doc: ${e.message}`, "ERROR");
     spawnTask({
       actionTitle:      "Herald: Guest brief doc write failed",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -628,7 +628,7 @@ function runHeraldBrief(contactId, episodeUid) {
   //           directly from the Review_Guest_Brief task in Pulse.
   spawnTask({
     actionTitle:      "Review guest brief",
-    assignee:         getGovernance("ASSIGNEE_HOST"),
+    assignee:         getAssigneeByRole("host"),
     assignedBy:       "The Fairy Team",
     status:           "open",
     priority:         "normal",

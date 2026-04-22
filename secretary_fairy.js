@@ -133,7 +133,7 @@ function processFormSubmission(e) {
     if (confidence === "low") {
       spawnTask({
         actionTitle:      `Possible duplicate contact — verify: ${guestName}`,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -147,7 +147,7 @@ function processFormSubmission(e) {
       `[ERROR] Identity resolution failed for form submission "${guestName}": ${err.message}`, "ERROR");
     spawnTask({
       actionTitle:      `Form submission identity resolution failed — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -170,7 +170,7 @@ function processFormSubmission(e) {
       `[ERROR] Herald Bio failed on form path for "${guestName}": ${err.message}`, "ERROR");
     spawnTask({
       actionTitle:      `Herald Bio failed on form submission — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -210,7 +210,7 @@ function processFormSubmission(e) {
         `[WARNING] Contact Library folder ID not found for ${guestName} — FormContext file not written.`, "WARNING");
       spawnTask({
         actionTitle:      `FormContext file not written — Contact Library folder missing: ${guestName}`,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -283,7 +283,7 @@ function processFormSubmission(e) {
           `[ERROR] Full Herald failed on form path for "${guestName}": ${err.message}`, "ERROR");
         spawnTask({
           actionTitle:      `Herald failed on form submission (episode exists) — ${guestName}`,
-          assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+          assignee:         getAssigneeByRole("producer"),
           assignedBy:       "The Fairy Team",
           status:           "open",
           priority:         "urgent",
@@ -457,7 +457,7 @@ function processInterviewEvent(event, agentName, prefix) {
       `[ERROR] Could not extract guest name from event title: "${title}". Expected format: "${prefix} [Guest Name]"`, "ERROR");
     spawnTask({
       actionTitle:      `Calendar event title could not be parsed: "${title}"`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -814,7 +814,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
   if (confidence === "low") {
     spawnTask({
       actionTitle:      `Possible duplicate contact — verify: ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -829,7 +829,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
   if (isNew && !guestEmail) {
     spawnTask({
       actionTitle:      `New guest detected — verify identity: ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -908,7 +908,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
       `[ERROR] Production Notes shell creation failed: ${err.message}`, "ERROR");
     spawnTask({
       actionTitle:      `Secretary: Production Notes doc creation failed — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -961,7 +961,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
       `[ERROR] Frame.io project creation failed for "${guestName}": ${err.message}`, "ERROR");
     spawnTask({
       actionTitle:      `Frame.io project creation failed — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignee:         getAssigneeByRole("producer"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -999,7 +999,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
         `[ERROR] Secretary could not hand off to Herald: ${err.message}`, "ERROR");
       spawnTask({
         actionTitle:      `Herald failed to run for: ${guestName}`,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignee:         getAssigneeByRole("producer"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -1037,7 +1037,7 @@ function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episo
     Episode_UID:          episodeUid,
     Contact_ID:           contactId,
     Guest_Name:           guestName,
-    Status:               "intake",
+    Status:               "active",
     Raw_Folder_ID:        rawFolderId,
     Production_Folder_ID: stagingFolderId,
     Recording_Date:       recordingDate,
@@ -1092,7 +1092,7 @@ function handlePotentialReschedule(existingEpisode, event, guestName, agentName)
   // Spawn notification task
   spawnTask({
     actionTitle:      `Recording date changed — ${guestName}`,
-    assignee:         getGovernance("ASSIGNEE_HOST"),
+    assignee:         getAssigneeByRole("host"),
     assignedBy:       "The Fairy Team",
     status:           "open",
     priority:         "urgent",

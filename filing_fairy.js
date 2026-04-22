@@ -51,7 +51,7 @@ function preflightCheck(epUid, agentName) {
       episodeUid:       epUid,
       workflowStep:     "Filing",
       actionTitle:      `Filing blocked — episode row not found: ${epUid}`,
-      assignee:         getAssigneeByRole("producer"),
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -87,7 +87,7 @@ function preflightCheck(epUid, agentName) {
     episodeUid:       epUid,
     workflowStep:     "Filing",
     actionTitle:      `Filing blocked — assets not yet approved: ${guestName}`,
-    assignee:         getAssigneeByRole("producer"),
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
     assignedBy:       "The Fairy Team",
     status:           "open",
     priority:         "urgent",
@@ -197,15 +197,15 @@ function runFilingFairy(epUid) {
     }
 
     // =========================================================================
-    // STEP 3: COPY GUEST GRAPHICS FROM Social_Images/ SUBFOLDER → Guest_Swipe/
-    // Guest graphics live in Social_Images/ subfolder (Artist Fairy populated).
+    // STEP 3: COPY GUEST GRAPHICS FROM Guest_Graphics/ SUBFOLDER → Guest_Swipe/
+    // Guest graphics live in Guest_Graphics/ subfolder (Artist Fairy populated).
     // Old pattern (scanning Staging root for _guest filename) is retired.
     // =========================================================================
     let guestGraphicsFolder = null;
     const stagingSubfolders = stagingFolder.getFolders();
     while (stagingSubfolders.hasNext()) {
       const sub = stagingSubfolders.next();
-      if (sub.getName() === "Social_Images") {
+      if (sub.getName() === "Guest_Graphics") {
         guestGraphicsFolder = sub;
         break;
       }
@@ -221,7 +221,7 @@ function runFilingFairy(epUid) {
       }
     } else {
       logToAuditTrail(agentName, "error", epUid, "",
-        "Social_Images/ subfolder not found in Staging. Guest graphics not copied to swipe package.");
+        "Guest_Graphics/ subfolder not found in Staging. Guest graphics not copied to swipe package.");
     }
 
     // =========================================================================
@@ -370,7 +370,7 @@ function runFilingFairy(epUid) {
       contactId:        contactId,
       workflowStep:     "Filing",
       actionTitle:      `Episode archived: ${guestName}`,
-      assignee:         getAssigneeByRole("host"),
+      assignee:         getGovernance("ASSIGNEE_HOST"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -388,7 +388,7 @@ function runFilingFairy(epUid) {
       episodeUid:       epUid,
       workflowStep:     "Filing",
       actionTitle:      `Filing Fairy failed: ${epUid}`,
-      assignee:         getAssigneeByRole("producer"),
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",

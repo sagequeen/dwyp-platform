@@ -87,57 +87,6 @@ function getGovernance(key) {
 }
 
 
-/**
- * Looks up the email (User_ID) of the first user matching a given role in the User_Registry tab.
- * User_Registry columns: User_ID (email), Display_Name, Role.
- * Returns null if the tab is missing, the Role column is absent, or no row matches.
- * Fails silently — never throws. Callers (e.g. spawnTask default) must handle null gracefully.
- *
- * @param {string} role - Role value to match against the Role column (e.g. "host", "producer").
- * @returns {string|null} Email address (User_ID), or null if no match found.
- */
-function getAssigneeByRole(role) {
-  try {
-    const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
-    if (!sheetId) {
-      logToAuditTrail("fairy_circle", "error", "", "", "[ERROR] getAssigneeByRole: MASTER_SHEET_ID not set in Script Properties.", "ERROR");
-      return null;
-    }
-
-    const ss    = SpreadsheetApp.openById(sheetId);
-    const sheet = ss.getSheetByName("User_Registry");
-    if (!sheet) {
-      logToAuditTrail("fairy_circle", "error", "", "", "[ERROR] getAssigneeByRole: User_Registry tab not found in master sheet.", "ERROR");
-      return null;
-    }
-
-    const data       = sheet.getDataRange().getValues();
-    const headers    = data[0];
-    const userIdCol  = headers.indexOf("User_ID");
-    const roleCol    = headers.indexOf("Role");
-
-    if (userIdCol === -1 || roleCol === -1) {
-      logToAuditTrail("fairy_circle", "error", "", "", "[ERROR] getAssigneeByRole: User_ID or Role column not found in User_Registry.", "ERROR");
-      return null;
-    }
-
-    for (let i = 1; i < data.length; i++) {
-      if (String(data[i][roleCol]).trim().toLowerCase() === String(role).trim().toLowerCase()) {
-        return data[i][userIdCol] || null;
-      }
-    }
-
-    logToAuditTrail("fairy_circle", "error", "", "", `[WARNING] getAssigneeByRole: no match for role '${role}' in User_Registry.`, "WARNING");
-    return null;
-
-  } catch (e) {
-    logToAuditTrail("fairy_circle", "error", "", "", `[ERROR] getAssigneeByRole failed: ${e.message}`, "ERROR");
-    return null;
-  }
-}
-
-
 // =============================================================================
 // CONFIG
 //
@@ -687,7 +636,7 @@ function generateContactId() {
  *
  * @param {Object} taskConfig
  * @param {string} taskConfig.actionTitle       - Short label. Required.
- * @param {string} [taskConfig.assignee]        - Email. Defaults to User_Registry host role.
+ * @param {string} [taskConfig.assignee]        - Email. Defaults to ASSIGNEE_HOST.
  * @param {string} [taskConfig.assignedBy]      - Actor name or email. Defaults to "The Fairy Team".
  * @param {string} [taskConfig.status]          - Enum: open | in_progress | waiting | complete | cancelled
  * @param {string} [taskConfig.priority]        - Enum: urgent | normal
@@ -710,7 +659,7 @@ function spawnTask(taskConfig) {
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
 
   const taskId   = generateTaskId();
-  const assignee = taskConfig.assignee || getAssigneeByRole("host");
+  const assignee = taskConfig.assignee || getGovernance("ASSIGNEE_HOST");
 
   const fields = {
     Task_ID:           taskId,
@@ -1157,7 +1106,7 @@ function upsertEpisodes(episodeData) {
     // Row built by iterating actual headers — immune to column reorder.
     // Manual columns (Episode_Sequence, Release_Date, Episode_URL) write empty string.
     const DEFAULTS = {
-      Status:        "active",
+      Status:        "waiting",
       Video_Status:  "pending",
       Images_Status: "pending",
       Episode_Type:  "standard"
@@ -1619,17 +1568,14 @@ function dailyPulse() {
     }
 
     // =========================================================================
-    // LOOP 3b: Review_Episode spawn — DEPRECATED (safety net only)
-    // Clerk Fairy now bypasses this loop entirely by spawning Review_Episode
-    // directly when it completes its workflow. This loop remains as a passive
-    // safety net: if Clerk Fairy fails to spawn or is not running, Loop 3b
-    // will catch Video_Status = "ready" on the next Daily Pulse and spawn
-    // the task as a fallback. Do not delete.
+    // LOOP 3b: Review_Episode spawn
+    // Detects when Audra has set Video_Status = "ready" on an episode and
+    // spawns a Review_Episode task for JT if one doesn't already exist.
     // Payload_Link: Production folder URL (JT navigates from there).
     // Detection signal: Video_Status = "ready" (set manually by Audra).
     // Idempotency: skips spawn if open or in_progress Review_Episode task
     // already exists for this episode.
-    // #6 — new loop. | #7 — flagged deprecated; Clerk Fairy is primary path.
+    // #6 — new loop.
     // =========================================================================
     let reviewEpisodeSpawned = 0;
 
@@ -1673,7 +1619,7 @@ function dailyPulse() {
 
         spawnTask({
           actionTitle:      `Review episode: ${guestName}`,
-          assignee:         getAssigneeByRole("host"),
+          assignee:         getGovernance("ASSIGNEE_HOST"),
           assignedBy:       "The Fairy Team",
           status:           "open",
           priority:         "normal",
@@ -1745,7 +1691,7 @@ function dailyPulse() {
 
           spawnTask({
             actionTitle:      `Review assets: ${baseName} — ${guestName}`,
-            assignee:         getAssigneeByRole("host"),
+            assignee:         getGovernance("ASSIGNEE_HOST"),
             assignedBy:       "The Fairy Team",
             status:           "open",
             priority:         "normal",
@@ -1781,7 +1727,7 @@ function dailyPulse() {
           if (!filingTaskExists) {
             spawnTask({
               actionTitle:      `All assets approved — file this episode: ${guestName}`,
-              assignee:         getAssigneeByRole("producer"),
+              assignee:         getGovernance("ASSIGNEE_PRODUCER"),
               assignedBy:       "The Fairy Team",
               status:           "open",
               priority:         "normal",

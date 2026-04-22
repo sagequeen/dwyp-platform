@@ -77,7 +77,7 @@ function runSafetyFairy(episodeUid) {
       logToAuditTrail(agentName, "error", episodeUid, "", "[ERROR] Episode not found in Episodes tab. Aborting.", "ERROR");
       spawnTask({
         actionTitle:      `Safety Fairy: episode record not found — ${episodeUid}`,
-        assignee:         getAssigneeByRole("producer"),
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -96,7 +96,7 @@ function runSafetyFairy(episodeUid) {
       logToAuditTrail(agentName, "error", episodeUid, contactId, "[ERROR] Raw_Folder_ID not set on episode. Aborting.", "ERROR");
       spawnTask({
         actionTitle:      `Safety Fairy: Raw_Folder_ID missing — ${guestName}`,
-        assignee:         getAssigneeByRole("producer"),
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -122,7 +122,7 @@ function runSafetyFairy(episodeUid) {
       logToAuditTrail(agentName, "error", episodeUid, contactId, "[WARNING] Transcript file not found in Raw folder. Aborting audit.", "WARNING");
       spawnTask({
         actionTitle:      `Safety Fairy: transcript not found — ${displayName}`,
-        assignee:         getAssigneeByRole("producer"),
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -156,7 +156,7 @@ function runSafetyFairy(episodeUid) {
       logToAuditTrail(agentName, "error", episodeUid, contactId, "[ERROR] Production Notes doc ID not found in manifest. Aborting audit.", "ERROR");
       spawnTask({
         actionTitle:      `Safety Fairy: Production Notes not found — ${displayName}`,
-        assignee:         getAssigneeByRole("producer"),
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -178,7 +178,7 @@ function runSafetyFairy(episodeUid) {
       logToAuditTrail(agentName, "error", episodeUid, contactId, "[ERROR] Gemini audit returned no results. Aborting.", "ERROR");
       spawnTask({
         actionTitle:      `Safety Fairy: audit returned no output — ${displayName}`,
-        assignee:         getAssigneeByRole("producer"),
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "urgent",
@@ -243,7 +243,7 @@ function runSafetyFairy(episodeUid) {
     // Task A — Audra
     spawnTask({
       actionTitle:      `Safety audit complete — ready for production: ${displayName}`,
-      assignee:         getAssigneeByRole("producer"),
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -257,7 +257,7 @@ function runSafetyFairy(episodeUid) {
     // Task B — JT (Image Workshop)
     spawnTask({
       actionTitle:      `${displayName}: Image Workshop Ready!`,
-      assignee:         getAssigneeByRole("host"),
+      assignee:         getGovernance("ASSIGNEE_HOST"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
@@ -272,7 +272,7 @@ function runSafetyFairy(episodeUid) {
     logToAuditTrail(agentName, "error", episodeUid, "", `[ERROR] Safety Fairy threw an unexpected error: ${err.message}`, "ERROR");
     spawnTask({
       actionTitle:      `Safety Fairy: unexpected error — ${episodeUid}`,
-      assignee:         getAssigneeByRole("producer"),
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",

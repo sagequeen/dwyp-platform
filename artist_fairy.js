@@ -9,9 +9,9 @@
 //   2. Resolves guest headshot — reads Contact_Library_Folder_ID from Contacts tab
 //      via Contact_ID, searches flat folder for filename containing "headshot"
 //   3. Resolves host headshot — scans Raw folder for filename containing "headshot"
-//   4. For each of 5 Slides template decks:
+//   4. For each of 2 Slides template decks:
 //      a. Copies template to target asset subfolder inside Staging
-//         (Social_Images, Social_Images, or Thumbnails)
+//         (Social_Images)
 //      b. Falls back to Staging root if target subfolder not found — logs error
 //      c. Replaces all text placeholders across all slides
 //      d. Replaces image shapes where alt text matches {{GUEST_HEADSHOT}}
@@ -34,11 +34,8 @@
 //   {{HOST_NAME}}                                       — from Governance_Config HOST_NAME
 //
 // Deck-to-subfolder mapping:
-//   ARTIST_HOST_SQUARE_DECK_ID    → Social_Images/
-//   ARTIST_HOST_VERTICAL_DECK_ID  → Social_Images/
-//   ARTIST_GUEST_SQUARE_DECK_ID   → Social_Images/
-//   ARTIST_GUEST_VERTICAL_DECK_ID → Social_Images/
-//   ARTIST_THUMBNAIL_DECK_ID      → Thumbnails/
+//   ARTIST_SQUARE_DECK_ID   → Social_Images/
+//   ARTIST_VERTICAL_DECK_ID → Social_Images/
 //
 // Image shapes identified by alt text (getDescription()):
 //   {{GUEST_HEADSHOT}} — file containing "headshot" in guest Contact Library folder
@@ -50,11 +47,8 @@
 //   of crop. Audra reviews image positioning before adding _ready to subfolder.
 //
 // Governance_Config keys required:
-//   ARTIST_HOST_SQUARE_DECK_ID
-//   ARTIST_HOST_VERTICAL_DECK_ID
-//   ARTIST_GUEST_SQUARE_DECK_ID
-//   ARTIST_GUEST_VERTICAL_DECK_ID
-//   ARTIST_THUMBNAIL_DECK_ID
+//   ARTIST_SQUARE_DECK_ID
+//   ARTIST_VERTICAL_DECK_ID
 //
 // Shared utilities (do not duplicate here):
 //   callGeminiAPINoSearch, logToAuditTrail, getGovernance,
@@ -130,13 +124,10 @@ function runArtistFairy(epUid) {
       epUid
     );
 
-    // --- Define the five template decks ---
+    // --- Define the two template decks ---
     const decks = [
-      { govKey: "ARTIST_HOST_SQUARE_DECK_ID",    label: "Host_Square",    subfolder: "Social_Images" },
-      { govKey: "ARTIST_HOST_VERTICAL_DECK_ID",  label: "Host_Vertical",  subfolder: "Social_Images" },
-      { govKey: "ARTIST_GUEST_SQUARE_DECK_ID",   label: "Guest_Square",   subfolder: "Social_Images" },
-      { govKey: "ARTIST_GUEST_VERTICAL_DECK_ID", label: "Guest_Vertical", subfolder: "Social_Images" },
-      { govKey: "ARTIST_THUMBNAIL_DECK_ID",      label: "Thumbnail",      subfolder: "Thumbnails"     }
+      { govKey: "ARTIST_SQUARE_DECK_ID",   label: "Square",   subfolder: "Social_Images" },
+      { govKey: "ARTIST_VERTICAL_DECK_ID", label: "Vertical", subfolder: "Social_Images" }
     ];
 
     const populatedDeckIds = [];
@@ -184,7 +175,7 @@ function runArtistFairy(epUid) {
       episodeUid:       epUid,
       workflowStep:     "Produce_Episode",
       actionTitle:      `Artist Fairy failed for: ${epUid}`,
-      assignee:         getAssigneeByRole("producer"),
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "urgent",
@@ -386,7 +377,7 @@ function resolveHostHeadshotBlob(rawFolderId, agentName, epUid) {
  *
  * @param {string} govKey           - Governance_Config key for template ID
  * @param {string} label            - Deck label (e.g., "Host_Square")
- * @param {string} subfolderName    - Target subfolder name (e.g., "Social_Images")
+ * @param {string} subfolderName    - Target subfolder name (e.g., "Host_Graphics")
  * @param {string} stagingFolderId  - Staging folder ID
  * @param {string} guestName        - Guest display name
  * @param {string} epUid            - Episode UID

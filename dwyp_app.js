@@ -28,7 +28,7 @@
  *   - JT task security filter: deferred to v2 (requires HOST_EMAIL from governance).
  *
  * Deployment:
- *   Execute as: User accessing the web app
+ *   Execute as: Me (Audra)
  *   Access: Any Google account
  *   Entry point: doGet() — no conflict with clerk_fairy doPost()
  *   HTML: dwyp_app.html (separate file in same GAS project)

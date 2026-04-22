@@ -97,6 +97,7 @@ var EPISODES_COLS = {
 function doGet(e) {
   var sheetId     = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
   var userEmail   = Session.getEffectiveUser().getEmail();
+  Logger.log("[DEBUG doGet] userEmail resolved: " + userEmail);
   var deployedUrl = ScriptApp.getService().getUrl();
 
   // Fetch governance keys for client injection

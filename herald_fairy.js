@@ -73,6 +73,30 @@
 //             site captures return value as briefDocUrl. Step 6 spawnTask()
 //             passes briefDocUrl as payloadLink so JT can open the brief
 //             directly from the Review_Guest_Brief task in Pulse.
+//
+// Patch notes (thin-data hard-stop — Herald 1b.1):
+//   Fix 20 — Identity check added to runHerald() before Bio/Brief pass.
+//             checkGuestIdentity() calls callGeminiAPIGrounded() with a narrow
+//             identity-confirmation prompt (honorifics stripped: Dr., Mr.,
+//             Mrs., Ms., Rev., Pastor, Coach, etc.). Returns
+//             { confirmed, possibleMatches }.
+//             On confirmed identity: normal flow unchanged.
+//             On unconfirmed identity (pending path):
+//             — runHeraldBio() skips all Gemini research/extraction steps;
+//               writes "Enrichment Pending" to Bio_Summary.
+//             — runHeraldBrief() skips Gemini brief generation; writes a
+//               pending brief doc to Contact Library (same writeGuestBriefDoc
+//               helper) listing possible matches; writes identity_pending: true
+//               to episode manifest when episodeUid is present; no JT task.
+//             — Audra-only task spawned in runHerald() with workflowStep
+//               "Verify_Guest_Identity" and executiveSummary
+//               "New guest detected — verify identity: [name]".
+//             — Audit_Trail logged at each stage; appendEpisodeLog written
+//               with pending message when episodeUid present.
+//             — Fail-open: identity check error treats contact as confirmed
+//               so tool failures never block normal Herald flow.
+//             — Standalone runHeraldBio()/runHeraldBrief() calls bypass the
+//               check (manual re-runs assume operator has handled identity).
 // =============================================================================
 
 
@@ -86,6 +110,89 @@
 function runHerald(contactId, episodeUid) {
   const actor = "Herald";
 
+  // FIX 20 — Identity check before Bio/Brief pass.
+  // Read contact for display name and supplementary signals.
+  // Fail-open on any error: null identityResult falls through to confirmed path.
+  let identityResult   = null;
+  let displayNameCheck = String(contactId); // fallback for log/task messages
+  try {
+    const contactForCheck = getContactById(contactId);
+    if (contactForCheck) {
+      displayNameCheck = contactForCheck.Display_Name || String(contactId);
+      identityResult   = checkGuestIdentity(
+        displayNameCheck,
+        contactForCheck.Email || "",
+        contactForCheck.Social_Instagram
+          || contactForCheck.Social_X
+          || contactForCheck.Social_LinkedIn
+          || contactForCheck.Social_YouTube
+          || contactForCheck.Social_Podcast
+          || contactForCheck.Social_Other
+          || "",
+        contactForCheck.Website || ""
+      );
+    }
+  } catch (e) {
+    logToAuditTrail(actor, "error", episodeUid, contactId,
+      `[WARNING] Identity check failed — proceeding as confirmed: ${e.message}`, "WARNING");
+    identityResult = null;
+  }
+
+  // FIX 20 — Pending path: identity not confirmed.
+  if (identityResult && identityResult.confirmed === false) {
+
+    try {
+      runHeraldBio(contactId, identityResult);
+    } catch (e) {
+      logToAuditTrail(actor, "error", episodeUid, contactId,
+        `runHeraldBio threw unexpectedly (pending path): ${e.message}`, "ERROR");
+    }
+
+    if (episodeUid) {
+      try {
+        runHeraldBrief(contactId, episodeUid, identityResult);
+      } catch (e) {
+        logToAuditTrail(actor, "error", episodeUid, contactId,
+          `runHeraldBrief threw unexpectedly (pending path): ${e.message}`, "ERROR");
+      }
+    }
+
+    spawnTask({
+      actionTitle:      `Verify guest identity: ${displayNameCheck}`,
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "urgent",
+      contactId:        contactId,
+      episodeUid:       episodeUid || "",
+      workflowStep:     "Verify_Guest_Identity",
+      executiveSummary: `New guest detected — verify identity: ${displayNameCheck}`
+    });
+
+    logToAuditTrail(actor, "state_change", episodeUid, contactId,
+      `Identity unconfirmed for ${displayNameCheck} — Enrichment Pending. Audra task spawned.`, "WARNING");
+
+    if (episodeUid) {
+      try {
+        appendEpisodeLog({
+          episodeUid: episodeUid,
+          author:     actor,
+          entryType:  "system",
+          assetType:  "general",
+          body:       `Herald: Identity unconfirmed for ${displayNameCheck} — Enrichment Pending. Audra notified via Verify_Guest_Identity task.`,
+          resolved:   false,
+          visibleTo:  "both"
+        });
+      } catch (e) {
+        logToAuditTrail(actor, "error", episodeUid, contactId,
+          `appendEpisodeLog failed in runHerald (pending path): ${e.message}`, "WARNING");
+      }
+    }
+
+    return;
+  }
+
+  // Confirmed path: normal flow — no changes below this line.
   try {
     runHeraldBio(contactId);
   } catch (e) {
@@ -129,7 +236,7 @@ function runHerald(contactId, episodeUid) {
 // Safe to re-run — no duplicates on re-run.
 // =============================================================================
 
-function runHeraldBio(contactId) {
+function runHeraldBio(contactId, identityResult) {
   const actor = "Herald";
 
   // --- Step 1: Read Contact record ---
@@ -205,6 +312,20 @@ function runHeraldBio(contactId) {
       logToAuditTrail(actor, "error", null, contactId,
         `[WARNING] FormContext file read failed for ${displayName}: ${e.message}. Proceeding without form data.`, "WARNING");
     }
+  }
+
+  // FIX 20 — Pending path: identity unconfirmed. Skip all Gemini passes.
+  // Write "Enrichment Pending" to Bio_Summary. Non-fatal on write failure.
+  if (identityResult && identityResult.confirmed === false) {
+    logToAuditTrail(actor, "state_change", null, contactId,
+      `[INFO] Identity unconfirmed for ${displayName} — skipping research pass. Writing Enrichment Pending to Bio_Summary.`, "INFO");
+    try {
+      writeBioSummary(contactId, "Enrichment Pending");
+    } catch (e) {
+      logToAuditTrail(actor, "error", null, contactId,
+        `[WARNING] Failed to write Enrichment Pending to Bio_Summary: ${e.message}`, "WARNING");
+    }
+    return;
   }
 
   // --- Step 3: Research contact via Gemini (grounded) ---
@@ -391,7 +512,7 @@ ${researchOutput}`;
 // Safe to re-run — overwrites existing brief doc if present.
 // =============================================================================
 
-function runHeraldBrief(contactId, episodeUid) {
+function runHeraldBrief(contactId, episodeUid, identityResult) {
   const actor = "Herald";
 
   // --- Step 1: Read Contact record ---
@@ -470,6 +591,60 @@ function runHeraldBrief(contactId, episodeUid) {
   } catch (e) {
     logToAuditTrail(actor, "error", episodeUid, contactId,
       `[WARNING] Returning guest lookup failed for ${displayName}: ${e.message}. Proceeding without prior episode context.`, "WARNING");
+  }
+
+  // FIX 20 — Pending path: identity unconfirmed.
+  // Write a pending brief doc to Contact Library; flag manifest; no JT task.
+  if (identityResult && identityResult.confirmed === false) {
+    const matchLines = (identityResult.possibleMatches && identityResult.possibleMatches.length > 0)
+      ? identityResult.possibleMatches
+          .map(m =>
+            `• ${m.name || "(unknown)"} — ${m.platform || "(unknown)"} — ${m.url || "(no URL)"} — Confidence: ${m.confidence || "(unknown)"}`)
+          .join("\n")
+      : "None found automatically.";
+
+    const pendingBriefContent =
+      `GUEST BRIEF — ENRICHMENT PENDING\n` +
+      `Guest: ${displayName}\n` +
+      `Episode: ${episodeUid || "(none)"}\n\n` +
+      `Bio / Research\n` +
+      `──────────────\n` +
+      `Enrichment Pending — guest identity could not be confirmed automatically.\n` +
+      `The full research and bio pass has been skipped pending manual verification.\n\n` +
+      `Possible Matches Found\n` +
+      `──────────────────────\n` +
+      matchLines + `\n\n` +
+      `Next Step\n` +
+      `─────────\n` +
+      `Audra has been notified via a Verify_Guest_Identity task in Pulse.\n` +
+      `Once identity is confirmed, re-run Herald Bio and Herald Brief.`;
+
+    try {
+      writeGuestBriefDoc(contactFolderId, displayName, episodeUid, pendingBriefContent);
+      logToAuditTrail(actor, "state_change", episodeUid, contactId,
+        `Pending brief doc written to Contact Library for ${displayName}.`, "INFO");
+    } catch (e) {
+      logToAuditTrail(actor, "error", episodeUid, contactId,
+        `Failed to write pending brief doc: ${e.message}`, "ERROR");
+    }
+
+    if (episodeUid) {
+      try {
+        const pendingFolderId = getStagingFolderIdByUid(episodeUid);
+        if (pendingFolderId) {
+          const manifest = getManifest(pendingFolderId) || {};
+          manifest.identity_pending = true;
+          writeManifest(pendingFolderId, manifest);
+          logToAuditTrail(actor, "state_change", episodeUid, contactId,
+            `Episode manifest updated: identity_pending = true for ${episodeUid}.`, "INFO");
+        }
+      } catch (e) {
+        logToAuditTrail(actor, "error", episodeUid, contactId,
+          `[WARNING] Failed to write identity_pending to episode manifest: ${e.message}`, "WARNING");
+      }
+    }
+
+    return; // No JT task in pending path.
   }
 
   // --- Step 2: Read Production_Folder_ID from Episodes tab ---
@@ -967,6 +1142,80 @@ function writeGuestBriefDoc(targetFolderId, displayName, episodeUid, briefConten
   targetFolder.addFile(file);
   DriveApp.getRootFolder().removeFile(file);
   return doc.getUrl();
+}
+
+
+// =============================================================================
+// HELPERS — Identity verification
+// =============================================================================
+
+/**
+ * Checks whether a guest can be confirmed as a real, identifiable person
+ * on a reputable website or social platform.
+ * FIX 20 — New helper for thin-data hard-stop (Herald 1b.1).
+ *
+ * Uses callGeminiAPIGrounded() with a narrow identity-confirmation prompt.
+ * Honorifics (Dr., Mr., Mrs., Ms., Rev., Pastor, Coach, etc.) are stripped
+ * by the prompt before the search runs.
+ *
+ * Fail-open: on any error (Gemini call failure, JSON parse failure),
+ * returns { confirmed: true, possibleMatches: [] } so that a tool failure
+ * never blocks the normal Herald flow.
+ *
+ * @param {string} displayName  - Display name from contact record
+ * @param {string} email        - Email address (optional identity signal)
+ * @param {string} socialSignal - First populated social field (optional signal)
+ * @param {string} website      - Website URL (optional signal)
+ * @returns {{ confirmed: boolean, possibleMatches: Array }}
+ */
+function checkGuestIdentity(displayName, email, socialSignal, website) {
+  const prompt =
+    `You are performing a narrow identity verification for a podcast guest record.\n\n` +
+    `GUEST NAME ON FILE: ${displayName}\n` +
+    `SUPPLEMENTARY SIGNALS:\n` +
+    `- Social: ${socialSignal || "(none)"}\n` +
+    `- Website: ${website || "(none)"}\n` +
+    `- Email: ${email || "(none)"}\n\n` +
+    `TASK:\n` +
+    `1. Strip any honorifics from the name on file (Dr., Mr., Mrs., Ms., Rev., Pastor, Coach, and similar titles).\n` +
+    `2. Search for this person by their base name on reputable sources: official personal or organizational websites, LinkedIn, Instagram, X/Twitter, YouTube, Wikipedia, and major news outlets.\n` +
+    `3. Determine whether you can confirm an EXACT name match — meaning a real, identifiable, specific person with this name, ideally corroborated by any supplementary signal above.\n\n` +
+    `Return ONLY a valid JSON object with this exact structure. No markdown. No explanation. No preamble.\n\n` +
+    `{\n` +
+    `  "identityConfirmed": <true if you can confirm with high confidence, false if not>,\n` +
+    `  "possibleMatches": [\n` +
+    `    {\n` +
+    `      "name": "<name as found on the platform>",\n` +
+    `      "platform": "<platform or site name>",\n` +
+    `      "url": "<profile or page URL>",\n` +
+    `      "confidence": "<High | Medium | Low>"\n` +
+    `    }\n` +
+    `  ]\n` +
+    `}\n\n` +
+    `"possibleMatches" must list all candidates found, even if unconfirmed. Use an empty array if none were found.\n` +
+    `"identityConfirmed" is true only when you can confirm with high confidence that a real, specific person has this name.`;
+
+  const systemInstruction = "You are a structured data extractor performing identity verification. Return only valid JSON. No markdown. No explanation.";
+
+  try {
+    const raw  = callGeminiAPIGrounded(prompt, systemInstruction, "Herald");
+    const data = extractJson(raw);
+
+    if (!data || data.error) {
+      logToAuditTrail("Herald", "error", null, "",
+        `[WARNING] Identity check JSON parse failed for "${displayName}" — treating as confirmed.`, "WARNING");
+      return { confirmed: true, possibleMatches: [] };
+    }
+
+    return {
+      confirmed:       data.identityConfirmed === true,
+      possibleMatches: Array.isArray(data.possibleMatches) ? data.possibleMatches : []
+    };
+  } catch (e) {
+    logToAuditTrail("Herald", "error", null, "",
+      `[WARNING] Identity check threw for "${displayName}" — treating as confirmed: ${e.message}`, "WARNING");
+    return { confirmed: true, possibleMatches: [] };
+  }
 }
 
 

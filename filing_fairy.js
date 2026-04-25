@@ -300,9 +300,7 @@ function runFilingFairy(epUid) {
     // patchEpisodes() replaces upsertProductionLog() from old system.
     // =========================================================================
     patchEpisodes(epUid, {
-      Status:          "complete",
-      Production_Status: "complete",
-      Janitor_Handoff: new Date().toISOString()
+      Status: "complete"
     });
 
     logToAuditTrail(agentName, "state_change", epUid, "",

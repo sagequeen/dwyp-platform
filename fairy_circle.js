@@ -985,10 +985,11 @@ function getContactLibraryFolderIdByContactId(contactId) {
 // patchEpisodes()  — writes specific fields to an existing Episodes row.
 // upsertEpisodes() — updates an existing row or appends a new one.
 //
-// Episodes tab schema — v1.5 (14 columns):
+// Episodes tab schema — v1.5 (15 columns):
 //   Episode_Sequence | Release_Date | Episode_UID | Contact_ID | Guest_Name |
 //   Status | Raw_Folder_ID | Production_Folder_ID | Recording_Date |
-//   Calendar_Event_ID | Video_Status | Images_Status | Episode_URL | Episode_Type
+//   Calendar_Event_ID | Video_Status | Images_Status | Episode_URL | Episode_Type |
+//   Frameio_Project_ID
 //
 // Manual columns — GAS never writes:
 //   Episode_Sequence, Release_Date, Episode_URL

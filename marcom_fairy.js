@@ -96,11 +96,6 @@ function runMarcom(epUid) {
       fairies_dispatched: [...(context.manifest.fairies_dispatched || []), "Marcom_Fairy"]
     });
 
-    // --- Patch Episodes tab ---
-    patchEpisodes(epUid, {
-      Production_Status: "in_progress"
-    });
-
     logToAuditTrail(agentName, "state_change", epUid, null,
       `Episode Card complete for ${context.guestName}. Handing off to Artist Fairy.`, "info");
 

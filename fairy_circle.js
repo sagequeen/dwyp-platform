@@ -237,7 +237,7 @@ function callGeminiAPIGrounded(prompt, systemInstruction, agentName) {
 /**
  * Gemini API call explicitly WITHOUT web search grounding.
  * Use for structured tasks where grounding adds noise:
- * Safety Fairy forensic audit, Marcom prose generation, Scribe email drafting.
+ * Marcom prose generation, Scribe email drafting.
  */
 function callGeminiAPINoSearch(prompt, systemInstruction, agentName) {
   const apiKey = getGovernance("GEMINI_API_KEY");
@@ -772,27 +772,53 @@ function generateTaskId() {
 
 /**
  * Reads and parses episode_manifest.json from a staging folder.
- * Returns the parsed manifest object, or null if not found or unreadable.
+ *
+ * Returns the parsed manifest object, or null if the file does not exist
+ * (expected on first run — callers treat null as "not yet created").
+ *
+ * Throws with .isManifestCorrupt = true if the file exists but JSON.parse
+ * fails. Callers MUST NOT silently create a new manifest over a corrupt one —
+ * use patchManifest() which already guards against this, or catch the typed
+ * error explicitly.
+ *
+ * Drive-level errors (folder inaccessible, permission denied) are logged and
+ * rethrown as-is.
  */
 function getManifest(stagingFolderId) {
+  let folder, files;
   try {
-    const folder = DriveApp.getFolderById(stagingFolderId);
-    const files  = folder.getFilesByName("episode_manifest.json");
-    if (files.hasNext()) {
-      const file = files.next();
-      return JSON.parse(file.getBlob().getDataAsString());
-    }
-    return null;
-  } catch (e) {
+    folder = DriveApp.getFolderById(stagingFolderId);
+    files  = folder.getFilesByName("episode_manifest.json");
+  } catch (driveErr) {
     logToAuditTrail(
       "Jason_Protocol",
       "error",
       stagingFolderId,
       "",
-      `[ERROR] Manifest read failed: ${e.message}`,
+      `[ERROR] Manifest folder inaccessible: ${driveErr.message}`,
       "ERROR"
     );
-    return null;
+    throw driveErr;
+  }
+
+  if (!files.hasNext()) return null;  // file not found — expected first-run case
+
+  const raw = files.next().getBlob().getDataAsString();
+  try {
+    return JSON.parse(raw);
+  } catch (parseErr) {
+    logToAuditTrail(
+      "Jason_Protocol",
+      "error",
+      stagingFolderId,
+      "",
+      `[ERROR] Manifest corrupt — JSON.parse failed for folder ${stagingFolderId}: ${parseErr.message}`,
+      "ERROR"
+    );
+    const corruptError         = new Error(`Manifest corrupt in folder ${stagingFolderId}: ${parseErr.message}`);
+    corruptError.isManifestCorrupt = true;
+    corruptError.folderId          = stagingFolderId;
+    throw corruptError;
   }
 }
 
@@ -834,9 +860,36 @@ function writeManifest(stagingFolderId, manifestData) {
 
 /**
  * Reads the current manifest, merges the provided updates, and writes it back.
+ * Throws if the manifest is not found.
+ * If the manifest is corrupt (getManifest throws with .isManifestCorrupt), logs
+ * to Audit Trail, spawns a blocked Audra task, and rethrows — the write is
+ * blocked entirely to prevent data loss.
  */
 function patchManifest(stagingFolderId, updates) {
-  const manifest = getManifest(stagingFolderId);
+  let manifest;
+  try {
+    manifest = getManifest(stagingFolderId);
+  } catch (e) {
+    if (e.isManifestCorrupt) {
+      logToAuditTrail(
+        "Jason_Protocol",
+        "error",
+        stagingFolderId,
+        "",
+        `[ERROR] patchManifest blocked — manifest is corrupt. No write performed. Folder: ${stagingFolderId}`,
+        "ERROR"
+      );
+      spawnTask({
+        actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "urgent",
+        executiveSummary: `episode_manifest.json in folder ${stagingFolderId} failed JSON.parse. A patchManifest write was blocked to prevent data loss. Manually inspect and repair the manifest file, then re-trigger the failed fairy.`
+      });
+    }
+    throw e;
+  }
   if (!manifest) throw new Error(`Cannot patch manifest — not found in folder: ${stagingFolderId}`);
   const updated = Object.assign({}, manifest, updates, { last_updated: new Date().toISOString() });
   writeManifest(stagingFolderId, updated);
@@ -892,6 +945,59 @@ function getStagingFolderIdByUid(epUid) {
       epUid,
       "",
       `[ERROR] getStagingFolderIdByUid failed: ${e.message}`,
+      "ERROR"
+    );
+    return null;
+  }
+}
+
+/**
+ * Looks up the Raw_Folder_ID for an episode from the Episodes tab.
+ * Named symmetrically with getStagingFolderIdByUid() — reads Raw_Folder_ID.
+ * Returns the folder ID string, or null if the episode is not found.
+ *
+ * @param {string} epUid - Episode_UID to look up
+ */
+function getRawFolderIdByUid(epUid) {
+  try {
+    const scriptProps = PropertiesService.getScriptProperties();
+    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    if (!sheetId) throw new Error("MASTER_SHEET_ID not set in Script Properties.");
+
+    const ss    = SpreadsheetApp.openById(sheetId);
+    const sheet = ss.getSheetByName("Episodes");
+    if (!sheet) throw new Error("Episodes tab not found in master sheet.");
+
+    const data       = sheet.getDataRange().getValues();
+    const headers    = data[0];
+    const uidCol     = headers.indexOf("Episode_UID");
+    const rawFolCol  = headers.indexOf("Raw_Folder_ID");
+
+    if (uidCol === -1 || rawFolCol === -1) {
+      throw new Error("Episode_UID or Raw_Folder_ID column not found in Episodes tab.");
+    }
+
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][uidCol] === epUid) return data[i][rawFolCol] || null;
+    }
+
+    logToAuditTrail(
+      "Jason_Protocol",
+      "error",
+      epUid,
+      "",
+      `[WARNING] Episode_UID "${epUid}" not found in Episodes tab.`,
+      "WARNING"
+    );
+    return null;
+
+  } catch (e) {
+    logToAuditTrail(
+      "Jason_Protocol",
+      "error",
+      epUid,
+      "",
+      `[ERROR] getRawFolderIdByUid failed: ${e.message}`,
       "ERROR"
     );
     return null;
@@ -1416,6 +1522,17 @@ function appendRevisionComment(epUid, stagingFolderId, comment, commenter, asset
 
   } catch (e) {
     logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Failed to append revision comment to Production Notes: ${e.message}`, "ERROR");
+    if (e.isManifestCorrupt) {
+      spawnTask({
+        episodeUid:       epUid,
+        actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "urgent",
+        executiveSummary: `episode_manifest.json in folder ${e.folderId || stagingFolderId} failed JSON.parse. A revision-comment write to Production Notes was blocked. Manually inspect and repair the manifest file.`
+      });
+    }
   }
 }
 
@@ -1523,8 +1640,7 @@ function dailyPulse() {
     // =========================================================================
     // LOOP 3: Safety audit scan
     // =========================================================================
-    let safetyScanned   = 0;
-    let safetyTriggered = 0;
+    let safetyScanned = 0;
 
     if (rawFolderCol === -1) {
       logToAuditTrail(agentName, "error", "", "", "[WARNING] Raw_Folder_ID column not found in Episodes tab. Skipping safety audit scan.", "WARNING");
@@ -1556,16 +1672,23 @@ function dailyPulse() {
 
           if (manifest.safety_audited === true) continue;
 
-          logToAuditTrail(agentName, "state_change", epUid, "", "[INFO] safety_audited not true — calling Safety Fairy.", "INFO");
-          runSafetyFairy(epUid);
-          safetyTriggered++;
-
         } catch (e) {
           logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Safety audit scan failed for episode: ${e.message}`, "ERROR");
+          if (e.isManifestCorrupt) {
+            spawnTask({
+              episodeUid:       epUid,
+              actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+              assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+              assignedBy:       "The Fairy Team",
+              status:           "open",
+              priority:         "urgent",
+              executiveSummary: `episode_manifest.json in folder ${e.folderId || prodFolderId} failed JSON.parse during the daily safety audit scan. Manually inspect and repair the manifest file, then re-run the daily pulse or manually clear the safety_audited flag.`
+            });
+          }
         }
       }
 
-      logToAuditTrail(agentName, "state_change", "", "", `[INFO] Safety audit scan complete. Episodes checked: ${safetyScanned}. Safety Fairy triggered: ${safetyTriggered}.`, "INFO");
+      logToAuditTrail(agentName, "state_change", "", "", `[INFO] Safety audit scan complete. Episodes checked: ${safetyScanned}. (Safety Fairy retired — pipeline parsing now in housekeeping.gs)`, "INFO");
     }
 
     // =========================================================================
@@ -1828,4 +1951,21 @@ function resolveDisplayNameByContactId(contactId) {
     logToAuditTrail("fairy_circle", "error", "", contactId, `[WARNING] resolveDisplayNameByContactId failed: ${e.message}`, "WARNING");
     return null;
   }
+}
+
+// =============================================================================
+// NIGHTLY HOUSEKEEPING TRIGGER
+// Time-based trigger entry point for housekeeping.gs.
+// Requires a time-based trigger set to run nightly in Apps Script
+// (Triggers → Add Trigger → triggerNightlyHousekeeping → Time-driven → Day timer).
+// No trigger registration code here — trigger must be installed manually.
+// =============================================================================
+
+/**
+ * Nightly trigger entry point. Calls runHousekeeping() in housekeeping.gs.
+ * Install as a time-based trigger (day timer, nightly) in Apps Script.
+ * Do not add trigger registration code to this function.
+ */
+function triggerNightlyHousekeeping() {
+  runHousekeeping();
 }

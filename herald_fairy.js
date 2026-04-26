@@ -641,6 +641,18 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
       } catch (e) {
         logToAuditTrail(actor, "error", episodeUid, contactId,
           `[WARNING] Failed to write identity_pending to episode manifest: ${e.message}`, "WARNING");
+        if (e.isManifestCorrupt) {
+          spawnTask({
+            episodeUid:       episodeUid,
+            contactId:        contactId,
+            actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+            assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+            assignedBy:       "The Fairy Team",
+            status:           "open",
+            priority:         "urgent",
+            executiveSummary: `episode_manifest.json in folder ${e.folderId} failed JSON.parse. The identity_pending write was blocked to prevent data loss. Manually inspect and repair the manifest file for ${episodeUid}.`
+          });
+        }
       }
     }
 
@@ -685,16 +697,29 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
   } catch (e) {
     logToAuditTrail(actor, "error", episodeUid, contactId,
       `Guest Swipe folder error: ${e.message}`, "WARNING");
-    spawnTask({
-      actionTitle:      "Herald: Guest Swipe folder creation failed — check manually",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "normal",
-      contactId:        contactId,
-      episodeUid:       episodeUid,
-      executiveSummary: `Could not create Guest_Swipe subfolder in Staging for ${displayName} / ${episodeUid}.`
-    });
+    if (e.isManifestCorrupt) {
+      spawnTask({
+        episodeUid:       episodeUid,
+        contactId:        contactId,
+        actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "urgent",
+        executiveSummary: `episode_manifest.json in folder ${e.folderId || stagingFolderId} failed JSON.parse. The guest_swipe_folder_id write was blocked to prevent data loss. Manually inspect and repair the manifest file for ${episodeUid}.`
+      });
+    } else {
+      spawnTask({
+        actionTitle:      "Herald: Guest Swipe folder creation failed — check manually",
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "normal",
+        contactId:        contactId,
+        episodeUid:       episodeUid,
+        executiveSummary: `Could not create Guest_Swipe subfolder in Staging for ${displayName} / ${episodeUid}.`
+      });
+    }
     // Non-fatal — continue to brief generation
   }
 

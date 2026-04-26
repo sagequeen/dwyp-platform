@@ -39,7 +39,92 @@
  *   clerk_fairy.gs    — owns doPost(); not called by this file in v1
  */
 
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+
+function sanitizeEmail(val) {
+  return String(val).replace(/[^\x20-\x7E]/g, "").trim().toLowerCase();
+}
+
+/**
+ * Validates a 4-digit PIN against User_Registry col 4.
+ * Compares SHA-256(submitted PIN) to SHA-256(stored plain-text PIN).
+ * Returns { success, userEmail, displayName, role } on match, { success: false } otherwise.
+ * The raw PIN is never returned to the client.
+ */
+function validatePin(pin) {
+  try {
+    var clean = String(pin).replace(/\D/g, "").slice(0, 4);
+    if (clean.length !== 4) return { success: false };
+
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("User_Registry");
+    var data    = sheet.getDataRange().getValues();
+
+    function toHex(bytes) {
+      return bytes.map(function(b) { return ("0" + (b & 0xff).toString(16)).slice(-2); }).join("");
+    }
+
+    var algo    = Utilities.DigestAlgorithm.SHA_256;
+    var pinHash = toHex(Utilities.computeDigest(algo, clean));
+
+    for (var i = 1; i < data.length; i++) {
+      var row         = data[i];
+      var storedEmail = sanitizeEmail(row[0]);
+      if (!storedEmail) continue;
+
+      var storedHash = toHex(Utilities.computeDigest(algo, String(row[3]).trim()));
+      if (pinHash === storedHash) {
+        return {
+          success:     true,
+          userEmail:   storedEmail,
+          displayName: String(row[1]).trim(),
+          role:        String(row[2]).trim()
+        };
+      }
+    }
+
+    return { success: false };
+  } catch (err) {
+    return { success: false };
+  }
+}
+
 // ── COLUMN MAPS ──────────────────────────────────────────────────────────────
+
+// Episode_Log tab column map (9 columns)
+var EPISODE_LOG_COLS = {
+  Log_ID:      1,
+  Episode_UID: 2,
+  Timestamp:   3,
+  Author:      4,
+  Entry_Type:  5,
+  Asset_Type:  6,
+  Body:        7,
+  Resolved:    8,
+  Visible_To:  9
+};
+
+// Social_Assets tab column map (17 columns)
+var SOCIAL_ASSETS_COLS = {
+  Post_ID:           1,
+  Episode_UID:       2,
+  Asset_Type:        3,
+  Placeholder_Key:   4,
+  Platform:          5,
+  Release_Week:      6,
+  Slot:              7,
+  Status:            8,
+  Caption:           9,
+  Caption_Secondary: 10,
+  Drive_File_ID:     11,
+  Attribution_Label: 12,
+  Scheduled_At:      13,
+  Scheduler_Status:  14,
+  Posted_At:         15,
+  Created_At:        16,
+  Created_By:        17
+};
 
 // Tasks tab column map (1-based, matches v1.5 schema column order)
 var TASKS_COLS = {
@@ -85,9 +170,8 @@ var EPISODES_COLS = {
 
 /**
  * Serves the web app HTML shell from dwyp_ui.html.
- * Injects Sheet ID, deployed URL, authenticated user email,
- * HOST_EMAIL (for security filter), and Quick Link URLs into the page
- * via HtmlService template tags.
+ * Injects Sheet ID, deployed URL, HOST_EMAIL, and Quick Link URLs into the page
+ * via HtmlService template tags. User identity is established client-side via PIN.
  *
  * Governance_Config keys used:
  *   HOST_EMAIL          — identifies JT for task security filter
@@ -96,31 +180,32 @@ var EPISODES_COLS = {
  */
 function doGet(e) {
   var sheetId     = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
-  var userEmail   = Session.getEffectiveUser().getEmail();
-  Logger.log("[DEBUG doGet] userEmail resolved: " + userEmail);
+  var ss          = SpreadsheetApp.openById(sheetId);
   var deployedUrl = ScriptApp.getService().getUrl();
 
   // Fetch governance keys for client injection
-  var ss         = SpreadsheetApp.openById(sheetId);
-  var govSheet   = ss.getSheetByName("Governance_Config");
-  var govData    = govSheet.getDataRange().getValues();
+  var govSheet  = ss.getSheetByName("Governance_Config");
+  var govData   = govSheet.getDataRange().getValues();
 
   var govMap = {};
   for (var i = 0; i < govData.length; i++) {
     govMap[govData[i][0]] = govData[i][1];
   }
 
-  var hostEmail      = govMap["HOST_EMAIL"]         || "";
-  var gemsUrl        = govMap["IMAGE_WORKSHOP_GEM"] || "";
-  var notebooklmUrl  = govMap["NOTEBOOKLM_LINK"]   || "";
+  function cleanUrl(v) { return String(v || "").trim().replace(/^["']+|["']+$/g, "").trim(); }
+
+  var hostEmail     = cleanUrl(govMap["HOST_EMAIL"]);
+  var gemsUrl       = cleanUrl(govMap["IMAGE_WORKSHOP_GEM"]);
+  var notebooklmUrl = cleanUrl(govMap["NOTEBOOKLM_LINK"]);
+  var ownerEmail    = Session.getEffectiveUser().getEmail();
 
   var template = HtmlService.createTemplateFromFile("dwyp_ui");
-  template.sheetId        = sheetId;
-  template.userEmail      = userEmail;
-  template.deployedUrl    = deployedUrl;
-  template.hostEmail      = hostEmail;
-  template.gemsUrl        = gemsUrl;
-  template.notebooklmUrl  = notebooklmUrl;
+  template.sheetId       = sheetId;
+  template.deployedUrl   = deployedUrl;
+  template.hostEmail     = hostEmail;
+  template.gemsUrl       = gemsUrl;
+  template.notebooklmUrl = notebooklmUrl;
+  template.ownerEmail    = ownerEmail;
 
   return template.evaluate()
     .setTitle("DWYP Operations")
@@ -193,7 +278,7 @@ function getTasks() {
       _rowIndex:         i + 1,
       Task_ID:           row[TASKS_COLS.Task_ID - 1],
       Action_Title:      row[TASKS_COLS.Action_Title - 1],
-      Assignee:          row[TASKS_COLS.Assignee - 1],
+      Assignee:          sanitizeEmail(row[TASKS_COLS.Assignee - 1]),
       Assigned_By:       row[TASKS_COLS.Assigned_By - 1],
       Status:            status,
       Priority:          row[TASKS_COLS.Priority - 1],
@@ -266,8 +351,8 @@ function getUsers() {
     var row = data[i];
     if (!row[0]) continue; // skip blank rows
     users.push({
-      userId:      String(row[0]).trim(), // User_ID = email
-      displayName: String(row[1]).trim()  // Display_Name
+      userId:      sanitizeEmail(row[0]),
+      displayName: String(row[1]).trim()
     });
   }
   return users;
@@ -317,6 +402,324 @@ function createTask(payload) {
 
     sheet.appendRow(row);
     return { success: true, taskId: taskId };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Returns candidate Social_Assets counts for an episode.
+ * Used by Episode Detail to gate Reels/Images asset buttons.
+ * @param {string} episodeUid
+ * @returns {{ reels: number, images: number }}
+ */
+function getSocialAssetCandidateCounts(episodeUid) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Social_Assets");
+    var data    = sheet.getDataRange().getValues();
+
+    var IMAGE_TYPES = ["hook_graphic", "quote_graphic_host", "quote_graphic_guest", "thumbnail"];
+    var reels = 0, images = 0;
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (String(row[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      if (row[SOCIAL_ASSETS_COLS.Status     - 1] !== "candidate") continue;
+      var assetType = row[SOCIAL_ASSETS_COLS.Asset_Type - 1];
+      if (assetType === "reel")                         reels++;
+      if (IMAGE_TYPES.indexOf(assetType) !== -1)        images++;
+    }
+
+    return { reels: reels, images: images };
+  } catch (err) {
+    return { reels: 0, images: 0 };
+  }
+}
+
+/**
+ * Writes Video_Status on the Episodes row matching episodeUid.
+ * @param {string} episodeUid
+ * @param {string} status  — 'approved' | 'revision_requested'
+ * @returns {{ success: boolean, error?: string }}
+ */
+function writeVideoStatus(episodeUid, status) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Episodes");
+    var data    = sheet.getDataRange().getValues();
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
+        sheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue(status);
+        return { success: true };
+      }
+    }
+    return { success: false, error: "Episode not found: " + episodeUid };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Appends a row to the Episode_Log tab.
+ * @param {string} episodeUid
+ * @param {string} entryType  — e.g. 'feedback'
+ * @param {string} assetType  — e.g. 'video'
+ * @param {string} body       — freetext note
+ * @param {string} visibleTo  — 'both' | 'internal'
+ * @param {string} authorEmail — current user email passed from client
+ * @returns {{ success: boolean, error?: string }}
+ */
+function appendEpisodeLogEntry(episodeUid, entryType, assetType, body, visibleTo, authorEmail) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Episode_Log");
+
+    var now  = new Date();
+    var pad  = function(n) { return String(n).padStart(2, "0"); };
+    var yy   = String(now.getFullYear()).slice(2);
+    var mm   = pad(now.getMonth() + 1);
+    var dd   = pad(now.getDate());
+    var hh   = pad(now.getHours());
+    var mn   = pad(now.getMinutes());
+    var nnn  = String(Math.floor(Math.random() * 900) + 100);
+    var logId = "LOG-" + yy + mm + dd + "-" + hh + mn + "-" + nnn;
+
+    var author = authorEmail || Session.getEffectiveUser().getEmail();
+
+    var row = new Array(9).fill("");
+    row[EPISODE_LOG_COLS.Log_ID      - 1] = logId;
+    row[EPISODE_LOG_COLS.Episode_UID - 1] = episodeUid;
+    row[EPISODE_LOG_COLS.Timestamp   - 1] = now;
+    row[EPISODE_LOG_COLS.Author      - 1] = author;
+    row[EPISODE_LOG_COLS.Entry_Type  - 1] = entryType;
+    row[EPISODE_LOG_COLS.Asset_Type  - 1] = assetType;
+    row[EPISODE_LOG_COLS.Body        - 1] = body;
+    row[EPISODE_LOG_COLS.Resolved    - 1] = false;
+    row[EPISODE_LOG_COLS.Visible_To  - 1] = visibleTo;
+
+    sheet.appendRow(row);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Returns candidate Social_Assets rows for an episode and asset type(s).
+ * assetType may be a string or an array of strings.
+ * @param {string}          episodeUid
+ * @param {string|string[]} assetType
+ * @returns {object[]}
+ */
+function getSocialAssets(episodeUid, assetType) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Social_Assets");
+    var data    = sheet.getDataRange().getValues();
+
+    var types  = Array.isArray(assetType) ? assetType : [assetType];
+    var assets = [];
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (String(row[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      if (row[SOCIAL_ASSETS_COLS.Status     - 1] !== "candidate")                 continue;
+      if (types.indexOf(row[SOCIAL_ASSETS_COLS.Asset_Type - 1]) === -1)           continue;
+
+      assets.push({
+        _rowIndex:       i + 1,
+        Post_ID:         row[SOCIAL_ASSETS_COLS.Post_ID         - 1],
+        Episode_UID:     row[SOCIAL_ASSETS_COLS.Episode_UID     - 1],
+        Asset_Type:      row[SOCIAL_ASSETS_COLS.Asset_Type      - 1],
+        Placeholder_Key: row[SOCIAL_ASSETS_COLS.Placeholder_Key - 1],
+        Drive_File_ID:   row[SOCIAL_ASSETS_COLS.Drive_File_ID   - 1],
+        Status:          row[SOCIAL_ASSETS_COLS.Status          - 1]
+      });
+    }
+
+    return assets;
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Writes Status on a Social_Assets row by row index.
+ * @param {number} rowIndex - 1-based sheet row number (_rowIndex from asset object)
+ * @param {string} status   - 'scheduled' | 'bank' | 'rejected'
+ * @returns {{ success: boolean, error?: string }}
+ */
+function writeSocialAssetStatus(rowIndex, status) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Social_Assets");
+    sheet.getRange(rowIndex, SOCIAL_ASSETS_COLS.Status).setValue(status);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Stub — logs to Audit_Trail and returns success.
+ * Real Marcom trigger wired in Marcom spoke.
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, error?: string }}
+ */
+function getOwnerEmail() {
+  return Session.getEffectiveUser().getEmail();
+}
+
+function runMarcomForEpisode(episodeUid) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    try {
+      var audit = ss.getSheetByName("Audit_Trail");
+      if (audit) {
+        audit.appendRow([new Date(), "DWYP_App", "runMarcomForEpisode", episodeUid]);
+      }
+    } catch (logErr) { /* non-fatal — Audit_Trail may not exist yet */ }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+
+// ── IMAGE WORKSHOP ───────────────────────────────────────────────────────────
+
+/**
+ * Returns all files in the IMAGE_BACKGROUND_LIBRARY_ID Drive folder.
+ * isAiGenerated: true when filename starts with "bg_" (Safety Fairy convention).
+ * @returns {object[]} Array of { fileId, name, isAiGenerated }
+ */
+function getBackgroundLibrary() {
+  try {
+    var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
+    if (!libraryId) return [];
+    var folder = DriveApp.getFolderById(libraryId);
+    var files  = folder.getFiles();
+    var result = [];
+    while (files.hasNext()) {
+      var file = files.next();
+      var name = file.getName();
+      result.push({
+        fileId:        file.getId(),
+        name:          name,
+        isAiGenerated: name.indexOf("bg_") === 0
+      });
+    }
+    return result;
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Returns the full image as a base64 data URL for canvas placement.
+ * Used instead of a Drive URL to avoid CORS restrictions in the GAS web app.
+ * @param {string} fileId
+ * @returns {{ success: true, dataUrl: string } | { success: false, error: string }}
+ */
+function getBackgroundImageData(fileId) {
+  try {
+    var file     = DriveApp.getFileById(fileId);
+    var blob     = file.getBlob();
+    var mimeType = blob.getContentType() || "image/png";
+    var base64   = Utilities.base64Encode(blob.getBytes());
+    return { success: true, dataUrl: "data:" + mimeType + ";base64," + base64 };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Decodes a base64 image string and saves it to the background library folder.
+ * base64Data may include a data-URL prefix (data:image/png;base64,...) — stripped automatically.
+ * @param {string} base64Data
+ * @param {string} filename
+ * @returns {{ fileId, name, isAiGenerated: false } | { success: false, error: string }}
+ */
+function uploadBackgroundToLibrary(base64Data, filename) {
+  try {
+    var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
+    if (!libraryId) return { success: false, error: "IMAGE_BACKGROUND_LIBRARY_ID not configured" };
+    var raw      = base64Data.replace(/^data:[^;]+;base64,/, "");
+    var mimeType = base64Data.indexOf("jpeg") !== -1 ? "image/jpeg" : "image/png";
+    var blob     = Utilities.newBlob(Utilities.base64Decode(raw), mimeType, filename);
+    var folder   = DriveApp.getFolderById(libraryId);
+    var file     = folder.createFile(blob);
+    return { fileId: file.getId(), name: file.getName(), isAiGenerated: false };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Moves a background library file to trash.
+ * @param {string} fileId
+ * @returns {{ success: boolean, error?: string }}
+ */
+function deleteBackgroundFromLibrary(fileId) {
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Reads episode_manifest.json for raw_hooks and raw_quotes.
+ * Returns manifest object, or { raw_hooks: [], raw_quotes: [] } if not found.
+ * @param {string} episodeUid
+ */
+function getEpisodeManifest(episodeUid) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) return { raw_hooks: [], raw_quotes: [] };
+    var manifest = getManifest(folderId);
+    return manifest || { raw_hooks: [], raw_quotes: [] };
+  } catch (err) {
+    if (err.isManifestCorrupt) {
+      logToAuditTrail("DwypApp", "error", episodeUid, "",
+        `[WARNING] Manifest corrupt for episode ${episodeUid} — returning empty hook/quote data to UI. Folder: ${err.folderId || "unknown"}`,
+        "WARNING");
+    }
+    return { raw_hooks: [], raw_quotes: [] };
+  }
+}
+
+/**
+ * Decodes a base64 PNG and writes it to the episode's Production folder.
+ * Filename: image_[episodeUid]_[timestamp].png
+ * base64Data may include a data-URL prefix — stripped automatically.
+ * @param {string} episodeUid
+ * @param {string} base64Data
+ * @returns {{ success: true, filename: string } | { success: false, error: string }}
+ */
+function saveImageToStaging(episodeUid, base64Data) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) return { success: false, error: "Production folder not found for episode: " + episodeUid };
+    var now      = new Date();
+    var pad      = function(n) { return String(n).padStart(2, "0"); };
+    var ts       = String(now.getFullYear()).slice(2) +
+                   pad(now.getMonth() + 1) + pad(now.getDate()) + "-" +
+                   pad(now.getHours())     + pad(now.getMinutes());
+    var filename = "image_" + episodeUid + "_" + ts + ".png";
+    var raw      = base64Data.replace(/^data:[^;]+;base64,/, "");
+    var blob     = Utilities.newBlob(Utilities.base64Decode(raw), "image/png", filename);
+    DriveApp.getFolderById(folderId).createFile(blob);
+    return { success: true, filename: filename };
   } catch (err) {
     return { success: false, error: err.message };
   }

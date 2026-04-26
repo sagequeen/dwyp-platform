@@ -270,6 +270,18 @@ function processFormSubmission(e) {
       } catch (err) {
         logToAuditTrail(agentName, "error", matchedEpisodeUid, contactId,
           `[WARNING] Could not patch herald_form_data into manifest: ${err.message}`, "WARNING");
+        if (err.isManifestCorrupt) {
+          spawnTask({
+            episodeUid:       matchedEpisodeUid,
+            contactId:        contactId,
+            actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+            assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+            assignedBy:       "The Fairy Team",
+            status:           "open",
+            priority:         "urgent",
+            executiveSummary: `episode_manifest.json in folder ${err.folderId || matchedProdFolderId} failed JSON.parse. The herald_form_data write was blocked to prevent data loss. Manually inspect and repair the manifest file for ${matchedEpisodeUid}.`
+          });
+        }
         // Non-fatal — Herald may run twice if manifest patch fails. Acceptable.
       }
 
@@ -929,7 +941,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
     recording_date:        recordingDate.toISOString(),
     raw_folder_id:         rawFolderId,
     staging_folder_id:     stagingFolderId,
-    status:                "intake",
+    status:                "active",
     phase:                 "1_Intake",
     created_at:            new Date().toISOString(),
     herald_form_data:      false,
@@ -988,6 +1000,18 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
   } catch (err) {
     logToAuditTrail(agentName, "error", episodeUid, contactId,
       `[WARNING] Could not read manifest for Herald skip check: ${err.message}. Firing Herald as normal.`, "WARNING");
+    if (err.isManifestCorrupt) {
+      spawnTask({
+        episodeUid:       episodeUid,
+        contactId:        contactId,
+        actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "urgent",
+        executiveSummary: `episode_manifest.json in folder ${err.folderId || stagingFolderId} failed JSON.parse during the Herald skip check. Herald will run as normal. Manually inspect and repair the manifest file for ${episodeUid}.`
+      });
+    }
   }
 
 
@@ -1037,7 +1061,7 @@ function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episo
     Episode_UID:          episodeUid,
     Contact_ID:           contactId,
     Guest_Name:           guestName,
-    Status:               "intake",
+    Status:               "active",
     Raw_Folder_ID:        rawFolderId,
     Production_Folder_ID: stagingFolderId,
     Recording_Date:       recordingDate,

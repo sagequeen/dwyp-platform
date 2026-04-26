@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
 
 <style>
 /* ── TOKENS ─────────────────────────────────────────────────── */
@@ -64,9 +65,9 @@ svg { display: block; flex-shrink: 0; }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   padding: 12px 16px;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
 }
 .header-left {
@@ -98,8 +99,83 @@ svg { display: block; flex-shrink: 0; }
 .header-logo {
   width: 36px;
   height: 17px;
+  justify-self: center;
+}
+.header-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  position: relative;
+}
+.avatar-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--red);
+  color: white;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
 }
+.avatar-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  min-width: 160px;
+  z-index: 200;
+  overflow: hidden;
+}
+.avatar-menu.open { display: block; }
+.avatar-menu-name {
+  padding: 10px 14px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.avatar-menu-signout {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--red);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.avatar-menu-signout:hover { background: var(--surface-2); }
+.avatar-menu-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.avatar-menu-item:hover { background: var(--surface-2); }
 
 /* ── MAIN CONTENT ───────────────────────────────────────────── */
 .view {
@@ -771,21 +847,694 @@ svg { display: block; flex-shrink: 0; }
 }
 .btn-submit:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-submit:active { opacity: 0.85; }
+
+/* ── WORKSHOP NAV HIDE ──────────────────────────────────────── */
+body.workshop-open .bottom-nav { display: none; }
+
+/* ── IMAGE WORKSHOP OVERLAY ─────────────────────────────────── */
+#imageWorkshop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  font-family: var(--font-body);
+}
+
+/* Header row */
+.iw-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.iw-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 700;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+}
+.iw-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--gold);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 120px);
+  pointer-events: none;
+}
+.iw-ratio-group { display: flex; gap: 4px; flex-shrink: 0; }
+.iw-ratio-btn {
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+.iw-ratio-btn:hover { border-color: var(--gold); color: var(--gold); }
+.iw-ratio-btn.active { background: var(--gold); color: #0D0A0A; border-color: var(--gold); }
+
+/* Three-panel layout */
+.iw-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Side panels */
+.iw-panel {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  position: relative;
+}
+.iw-panel-right { border-right: none; border-left: 1px solid var(--border); }
+.iw-panel-body {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.22s ease;
+  min-width: 0;
+}
+.iw-panel.collapsed .iw-panel-body { width: 0; }
+.iw-collapse-tab {
+  width: 16px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  padding: 0;
+  align-self: center;
+  height: 52px;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.iw-panel-left .iw-collapse-tab {
+  border-left: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.iw-panel-right .iw-collapse-tab {
+  border-right: none;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.iw-collapse-tab:hover {
+  color: var(--gold);
+  background: var(--gold-light);
+  border-color: var(--gold);
+}
+.iw-panel-header {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.iw-panel-scroll { flex: 1; overflow-y: auto; padding: 10px; }
+
+/* Canvas area */
+.iw-canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  overflow: hidden;
+  position: relative;
+  padding: 36px 0;
+}
+.iw-canvas-wrap {
+  background: #E2E2E2;
+  border: 1px solid var(--border);
+  position: relative;
+}
+#iwCanvas { display: block; }
+
+/* Toolbar */
+.iw-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.iw-toolbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.iw-color-dots { display: flex; gap: 6px; align-items: center; }
+.iw-color-dot {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.iw-color-dot:hover { transform: scale(1.2); }
+.iw-color-dot.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); transform: scale(1.1); }
+.iw-color-dot[data-color="#0D0A0A"] { border-color: #999; }
+.iw-color-dot[data-color="#FFFFFF"] { border-color: #CCC; }
+.iw-tool-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  font-family: var(--font-body);
+}
+.iw-tool-btn:hover { border-color: var(--gold); color: var(--gold); }
+.iw-tool-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(250,176,22,0.08); }
+.iw-tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#iwItalicBtn { font-style: italic; font-family: Georgia, 'Times New Roman', serif; }
+.iw-mob-toggle { display: none; }
+
+/* Export bar */
+.iw-export-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.iw-export-btn {
+  padding: 9px 20px;
+  background: var(--gold);
+  color: #0D0A0A;
+  font-weight: 700;
+  font-size: 13px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: opacity var(--transition);
+}
+.iw-export-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.iw-view-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all var(--transition);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-body);
+}
+.iw-view-btn:hover { border-color: var(--gold); color: var(--gold); }
+.iw-view-btn.hidden { display: none; }
+
+/* Background grid */
+.iw-bg-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px;
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-bottom: 8px;
+  transition: all var(--transition);
+}
+.iw-bg-upload:hover { border-color: var(--gold); color: var(--gold); }
+.iw-text-type-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  margin-bottom: 6px;
+  transition: all var(--transition);
+}
+.iw-text-type-btn:hover { border-color: var(--gold); color: var(--gold); }
+.iw-bg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.iw-bg-thumb {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: border-color var(--transition);
+  background: var(--surface-2);
+}
+.iw-bg-thumb.selected { border-color: var(--gold); }
+.iw-bg-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.iw-bg-thumb:hover .iw-bg-delete { opacity: 1; }
+.iw-ai-badge {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(250,176,22,0.1);
+  border: 0.5px solid rgba(250,176,22,0.35);
+  color: #A07010;
+  pointer-events: none;
+}
+.iw-bg-delete {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: white;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition);
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  font-family: var(--font-body);
+}
+
+/* Quotes & Hooks panel */
+.iw-qh-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 6px;
+}
+.iw-qh-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: border-color var(--transition), background var(--transition);
+}
+.iw-qh-item:hover { border-color: var(--gold); }
+.iw-qh-item.selected { border-color: var(--gold); background: rgba(250,176,22,0.04); }
+.iw-qh-quote {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.iw-qh-speaker { font-size: 10px; color: var(--text-3); font-weight: 700; }
+.iw-qh-hook { font-size: 12px; line-height: 1.4; color: var(--text); }
+.iw-empty-msg { font-size: 12px; color: var(--text-3); text-align: center; padding: 16px 8px; line-height: 1.5; }
+.iw-bg-section-header {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 8px 2px 4px;
+  margin-top: 4px;
+}
+.iw-bg-section-header:first-child { margin-top: 0; padding-top: 2px; }
+.iw-logo-btn {
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 3px !important;
+  padding: 4px 8px !important;
+  height: auto !important;
+}
+.iw-logo-btn span { font-size: 10px; line-height: 1; }
+.iw-logo-btn-dark { background: var(--text); }
+
+/* Episode detail Image Workshop button */
+.btn-image-workshop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px;
+  background: var(--surface);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition);
+  margin-top: 4px;
+}
+.btn-image-workshop:hover { border-color: var(--gold); color: var(--gold); }
+
+/* Mobile: narrow panels, start collapsed via JS */
+@media (max-width: 600px) {
+  .iw-panel-body { width: 160px; }
+  .iw-ratio-btn { padding: 4px 7px; font-size: 10px; }
+  .iw-title { font-size: 13px; }
+}
+
+/* ── LOGIN SCREEN ───────────────────────────────────────────── */
+#loginScreen {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.login-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 40px 24px;
+  width: 100%;
+  max-width: 340px;
+}
+.login-logo { width: 80px; height: 37px; }
+.login-heading {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  margin-top: -8px;
+}
+.login-sub {
+  font-size: 14px;
+  color: var(--text-2);
+  text-align: center;
+  margin-top: -16px;
+}
+.pin-inputs { display: flex; gap: 12px; }
+.pin-digit {
+  width: 56px;
+  height: 64px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.pin-digit:focus {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(209,34,37,0.12);
+}
+.pin-error {
+  font-size: 13px;
+  color: var(--red);
+  font-weight: 700;
+  min-height: 18px;
+  display: none;
+}
+.pin-error.visible { display: block; }
+.btn-pin-submit {
+  width: 100%;
+  padding: 13px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+  transition: opacity var(--transition);
+}
+.btn-pin-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── EPISODE TOOLS CARD ─────────────────────────────────────── */
+.ep-tools-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ep-tools-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 8px;
+}
+.ep-tools-row {
+  display: flex;
+  gap: 8px;
+}
+.ep-tool-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition);
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.ep-tool-btn:active { background: var(--border); }
+.ep-tool-btn.disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.ep-tool-btn.has-dot::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  background: var(--gold);
+  border-radius: 50%;
+  border: 1.5px solid var(--surface);
+}
+
+/* ── REVIEW VIEWS ───────────────────────────────────────────── */
+.review-placeholder {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+.review-placeholder-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+.review-placeholder-sub {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.revision-field {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.revision-field.visible { display: flex; }
+
+.coming-soon-card {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  padding: 24px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-asset-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.review-asset-label {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--border);
+}
+.review-asset-iframe {
+  width: 100%;
+  height: 240px;
+  border: none;
+  display: block;
+  background: var(--surface-2);
+}
+.review-asset-img {
+  width: 100%;
+  display: block;
+  background: var(--surface-2);
+  max-height: 280px;
+  object-fit: contain;
+}
+.review-asset-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.review-complete-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 40px 20px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
 </style>
 </head>
 
 <body>
-<div id="app">
+
+<!-- Login Screen -->
+<div id="loginScreen">
+  <div class="login-container">
+    <svg class="login-logo" viewBox="0 0 346.09 159.16" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="login-logo-gradient" cx="45.76" cy="45.59" fx="45.76" fy="45.59" r="301.84" gradientUnits="userSpaceOnUse">
+          <stop offset=".34" stop-color="#d12026"/>
+          <stop offset="1" stop-color="#faae17"/>
+        </radialGradient>
+      </defs>
+      <path d="M330.51,34.67c-28.92-43.39-123.4-54.53-156.66,16.77-16.94,36.31-28.06,84.11-84,83.41-39.99-2.21-60.46-30.16-62.56-53.72-3.03-25.8,24.32-59.88,52.47-57.05,5.26.53,10.09,3.19,13.49,7.23,4.15,4.92,7.89,10.75,12.72,17.82,3.55,5.19,9.55,8.19,15.83,8.17,9.74.21,15.8.36,19.45-1.01,6.52,5.96,13.01,12.4,14.39,15.54.36-3.26-6.05-13.46-6.33-13.87.45.2,11.66,4.64,14.8,3.69-3.39-.8-11.12-6.17-18.27-11.58.45-2.92.27-6.93-.26-12.53-1.95-20.59-9.84-20.59-21.38-24.93-7.09-2.66-13.37-5.47-22.32-9.88C76.25-6.65,24.38,7.94,6.62,48.34.46,61.84-1.46,76.99,1.11,91.61c2.6,14.77,9.77,28.93,28.95,46.93,35.79,33.58,124.23,24.34,149.47-40.62,15.29-45.69,36.67-84.07,91.75-75.57,47.16,6.61,66.37,58.38,45.98,91.53-26.44,45.92-97.96,43.08-128.46-.9,20.35,63.5,97,47.61,117.55,33.15,28.71-20.21,58.88-59.35,24.15-111.45Z" fill="url(#login-logo-gradient)"/>
+      <path d="M262.55,32.59c-24.97,0-50.01,5.78-69.26,64.17,7.25,18.53,31.73,39.57,69.26,38.11,27.81,0,50.35-24.12,50.35-51.93s-22.54-50.35-50.35-50.35ZM256.86,98.96c-8.83,0-15.99-7.16-15.99-15.99s7.16-15.98,15.99-15.98,15.99,7.15,15.99,15.98-7.16,15.99-15.99,15.99Z"/>
+    </svg>
+    <div class="login-heading">DWYP Operations</div>
+    <div class="login-sub">Enter your PIN to continue</div>
+    <div class="pin-inputs" id="pinInputs">
+      <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" autocomplete="off">
+      <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" autocomplete="off">
+      <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" autocomplete="off">
+      <input class="pin-digit" type="password" inputmode="numeric" maxlength="1" autocomplete="off">
+    </div>
+    <p class="pin-error" id="pinError">Incorrect PIN</p>
+    <button class="btn-pin-submit" id="pinSubmitBtn" onclick="submitPin()">Continue</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
 
   <!-- Header -->
   <header class="app-header">
     <div class="header-left">
-      <button class="back-btn" id="backBtn" onclick="showEpisodeList()">
+      <button class="back-btn" id="backBtn" onclick="goBack()">
         <svg width="18" height="18" data-lucide="chevron-left"></svg>
       </button>
       <span class="header-title" id="headerTitle">Episodes</span>
     </div>
-    <!-- Ouroboros logo (clean vector, two paths + radial gradient) -->
+    <!-- Ouroboros logo — center column -->
     <svg class="header-logo" viewBox="0 0 346.09 159.16" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <radialGradient id="logo-radial-gradient" cx="45.76" cy="45.59" fx="45.76" fy="45.59" r="301.84" gradientUnits="userSpaceOnUse">
@@ -796,10 +1545,22 @@ svg { display: block; flex-shrink: 0; }
       <path d="M330.51,34.67c-28.92-43.39-123.4-54.53-156.66,16.77-16.94,36.31-28.06,84.11-84,83.41-39.99-2.21-60.46-30.16-62.56-53.72-3.03-25.8,24.32-59.88,52.47-57.05,5.26.53,10.09,3.19,13.49,7.23,4.15,4.92,7.89,10.75,12.72,17.82,3.55,5.19,9.55,8.19,15.83,8.17,9.74.21,15.8.36,19.45-1.01,6.52,5.96,13.01,12.4,14.39,15.54.36-3.26-6.05-13.46-6.33-13.87.45.2,11.66,4.64,14.8,3.69-3.39-.8-11.12-6.17-18.27-11.58.45-2.92.27-6.93-.26-12.53-1.95-20.59-9.84-20.59-21.38-24.93-7.09-2.66-13.37-5.47-22.32-9.88C76.25-6.65,24.38,7.94,6.62,48.34.46,61.84-1.46,76.99,1.11,91.61c2.6,14.77,9.77,28.93,28.95,46.93,35.79,33.58,124.23,24.34,149.47-40.62,15.29-45.69,36.67-84.07,91.75-75.57,47.16,6.61,66.37,58.38,45.98,91.53-26.44,45.92-97.96,43.08-128.46-.9,20.35,63.5,97,47.61,117.55,33.15,28.71-20.21,58.88-59.35,24.15-111.45Z" fill="url(#logo-radial-gradient)"/>
       <path d="M262.55,32.59c-24.97,0-50.01,5.78-69.26,64.17,7.25,18.53,31.73,39.57,69.26,38.11,27.81,0,50.35-24.12,50.35-51.93s-22.54-50.35-50.35-50.35ZM256.86,98.96c-8.83,0-15.99-7.16-15.99-15.99s7.16-15.98,15.99-15.98,15.99,7.15,15.99,15.98-7.16,15.99-15.99,15.99Z"/>
     </svg>
+    <!-- Avatar badge + sign-out dropdown — right column -->
+    <div class="header-right">
+      <button class="avatar-badge" id="avatarBadge" onclick="toggleAvatarMenu()">
+        <span id="avatarInitials"></span>
+      </button>
+      <div class="avatar-menu" id="avatarMenu">
+        <div class="avatar-menu-name" id="avatarMenuName"></div>
+        <button class="avatar-menu-item" id="fairyRemoteMenuItem" style="display:none" onclick="openFairyRemote()">Fairy Remote Control</button>
+        <button class="avatar-menu-item" id="iwTestMenuItem" style="display:none" onclick="closeAvatarMenu();showImageWorkshop(IW_TEST_UID)">Image Workshop (test)</button>
+        <button class="avatar-menu-signout" onclick="signOut()">Sign Out</button>
+      </div>
+    </div>
   </header>
 
   <!-- Episode List View -->
-  <main class="view active" id="episodeListView">
+  <main class="view" id="episodeListView">
     <div class="view-label">Active Episodes</div>
     <div id="episodeListContent">
       <div class="loading-state">
@@ -814,8 +1575,28 @@ svg { display: block; flex-shrink: 0; }
     <div id="episodeDetailContent"></div>
   </main>
 
+  <!-- Episode Review View (shell — content rendered by renderEpisodeReview) -->
+  <main class="view" id="episodeReviewView">
+    <div id="episodeReviewContent"></div>
+  </main>
+
+  <!-- Reels Review View (content rendered by renderReelsReview) -->
+  <main class="view" id="reelsReviewView">
+    <div id="reelsReviewContent"></div>
+  </main>
+
+  <!-- Images Review View (content rendered by renderImagesReview) -->
+  <main class="view" id="imagesReviewView">
+    <div id="imagesReviewContent"></div>
+  </main>
+
+  <!-- Fairy Remote Control View -->
+  <main class="view" id="fairyRemoteView">
+    <div id="fairyRemoteContent"></div>
+  </main>
+
   <!-- Tasks View -->
-  <main class="view" id="tasksView">
+  <main class="view active" id="tasksView">
     <div class="tasks-header">
       <button class="btn-new-task" onclick="openNewTaskModal()">
         <svg width="13" height="13" data-lucide="plus"></svg>
@@ -843,15 +1624,109 @@ svg { display: block; flex-shrink: 0; }
 
   <!-- Bottom nav -->
   <nav class="bottom-nav">
-    <button class="nav-tab active" id="navEpisodes" onclick="switchTab('episodes')">
+    <button class="nav-tab" id="navEpisodes" onclick="switchTab('episodes')">
       <svg width="20" height="20" data-lucide="headphones"></svg>
       Episodes
     </button>
-    <button class="nav-tab" id="navTasks" onclick="switchTab('tasks')">
+    <button class="nav-tab active" id="navTasks" onclick="switchTab('tasks')">
       <svg width="20" height="20" data-lucide="square-check-big"></svg>
       Tasks
     </button>
   </nav>
+
+</div>
+
+<!-- Image Workshop Overlay -->
+<div id="imageWorkshop" style="display:none">
+
+  <!-- Row 1: Header -->
+  <div class="iw-header">
+    <button class="iw-back-btn" onclick="closeImageWorkshop()">
+      <svg width="16" height="16" data-lucide="chevron-left"></svg>Back
+    </button>
+    <div class="iw-title" id="iwTitle">Image Workshop</div>
+  </div>
+
+  <!-- Row 2: Toolbar — Generate / Export / View | platform toggles -->
+  <div class="iw-toolbar">
+    <button class="iw-view-btn" onclick="console.log('Generate Images')">Generate Images</button>
+    <button class="iw-export-btn" id="iwExportBtn" onclick="iwExport()">Export Image</button>
+    <a class="iw-view-btn hidden" id="iwViewLink" href="#" target="_blank">View Images ↗</a>
+    <span class="iw-toolbar-sep"></span>
+    <div class="iw-ratio-group">
+      <button class="iw-ratio-btn active" data-ratio="instagram" onclick="iwSetAspectRatio('instagram')">Instagram</button>
+      <button class="iw-ratio-btn" data-ratio="feed"      onclick="iwSetAspectRatio('feed')">Feed</button>
+      <button class="iw-ratio-btn" data-ratio="square"    onclick="iwSetAspectRatio('square')">Square</button>
+    </div>
+  </div>
+
+  <!-- Row 3: Toolbar — Logo | colors | italic | center | undo/redo -->
+  <div class="iw-toolbar">
+    <button id="iwLogoBtn" class="iw-tool-btn" onclick="iwToggleLogo()" title="Toggle logo variant">Dark Logo</button>
+    <span class="iw-toolbar-sep"></span>
+    <div class="iw-color-dots">
+      <button class="iw-color-dot" data-color="#FEBE18" style="background:#FEBE18" onclick="iwApplyColor('#FEBE18')" title="Gold"></button>
+      <button class="iw-color-dot" data-color="#D12225" style="background:#D12225" onclick="iwApplyColor('#D12225')" title="Crimson"></button>
+      <button class="iw-color-dot" data-color="#0D0A0A" style="background:#0D0A0A" onclick="iwApplyColor('#0D0A0A')" title="Black"></button>
+      <button class="iw-color-dot" data-color="#FFFFFF" style="background:#FFFFFF" onclick="iwApplyColor('#FFFFFF')" title="White"></button>
+    </div>
+    <span class="iw-toolbar-sep"></span>
+    <button id="iwItalicBtn" class="iw-tool-btn" onclick="iwToggleItalic()" title="Toggle italic">I</button>
+    <button id="iwCenterBtn" class="iw-tool-btn" onclick="iwCenterObject()" title="Center horizontally" disabled>Center</button>
+    <span class="iw-toolbar-sep"></span>
+    <button class="iw-tool-btn" onclick="iwUndo()">Undo</button>
+    <button class="iw-tool-btn" onclick="iwRedo()">Redo</button>
+  </div>
+
+  <!-- Row 3: Three-panel layout -->
+  <div class="iw-main">
+
+    <!-- Left panel: Backgrounds -->
+    <div class="iw-panel iw-panel-left" id="iwBgPanel">
+      <div class="iw-panel-body">
+        <div class="iw-panel-header">Backgrounds</div>
+        <div class="iw-panel-scroll">
+          <div class="iw-bg-upload" onclick="iwTriggerUpload()">
+            <svg width="13" height="13" data-lucide="upload"></svg>Upload
+          </div>
+          <input type="file" id="iwFileInput" accept="image/*" style="display:none" onchange="iwHandleUpload(this)">
+          <div id="iwBgGrid"></div>
+        </div>
+      </div>
+      <button class="iw-collapse-tab" id="iwBgPanelTab" onclick="iwTogglePanelCollapse('left')" title="Collapse panel">
+        <svg width="10" height="10" data-lucide="chevron-left"></svg>
+      </button>
+    </div>
+
+    <!-- Center: Canvas -->
+    <div class="iw-canvas-area">
+      <div class="iw-canvas-wrap" id="iwCanvasWrap">
+        <canvas id="iwCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Right panel: Quotes & Hooks -->
+    <div class="iw-panel iw-panel-right" id="iwQhPanel">
+      <button class="iw-collapse-tab" id="iwQhPanelTab" onclick="iwTogglePanelCollapse('right')" title="Collapse panel">
+        <svg width="10" height="10" data-lucide="chevron-right"></svg>
+      </button>
+      <div class="iw-panel-body">
+        <div class="iw-panel-header">Quotes &amp; Hooks</div>
+        <div class="iw-panel-scroll">
+          <div id="iwAddTextBtn" class="iw-bg-upload" onclick="iwShowTextTypePicker()">
+            <svg width="13" height="13" data-lucide="type"></svg>Add Text
+          </div>
+          <div id="iwTextTypePicker" style="display:none">
+            <div class="iw-text-type-btn" onclick="iwAddText('headline')">Headline</div>
+            <div class="iw-text-type-btn" onclick="iwAddText('normal')">Normal</div>
+          </div>
+          <div id="iwQuotesList"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
 
 </div>
 
@@ -913,25 +1788,159 @@ svg { display: block; flex-shrink: 0; }
 // ── CONFIG ───────────────────────────────────────────────────
 var APP_CONFIG = {
   sheetId:       <?= JSON.stringify(sheetId) ?>,
-  userEmail:     <?= JSON.stringify(userEmail) ?>,
+  userEmail:     null,  // set in bootApp() after PIN login
   deployedUrl:   <?= JSON.stringify(deployedUrl) ?>,
   hostEmail:     <?= JSON.stringify(hostEmail) ?>,
+  ownerEmail:    <?= JSON.stringify(ownerEmail) ?>,
   gemsUrl:       <?= JSON.stringify(gemsUrl) ?>,
   notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>
 };
+
+// ── AUTH ─────────────────────────────────────────────────────
+var DWYP_ID_KEY = "dwyp_identity";
+
+function bootApp(identity) {
+  APP_CONFIG.userEmail = identity.userEmail;
+  var name = identity.displayName || identity.userEmail;
+  document.getElementById("avatarInitials").textContent = getInitials(name);
+  document.getElementById("avatarMenuName").textContent = name;
+  // Reset data containers to loading state
+  document.getElementById("episodeListContent").innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><span>Loading episodes&hellip;</span></div>';
+  document.getElementById("tasksListContent").innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><span>Loading tasks&hellip;</span></div>';
+  document.getElementById("episodeDetailContent").innerHTML = "";
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("app").style.display = "";
+  google.script.run
+    .withSuccessHandler(function(ownerEmail) {
+      APP_CONFIG.ownerEmail = ownerEmail || "";
+      document.getElementById("fairyRemoteMenuItem").style.display = isOwner() ? "" : "none";
+      document.getElementById("iwTestMenuItem").style.display     = isOwner() ? "" : "none";
+    })
+    .getOwnerEmail();
+  loadData();
+}
+
+function showLoginScreen() {
+  document.getElementById("app").style.display = "none";
+  document.getElementById("loginScreen").style.display = "";
+  document.querySelectorAll(".pin-digit").forEach(function(el) { el.value = ""; });
+  document.getElementById("pinError").classList.remove("visible");
+  setTimeout(function() {
+    var first = document.querySelector(".pin-digit");
+    if (first) first.focus();
+  }, 50);
+}
+
+function signOut() {
+  closeAvatarMenu();
+  localStorage.removeItem(DWYP_ID_KEY);
+  state.episodes    = [];
+  state.tasks       = [];
+  state.currentEpisode = null;
+  state.loaded      = false;
+  state.expanded    = {};
+  state.assetCounts = null;
+  state.backTarget  = null;
+  APP_CONFIG.userEmail = null;
+  showLoginScreen();
+}
+
+function getInitials(name) {
+  return String(name || "?").trim().split(/\s+/).map(function(w) { return w[0]; }).join("").toUpperCase().slice(0, 2);
+}
+
+function toggleAvatarMenu() {
+  var menu = document.getElementById("avatarMenu");
+  if (menu.classList.contains("open")) {
+    closeAvatarMenu();
+  } else {
+    menu.classList.add("open");
+    setTimeout(function() {
+      document.addEventListener("click", closeAvatarMenuOnOutsideClick);
+    }, 0);
+  }
+}
+
+function closeAvatarMenu() {
+  document.getElementById("avatarMenu").classList.remove("open");
+  document.removeEventListener("click", closeAvatarMenuOnOutsideClick);
+}
+
+function closeAvatarMenuOnOutsideClick(e) {
+  var badge = document.getElementById("avatarBadge");
+  var menu  = document.getElementById("avatarMenu");
+  if (!badge.contains(e.target) && !menu.contains(e.target)) {
+    closeAvatarMenu();
+  }
+}
+
+function submitPin() {
+  var digits = Array.from(document.querySelectorAll(".pin-digit"));
+  var pin    = digits.map(function(el) { return el.value; }).join("");
+  if (pin.length !== 4) return;
+
+  var btn = document.getElementById("pinSubmitBtn");
+  btn.disabled = true;
+  document.getElementById("pinError").classList.remove("visible");
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      if (result.success) {
+        var identity = { userEmail: result.userEmail, displayName: result.displayName, role: result.role };
+        localStorage.setItem(DWYP_ID_KEY, JSON.stringify(identity));
+        bootApp(identity);
+      } else {
+        document.getElementById("pinError").classList.add("visible");
+        digits.forEach(function(el) { el.value = ""; });
+        digits[0].focus();
+      }
+    })
+    .withFailureHandler(function() {
+      btn.disabled = false;
+      document.getElementById("pinError").classList.add("visible");
+      digits.forEach(function(el) { el.value = ""; });
+      digits[0].focus();
+    })
+    .validatePin(pin);
+}
+
+function initPinInputs() {
+  var inputs = Array.from(document.querySelectorAll(".pin-digit"));
+  inputs.forEach(function(input, i) {
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Backspace" && !input.value && i > 0) {
+        inputs[i - 1].focus();
+        inputs[i - 1].value = "";
+      }
+    });
+    input.addEventListener("input", function() {
+      input.value = input.value.replace(/\D/g, "").slice(-1);
+      if (input.value && i < inputs.length - 1) {
+        inputs[i + 1].focus();
+      }
+      var allFilled = inputs.every(function(inp) { return inp.value.length === 1; });
+      if (allFilled) submitPin();
+    });
+  });
+}
 
 // ── STATE ────────────────────────────────────────────────────
 var state = {
   episodes:       [],
   tasks:          [],
   currentEpisode: null,
-  currentTab:     "episodes",
+  currentTab:     "tasks",
   loaded:         false,
   filters: {
     assignee: "me",   // me | all | none
     status:   "active" // active | all
   },
-  expanded: {}        // taskId -> bool
+  expanded: {},       // taskId -> bool
+  assetCounts: null,  // { reels: N, images: N } — fetched on episode detail open
+  backTarget:  null   // 'episodeList' | 'episodeDetail'
 };
 
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
@@ -950,7 +1959,16 @@ var APPROVE_STEPS = REVIEW_STEPS_ALL;
 // ── INIT ─────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", function() {
   lucide.createIcons();
-  loadData();
+  initPinInputs();
+  try {
+    var raw      = localStorage.getItem(DWYP_ID_KEY);
+    var identity = raw ? JSON.parse(raw) : null;
+    if (identity && identity.userEmail) {
+      bootApp(identity);
+      return;
+    }
+  } catch (e) { /* bad storage value — fall through to login */ }
+  showLoginScreen();
 });
 
 function loadData() {
@@ -961,7 +1979,7 @@ function loadData() {
         .withSuccessHandler(function(tasks) {
           state.tasks  = tasks || [];
           state.loaded = true;
-          renderEpisodeList();
+          switchTab("tasks");
         })
         .withFailureHandler(handleLoadError)
         .getTasks();
@@ -981,6 +1999,10 @@ function isJT() {
   return APP_CONFIG.hostEmail &&
          APP_CONFIG.userEmail.toLowerCase() === APP_CONFIG.hostEmail.toLowerCase();
 }
+function isOwner() {
+  return APP_CONFIG.ownerEmail &&
+         APP_CONFIG.userEmail.toLowerCase() === APP_CONFIG.ownerEmail.toLowerCase();
+}
 
 function securityFilter(tasks) {
   if (!isJT()) return tasks;
@@ -996,6 +2018,8 @@ function applyFilters(tasks) {
   var filtered = securityFilter(tasks);
   var email    = APP_CONFIG.userEmail.toLowerCase();
 
+  console.log("[DEBUG applyFilters] email:[" + email + "] len:" + email.length + " | isJT:" + isJT() + " | codes:" + Array.from(email).map(function(c){return c.charCodeAt(0);}).join(","));
+  tasks.forEach(function(t, i) { var a = (t.Assignee || ""); console.log("  task[" + i + "] assignee:[" + a + "] len:" + a.length + " match:" + (a.toLowerCase() === email)); });
   if (state.filters.assignee === "me") {
     filtered = filtered.filter(function(t) {
       return (t.Assignee || "").toLowerCase() === email;
@@ -1027,13 +2051,22 @@ function setFilter(type, value) {
   renderTasksList();
 }
 
+// ── VIEW HELPERS ─────────────────────────────────────────────
+function hideAllViews() {
+  ["episodeListView","episodeDetailView","episodeReviewView",
+   "reelsReviewView","imagesReviewView","fairyRemoteView","tasksView"].forEach(function(id) {
+    document.getElementById(id).classList.remove("active");
+  });
+}
+
 // ── ROUTING / TAB SWITCHING ──────────────────────────────────
 function switchTab(tab) {
   state.currentTab     = tab;
   state.currentEpisode = null;
+  state.backTarget     = null;
 
+  hideAllViews();
   document.getElementById("episodeListView").classList.toggle("active", tab === "episodes");
-  document.getElementById("episodeDetailView").classList.remove("active");
   document.getElementById("tasksView").classList.toggle("active", tab === "tasks");
 
   document.getElementById("backBtn").classList.remove("visible");
@@ -1043,12 +2076,14 @@ function switchTab(tab) {
   document.getElementById("navTasks").classList.toggle("active", tab === "tasks");
 
   if (tab === "tasks") renderTasksList();
+  else if (tab === "episodes") renderEpisodeList();
 }
 
 function showEpisodeList() {
   state.currentEpisode = null;
+  state.backTarget     = null;
+  hideAllViews();
   document.getElementById("episodeListView").classList.add("active");
-  document.getElementById("episodeDetailView").classList.remove("active");
   document.getElementById("backBtn").classList.remove("visible");
   document.getElementById("headerTitle").textContent = "Episodes";
 }
@@ -1057,13 +2092,27 @@ function showEpisodeDetail(episodeUid) {
   var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
   if (!ep) return;
   state.currentEpisode = ep;
+  state.assetCounts    = null;
+  state.backTarget     = "episodeList";
 
-  document.getElementById("episodeListView").classList.remove("active");
+  hideAllViews();
   document.getElementById("episodeDetailView").classList.add("active");
   document.getElementById("backBtn").classList.add("visible");
   document.getElementById("headerTitle").textContent = "";
 
   renderEpisodeDetail(ep);
+
+  google.script.run
+    .withSuccessHandler(function(counts) {
+      state.assetCounts = counts || { reels: 0, images: 0 };
+      if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+        renderEpisodeDetail(state.currentEpisode);
+      }
+    })
+    .withFailureHandler(function() {
+      state.assetCounts = { reels: 0, images: 0 };
+    })
+    .getSocialAssetCandidateCounts(episodeUid);
 }
 
 // ── BADGE / PIPELINE LOGIC ───────────────────────────────────
@@ -1179,26 +2228,6 @@ function renderEpisodeDetail(ep) {
     state.tasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; })
   );
 
-  // Review section data
-  var reelTask  = epTasks.find(function(t) { return t.Workflow_Step === "Review_Reels"; });
-  var imageTask = epTasks.find(function(t) {
-    return t.Workflow_Step === "Review_Host_Graphics" ||
-           t.Workflow_Step === "Review_Guest_Graphics" ||
-           t.Workflow_Step === "Review_Thumbnails";
-  });
-  var audioTask = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
-
-  // First available Frame.io link for REVIEW ASSETS button
-  var frameioLink = null;
-  [reelTask, imageTask, audioTask].forEach(function(t) {
-    if (!frameioLink && t && t.Payload_Link) frameioLink = t.Payload_Link;
-  });
-
-  // Drive folder URL
-  var driveUrl = ep.Production_Folder_ID
-    ? "https://drive.google.com/drive/folders/" + ep.Production_Folder_ID
-    : "";
-
   // Episode status label (gold text)
   var statusDisplay = ep.Status ? ep.Status.replace(/_/g, " ") : "";
 
@@ -1227,31 +2256,8 @@ function renderEpisodeDetail(ep) {
   html += "  </div>";
   html += "</div>";
 
-  // Review section
-  html += '<div class="review-section">';
-  html += '  <div class="review-section-label">Frame.io Review</div>';
-  html += '  <div class="review-icons-row">';
-  html += reviewIconBtn("Reels",  "film",       reelTask);
-  html += reviewIconBtn("Images", "image",      imageTask);
-  html += reviewIconBtn("Episode", "headphones", audioTask);
-  html += "  </div>";
-  if (frameioLink) {
-    html += '  <button class="btn-review-assets" onclick="window.open(\'' + esc(frameioLink) + "','_blank')\">";
-    html += '    <svg width="14" height="14" data-lucide="play"></svg> Review Assets';
-    html += "  </button>";
-  } else {
-    html += '  <button class="btn-review-assets" disabled>';
-    html += '    <svg width="14" height="14" data-lucide="play"></svg> Review Assets';
-    html += "  </button>";
-  }
-  html += "</div>";
-
-  // Quick links
-  html += '<div class="quick-links">';
-  html += quickLink("folder-open", "Drive",       driveUrl);
-  html += quickLink("sparkles",    "Gems",        APP_CONFIG.gemsUrl);
-  html += quickLink("book-open",   "NotebookLM",  APP_CONFIG.notebooklmUrl);
-  html += "</div>";
+  // Assets + Tools card
+  html += renderEpisodeToolsCard(ep, epTasks);
 
   // Task list
   if (epTasks.length) {
@@ -1283,13 +2289,439 @@ function reviewIconBtn(label, icon, task) {
 }
 
 function quickLink(icon, label, url) {
-  var cls = url ? "quick-link" : "quick-link disabled";
-  var tag = url ? '<a class="' + cls + '" href="' + esc(url) + '" target="_blank">' : '<div class="' + cls + '">';
-  var end = url ? "</a>" : "</div>";
-  return tag +
+  if (url) {
+    var safeUrl = String(url).replace(/^["'\s]+|["'\s]+$/g, "");
+    return '<button class="quick-link" onclick="window.open(\'' + esc(safeUrl) + '\',\'_blank\')">' +
+      '<svg width="16" height="16" data-lucide="' + icon + '"></svg>' +
+      label +
+      '</button>';
+  }
+  return '<div class="quick-link disabled">' +
     '<svg width="16" height="16" data-lucide="' + icon + '"></svg>' +
     label +
-    end;
+    '</div>';
+}
+
+// ── EPISODE TOOLS CARD ───────────────────────────────────────
+function renderEpisodeToolsCard(ep, epTasks) {
+  var counts        = state.assetCounts;
+  var audioTask     = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
+  var reelsActive   = !!(counts && counts.reels  > 0);
+  var imagesActive  = !!(counts && counts.images > 0);
+  var episodeActive = !!audioTask;
+
+  var driveUrl = ep.Production_Folder_ID
+    ? "https://drive.google.com/drive/folders/" + ep.Production_Folder_ID
+    : "";
+  var gemsUrl = String(APP_CONFIG.gemsUrl        || "").replace(/^["'\s]+|["'\s]+$/g, "");
+  var nlmUrl  = String(APP_CONFIG.notebooklmUrl  || "").replace(/^["'\s]+|["'\s]+$/g, "");
+
+  function assetBtn(label, icon, active, onclickStr) {
+    var cls = "ep-tool-btn" + (active ? " has-dot" : " disabled");
+    var oc  = active ? ' onclick="' + onclickStr + '"' : "";
+    return '<button class="' + cls + '"' + oc + '>' +
+           '<svg width="15" height="15" data-lucide="' + icon + '"></svg>' +
+           label + '</button>';
+  }
+  function toolBtn(label, icon, url) {
+    var cls = "ep-tool-btn" + (url ? "" : " disabled");
+    var oc  = url ? ' onclick="window.open(\'' + esc(url) + '\',\'_blank\')"' : "";
+    return '<button class="' + cls + '"' + oc + '>' +
+           '<svg width="15" height="15" data-lucide="' + icon + '"></svg>' +
+           label + '</button>';
+  }
+
+  var uid = esc(ep.Episode_UID);
+  var workshopBtn = isJT()
+    ? '<button class="btn-image-workshop" onclick="showImageWorkshop(\'' + uid + '\')">' +
+      '<svg width="15" height="15" data-lucide="image"></svg>Image Workshop</button>'
+    : '';
+
+  return '<div class="ep-tools-card">' +
+    '<div>' +
+      '<div class="ep-tools-section-label">Assets</div>' +
+      '<div class="ep-tools-row">' +
+        assetBtn("Reels",   "film",       reelsActive,   "showReelsReview('"   + uid + "')") +
+        assetBtn("Images",  "image",      imagesActive,  "showImagesReview('"  + uid + "')") +
+        assetBtn("Episode", "headphones", episodeActive, "showEpisodeReview('" + uid + "')") +
+      '</div>' +
+    '</div>' +
+    '<div>' +
+      '<div class="ep-tools-section-label">Tools</div>' +
+      '<div class="ep-tools-row">' +
+        toolBtn("Drive",      "folder-open", driveUrl) +
+        toolBtn("Gems",       "sparkles",    gemsUrl)  +
+        toolBtn("NotebookLM", "book-open",   nlmUrl)   +
+      '</div>' +
+    '</div>' +
+    (workshopBtn ? '<div>' + workshopBtn + '</div>' : '') +
+  '</div>';
+}
+
+// ── REVIEW VIEW NAVIGATION ───────────────────────────────────
+function goBack() {
+  if (state.backTarget === "episodeDetail" && state.currentEpisode) {
+    showEpisodeDetail(state.currentEpisode.Episode_UID);
+  } else if (state.backTarget === "fairyRemote") {
+    document.getElementById("fairyRemoteView").classList.remove("active");
+    document.getElementById("backBtn").classList.remove("visible");
+    switchTab("tasks");
+  } else {
+    showEpisodeList();
+  }
+}
+
+function showEpisodeReview(episodeUid) {
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  if (!ep) return;
+  state.currentEpisode = ep;
+  state.backTarget     = "episodeDetail";
+  hideAllViews();
+  document.getElementById("episodeReviewView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = ep.Guest_Name || "Episode Review";
+  renderEpisodeReview(ep);
+}
+
+function showReelsReview(episodeUid) {
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  if (!ep) return;
+  state.currentEpisode = ep;
+  state.backTarget     = "episodeDetail";
+  hideAllViews();
+  document.getElementById("reelsReviewView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = ep.Guest_Name || "Reels Review";
+  renderReelsReview(ep);
+}
+
+function showImagesReview(episodeUid) {
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  if (!ep) return;
+  state.currentEpisode = ep;
+  state.backTarget     = "episodeDetail";
+  hideAllViews();
+  document.getElementById("imagesReviewView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = ep.Guest_Name || "Images Review";
+  renderImagesReview(ep);
+}
+
+function renderEpisodeReview(ep) {
+  var uid = esc(ep.Episode_UID);
+  var html = "";
+
+  html += '<div class="review-placeholder">';
+  html += '<div class="review-placeholder-title">' + esc(ep.Guest_Name || "Episode") + "</div>";
+  html += '<div class="review-placeholder-sub">';
+  html += "Video review is coming soon in the desktop version of the app.";
+  html += "<br><br>";
+  html += "If you’ve already watched the episode, you can approve or request revisions below.";
+  html += "</div>";
+  html += "</div>";
+
+  html += '<div class="task-card">';
+  html += '<div class="task-actions">';
+  html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
+  html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
+  html += '<button class="btn btn-complete" id="epReviewReviseBtn" onclick="toggleRevisionField()">';
+  html += '<svg width="12" height="12" data-lucide="message-square"></svg> Request Revisions</button>';
+  html += "</div>";
+  html += '<div class="revision-field" id="revisionField">';
+  html += '<textarea class="form-input form-textarea" id="revisionNotes" placeholder="Describe what needs to change…"></textarea>';
+  html += '<button class="btn-submit" id="revisionSubmitBtn" onclick="submitRevisionRequest(\'' + uid + '\')">Submit Revision Request</button>';
+  html += "</div>";
+  html += "</div>";
+
+  document.getElementById("episodeReviewContent").innerHTML = html;
+  lucide.createIcons();
+}
+
+function renderReelsReview(ep) {
+  document.getElementById("reelsReviewContent").innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><span>Loading reels…</span></div>';
+  google.script.run
+    .withSuccessHandler(function(assets) { renderReelSections(ep, assets || []); })
+    .withFailureHandler(function(err) {
+      document.getElementById("reelsReviewContent").innerHTML =
+        '<div class="empty-state"><p>Could not load reels.</p><small>' + ((err && err.message) || err) + "</small></div>";
+    })
+    .getSocialAssets(ep.Episode_UID, ["reel"]);
+}
+
+function renderReelSections(ep, assets) {
+  var container = document.getElementById("reelsReviewContent");
+  if (!assets.length) {
+    container.innerHTML = '<div class="review-complete-card"><svg width="20" height="20" data-lucide="party-popper"></svg>All reels reviewed!</div>';
+    lucide.createIcons();
+    return;
+  }
+  var uid  = esc(ep.Episode_UID);
+  var html = "";
+  assets.forEach(function(asset) {
+    var pid        = esc(asset.Post_ID);
+    var label      = esc(asset.Placeholder_Key || asset.Post_ID);
+    var previewUrl = "https://drive.google.com/file/d/" + esc(asset.Drive_File_ID) + "/preview";
+    html += '<div class="review-asset-section" id="reel-section-' + pid + '">';
+    html += '<div class="review-asset-label">' + label + "</div>";
+    html += '<iframe class="review-asset-iframe" src="' + previewUrl + '" allowfullscreen></iframe>';
+    html += '<div class="review-asset-actions">';
+    html += '<button class="btn btn-approve" onclick="decideReelAsset(\'' + pid + '\',' + asset._rowIndex + ',\'scheduled\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="check"></svg> Approve</button>';
+    html += '<button class="btn btn-complete" onclick="decideReelAsset(\'' + pid + '\',' + asset._rowIndex + ',\'bank\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="archive"></svg> Bank</button>';
+    html += '<button class="btn btn-delete" onclick="decideReelAsset(\'' + pid + '\',' + asset._rowIndex + ',\'rejected\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="x"></svg> Remove</button>';
+    html += "</div></div>";
+  });
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+function decideReelAsset(postId, rowIndex, status, episodeUid) {
+  var section = document.getElementById("reel-section-" + postId);
+  if (section) {
+    section.querySelectorAll("button").forEach(function(btn) { btn.disabled = true; });
+  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        if (section) section.remove();
+        var remaining = document.querySelectorAll('[id^="reel-section-"]');
+        if (!remaining.length) {
+          document.getElementById("reelsReviewContent").innerHTML =
+            '<div class="review-complete-card"><svg width="20" height="20" data-lucide="party-popper"></svg>All reels reviewed!</div>';
+          lucide.createIcons();
+        }
+      } else {
+        showToast("Error: " + result.error, true);
+        if (section) {
+          section.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      if (section) {
+        section.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+      }
+    })
+    .writeSocialAssetStatus(rowIndex, status);
+}
+var IMAGE_ASSET_TYPES = ["hook_graphic", "quote_graphic_host", "quote_graphic_guest", "thumbnail"];
+
+function renderImagesReview(ep) {
+  document.getElementById("imagesReviewContent").innerHTML =
+    '<div class="loading-state"><div class="spinner"></div><span>Loading images…</span></div>';
+  google.script.run
+    .withSuccessHandler(function(assets) { renderImageSections(ep, assets || []); })
+    .withFailureHandler(function(err) {
+      document.getElementById("imagesReviewContent").innerHTML =
+        '<div class="empty-state"><p>Could not load images.</p><small>' + ((err && err.message) || err) + "</small></div>";
+    })
+    .getSocialAssets(ep.Episode_UID, IMAGE_ASSET_TYPES);
+}
+
+function renderImageSections(ep, assets) {
+  var container = document.getElementById("imagesReviewContent");
+  if (!assets.length) {
+    container.innerHTML = '<div class="review-complete-card"><svg width="20" height="20" data-lucide="party-popper"></svg>All images reviewed!</div>';
+    lucide.createIcons();
+    return;
+  }
+  var uid  = esc(ep.Episode_UID);
+  var html = "";
+  assets.forEach(function(asset) {
+    var pid      = esc(asset.Post_ID);
+    var label    = esc(asset.Placeholder_Key || asset.Post_ID);
+    var imgUrl   = "https://drive.google.com/uc?export=view&id=" + esc(asset.Drive_File_ID);
+    html += '<div class="review-asset-section" id="img-section-' + pid + '">';
+    html += '<div class="review-asset-label">' + label + "</div>";
+    html += '<img class="review-asset-img" src="' + imgUrl + '" alt="' + label + '">';
+    html += '<div class="review-asset-actions">';
+    html += '<button class="btn btn-approve" onclick="decideImageAsset(\'' + pid + '\',' + asset._rowIndex + ',\'scheduled\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="check"></svg> Approve</button>';
+    html += '<button class="btn btn-complete" onclick="decideImageAsset(\'' + pid + '\',' + asset._rowIndex + ',\'bank\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="archive"></svg> Bank</button>';
+    html += '<button class="btn btn-delete" onclick="decideImageAsset(\'' + pid + '\',' + asset._rowIndex + ',\'rejected\',\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="x"></svg> Remove</button>';
+    html += "</div></div>";
+  });
+  container.innerHTML = html;
+  lucide.createIcons();
+}
+
+function decideImageAsset(postId, rowIndex, status, episodeUid) {
+  var section = document.getElementById("img-section-" + postId);
+  if (section) {
+    section.querySelectorAll("button").forEach(function(btn) { btn.disabled = true; });
+  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        if (section) section.remove();
+        var remaining = document.querySelectorAll('[id^="img-section-"]');
+        if (!remaining.length) {
+          document.getElementById("imagesReviewContent").innerHTML =
+            '<div class="review-complete-card"><svg width="20" height="20" data-lucide="party-popper"></svg>All images reviewed!</div>';
+          lucide.createIcons();
+        }
+      } else {
+        showToast("Error: " + result.error, true);
+        if (section) {
+          section.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      if (section) {
+        section.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+      }
+    })
+    .writeSocialAssetStatus(rowIndex, status);
+}
+
+// ── EPISODE REVIEW ACTIONS ───────────────────────────────────
+function approveEpisodeVideo(episodeUid) {
+  setButtonLoading("epReviewApproveBtn", true);
+  setButtonLoading("epReviewReviseBtn",  true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+        if (ep) ep.Video_Status = "approved";
+        if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+          state.currentEpisode.Video_Status = "approved";
+        }
+        showToast("Approved");
+        showEpisodeDetail(episodeUid);
+      } else {
+        showToast("Error: " + result.error, true);
+        setButtonLoading("epReviewApproveBtn", false);
+        setButtonLoading("epReviewReviseBtn",  false);
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("epReviewApproveBtn", false);
+      setButtonLoading("epReviewReviseBtn",  false);
+    })
+    .writeVideoStatus(episodeUid, "approved");
+}
+
+function toggleRevisionField() {
+  var field = document.getElementById("revisionField");
+  if (field) field.classList.toggle("visible");
+}
+
+function submitRevisionRequest(episodeUid) {
+  var notes = document.getElementById("revisionNotes");
+  var body  = notes ? notes.value.trim() : "";
+  if (!body) { showToast("Please describe the revision needed", true); return; }
+
+  var submitBtn = document.getElementById("revisionSubmitBtn");
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting…"; }
+  setButtonLoading("epReviewApproveBtn", true);
+  setButtonLoading("epReviewReviseBtn",  true);
+
+  function onError(err) {
+    showToast("Error: " + ((err && err.message) || err || "Unknown error"), true);
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit Revision Request"; }
+    setButtonLoading("epReviewApproveBtn", false);
+    setButtonLoading("epReviewReviseBtn",  false);
+  }
+
+  google.script.run
+    .withSuccessHandler(function(r1) {
+      if (!r1.success) { onError(r1.error); return; }
+      google.script.run
+        .withSuccessHandler(function(r2) {
+          if (r2.success) {
+            var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+            if (ep) ep.Video_Status = "revision_requested";
+            if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+              state.currentEpisode.Video_Status = "revision_requested";
+            }
+            showToast("Revision request submitted");
+            showEpisodeDetail(episodeUid);
+          } else {
+            onError(r2.error);
+          }
+        })
+        .withFailureHandler(onError)
+        .appendEpisodeLogEntry(episodeUid, "feedback", "video", body, "both", APP_CONFIG.userEmail);
+    })
+    .withFailureHandler(onError)
+    .writeVideoStatus(episodeUid, "revision_requested");
+}
+
+// ── FAIRY REMOTE CONTROL ─────────────────────────────────────
+function openFairyRemote() {
+  closeAvatarMenu();
+  state.backTarget = "fairyRemote";
+  hideAllViews();
+  document.getElementById("fairyRemoteView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = "Fairy Remote";
+  renderFairyRemote();
+}
+
+function renderFairyRemote() {
+  var html = "";
+
+  html += '<div class="task-card">';
+  html += '<div class="section-label" style="margin-bottom:12px">Run Marcom</div>';
+  html += '<div class="form-field" style="margin-bottom:12px">';
+  html += '<label class="form-label">Episode</label>';
+  html += '<select class="form-select" id="fairyEpisodePicker">';
+  html += '<option value="">Select episode…</option>';
+  state.episodes.forEach(function(ep) {
+    var sel = (state.currentEpisode && state.currentEpisode.Episode_UID === ep.Episode_UID) ? " selected" : "";
+    html += '<option value="' + esc(ep.Episode_UID) + '"' + sel + ">" +
+            esc(ep.Guest_Name + (ep.Episode_Sequence ? " (EP " + ep.Episode_Sequence + ")" : "")) +
+            "</option>";
+  });
+  html += "</select></div>";
+  html += '<button class="btn-submit" id="runMarcomBtn" onclick="runMarcomAction()">Run Marcom</button>';
+  html += "</div>";
+
+  html += '<div class="coming-soon-card">';
+  html += '<svg width="16" height="16" data-lucide="wand-sparkles"></svg>';
+  html += "More fairy controls coming soon.";
+  html += "</div>";
+
+  document.getElementById("fairyRemoteContent").innerHTML = html;
+  lucide.createIcons();
+}
+
+function runMarcomAction() {
+  var picker = document.getElementById("fairyEpisodePicker");
+  var uid    = picker ? picker.value : "";
+  if (!uid) { showToast("Select an episode first", true); return; }
+
+  var ep   = state.episodes.find(function(e) { return e.Episode_UID === uid; });
+  var name = ep ? ep.Guest_Name : uid;
+
+  if (!confirm("Run Marcom for " + name + "?")) return;
+
+  var btn = document.getElementById("runMarcomBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast("Marcom triggered for " + name);
+      } else {
+        showToast("Error: " + result.error, true);
+      }
+      if (btn) { btn.disabled = false; btn.textContent = "Run Marcom"; }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = "Run Marcom"; }
+    })
+    .runMarcomForEpisode(uid);
 }
 
 // ── RENDER: TASKS VIEW ───────────────────────────────────────
@@ -1379,15 +2811,15 @@ function renderTaskButtons(task) {
 
   // Review link button
   if (task.Payload_Link && REVIEW_STEPS_WITH_LINK.indexOf(ws) !== -1) {
-    html += '<a href="' + esc(task.Payload_Link) + '" target="_blank" class="btn btn-open-link">';
+    html += '<button class="btn btn-open-link" onclick="window.open(\'' + esc(task.Payload_Link) + '\',\'_blank\')">';
     html += '  <svg width="12" height="12" data-lucide="play"></svg> Review';
-    html += "</a>";
+    html += '</button>';
   }
   // Review_Guest_Brief: Payload_Link to Drive doc if present
   if (ws === "Review_Guest_Brief" && task.Payload_Link) {
-    html += '<a href="' + esc(task.Payload_Link) + '" target="_blank" class="btn btn-open-link">';
+    html += '<button class="btn btn-open-link" onclick="window.open(\'' + esc(task.Payload_Link) + '\',\'_blank\')">';
     html += '  <svg width="12" height="12" data-lucide="file-text"></svg> Open Brief';
-    html += "</a>";
+    html += '</button>';
   }
 
   // Approve button
@@ -1692,6 +3124,943 @@ function submitNewTask() {
       submitBtn.textContent = "Create Task";
     })
     .createTask(payload);
+}
+
+// ── IMAGE WORKSHOP ───────────────────────────────────────────
+
+var IW_TEST_UID = 'EP-260423-1454';
+
+var IW_RATIOS = {
+  instagram: { w: 1080, h: 1920 },
+  feed:      { w: 1080, h: 1350 },
+  square:    { w: 1080, h: 1080 }
+};
+
+// ── FABRIC GLOBAL HANDLE STYLE ───────────────────────────────
+fabric.Object.prototype.cornerSize          = 16;
+fabric.Object.prototype.cornerColor        = '#FAB016';
+fabric.Object.prototype.cornerStrokeColor  = '#D12225';
+fabric.Object.prototype.borderColor        = '#FAB016';
+fabric.Object.prototype.transparentCorners = false;
+
+var bgCache = {};  // persistent cache for background base64 data URLs
+
+var iw = {
+  fabricCanvas:  null,
+  episodeUid:    null,
+  guestName:     null,
+  ratio:         'instagram',
+  selectedBgId:  null,
+  manifest:      null,
+  history:       [],
+  redoStack:     [],
+  pinchLastDist: null,
+  keyHandler:    null,
+  resizeHandler: null,
+  wheelHandler:  null,
+  userZoom:      1,
+  logoVariant:   'dark',
+  activeColor:   '#FEBE18'
+};
+
+function showImageWorkshop(episodeUid) {
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  iw.episodeUid  = episodeUid;
+  iw.guestName   = ep ? (ep.Guest_Name || 'Episode') : 'Episode';
+  iw.ratio       = 'instagram';
+  iw.selectedBgId = null;
+  iw.history     = [];
+  iw.redoStack   = [];
+  iw.activeColor  = '#FEBE18';
+  iw.userZoom     = 1;
+  iw.logoVariant  = 'dark';
+
+  document.body.classList.add('workshop-open');
+  var el = document.getElementById('imageWorkshop');
+  el.style.display = 'flex';
+  lucide.createIcons({ nodes: [el] });
+
+  document.querySelectorAll('.iw-color-dot').forEach(function(d) {
+    d.classList.toggle('active', d.dataset.color === iw.activeColor);
+  });
+
+  document.getElementById('iwTitle').textContent = 'Image Workshop — ' + iw.guestName;
+  document.getElementById('iwAddTextBtn').style.display = 'flex';
+  document.getElementById('iwTextTypePicker').style.display = 'none';
+
+  document.querySelectorAll('.iw-ratio-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.ratio === iw.ratio);
+  });
+
+  // Fix 7 — collapse both panels on mobile; attach resize handler (Fix 2)
+  var isMobile = window.innerWidth <= 600;
+  ['iwBgPanel', 'iwQhPanel'].forEach(function(id) {
+    var panel = document.getElementById(id);
+    if (panel) panel.classList.toggle('collapsed', isMobile);
+  });
+  if (isMobile) {
+    var bgTab = document.getElementById('iwBgPanelTab');
+    var qhTab = document.getElementById('iwQhPanelTab');
+    if (bgTab) { var s = bgTab.querySelector('svg'); if (s) s.setAttribute('data-lucide','chevron-right'); }
+    if (qhTab) { var s = qhTab.querySelector('svg'); if (s) s.setAttribute('data-lucide','chevron-left'); }
+  }
+  iw.resizeHandler = function() { iwApplyDisplaySize(); };
+  window.addEventListener('resize', iw.resizeHandler);
+
+  // View Images link — drive folder for this episode
+  var folderId = ep && ep.Production_Folder_ID ? ep.Production_Folder_ID : null;
+  var viewLink = document.getElementById('iwViewLink');
+  if (folderId) {
+    viewLink.href = 'https://drive.google.com/drive/folders/' + folderId;
+    viewLink.classList.remove('hidden');
+  } else {
+    viewLink.classList.add('hidden');
+  }
+
+  iwInitCanvas();
+  iwLoadBackgrounds();
+  iwLoadManifest();
+}
+
+function closeImageWorkshop() {
+  if (iw.fabricCanvas) {
+    iw.fabricCanvas.dispose();
+    iw.fabricCanvas = null;
+  }
+  if (iw.keyHandler) {
+    document.removeEventListener('keydown', iw.keyHandler);
+    iw.keyHandler = null;
+  }
+  if (iw.resizeHandler) {
+    window.removeEventListener('resize', iw.resizeHandler);
+    iw.resizeHandler = null;
+  }
+  if (iw.wheelHandler) {
+    var _za = document.querySelector('.iw-canvas-area');
+    if (_za) _za.removeEventListener('wheel', iw.wheelHandler);
+    iw.wheelHandler = null;
+  }
+  document.body.classList.remove('workshop-open');
+  document.getElementById('imageWorkshop').style.display = 'none';
+  iw.episodeUid = null;
+  iw.manifest   = null;
+  iw.history    = [];
+  iw.redoStack  = [];
+}
+
+function iwInitCanvas() {
+  if (iw.fabricCanvas) {
+    iw.fabricCanvas.dispose();
+    iw.fabricCanvas = null;
+  }
+  if (iw.keyHandler) {
+    document.removeEventListener('keydown', iw.keyHandler);
+  }
+
+  var dims = IW_RATIOS[iw.ratio];
+
+  iw.fabricCanvas = new fabric.Canvas('iwCanvas', {
+    width:                  dims.w,
+    height:                 dims.h,
+    selection:              true,
+    preserveObjectStacking: true
+  });
+
+  // Pin wrap to logical dimensions so CSS transform scales from the correct base (Bug 1)
+  var _wrap = document.getElementById('iwCanvasWrap');
+  if (_wrap) {
+    _wrap.style.width     = dims.w + 'px';
+    _wrap.style.height    = dims.h + 'px';
+    _wrap.style.transform = '';
+  }
+
+  // Mousewheel zoom intentionally removed (Fix 2 — no zoom)
+
+  // Pinch zoom (touch only, no mousewheel)
+  iw.fabricCanvas.on('touch:gesture', function(opt) {
+    if (!opt.e.touches || opt.e.touches.length < 2) return;
+    var t1 = opt.e.touches[0], t2 = opt.e.touches[1];
+    var dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    if (iw.pinchLastDist !== null) {
+      var zoom = iw.fabricCanvas.getZoom() * (dist / iw.pinchLastDist);
+      zoom = Math.min(Math.max(zoom, 0.4), 4);
+      var rect = document.getElementById('iwCanvas').getBoundingClientRect();
+      iw.fabricCanvas.zoomToPoint({
+        x: (t1.clientX + t2.clientX) / 2 - rect.left,
+        y: (t1.clientY + t2.clientY) / 2 - rect.top
+      }, zoom);
+    }
+    iw.pinchLastDist = dist;
+  });
+  iw.fabricCanvas.on('touch:end', function() { iw.pinchLastDist = null; });
+
+  // Fix 1 — Push history once at start of drag (before first modification)
+  var _dragHistoryPushed = false;
+  iw.fabricCanvas.on('mouse:down', function(opt) {
+    if (opt.target) _dragHistoryPushed = false;
+  });
+  iw.fabricCanvas.on('mouse:up', function() {
+    _dragHistoryPushed = false;
+  });
+
+  // Fix 1+3 — object:moving: push history once, then clamp background
+  iw.fabricCanvas.on('object:moving', function(e) {
+    if (!_dragHistoryPushed) {
+      iwPushHistory();
+      _dragHistoryPushed = true;
+    }
+    if (e.target && e.target._isBackground) {
+      iwClampBackground(e.target);
+    }
+  });
+
+  // Fix 1+3 — object:scaling: push history once, enforce bg minimum scale
+  iw.fabricCanvas.on('object:scaling', function(e) {
+    if (!_dragHistoryPushed) {
+      iwPushHistory();
+      _dragHistoryPushed = true;
+    }
+    if (e.target && e.target._isBackground) {
+      var obj = e.target;
+      var cw  = iw.fabricCanvas.getWidth();
+      var ch  = iw.fabricCanvas.getHeight();
+      var minScale = Math.max(cw / obj.width, ch / obj.height);
+      if (obj.scaleX < minScale) {
+        obj.scaleX = minScale;
+        obj.scaleY = minScale;
+      }
+    }
+  });
+
+  // Double-click background → refit to canvas (cover scale, centered)
+  iw.fabricCanvas.on('mouse:dblclick', function(opt) {
+    if (!opt.target || !opt.target._isBackground) return;
+    var obj   = opt.target;
+    var cw    = iw.fabricCanvas.getWidth();
+    var ch    = iw.fabricCanvas.getHeight();
+    var scale = Math.max(cw / obj.width, ch / obj.height);
+    iwPushHistory();
+    obj.set({ scaleX: scale, scaleY: scale, left: cw / 2, top: ch / 2, originX: 'center', originY: 'center' });
+    obj.setCoords();
+    iw.fabricCanvas.renderAll();
+  });
+
+  // Keyboard delete
+  iw.keyHandler = function(e) {
+    if (!iw.fabricCanvas) return;
+    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    var active = iw.fabricCanvas.getActiveObject();
+    if (!active || active.isEditing) return;
+    if (active._isBackground) return;  // don't delete background via keyboard
+    iwPushHistory();
+    iw.fabricCanvas.remove(active);
+    iw.fabricCanvas.discardActiveObject();
+    iw.fabricCanvas.renderAll();
+  };
+  document.addEventListener('keydown', iw.keyHandler);
+
+  iw.fabricCanvas.on('selection:created',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
+  iw.fabricCanvas.on('selection:updated',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
+  iw.fabricCanvas.on('selection:cleared',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
+
+  // Fix 2 — apply display sizing after layout is available
+  requestAnimationFrame(iwApplyDisplaySize);
+
+  // Scroll-to-zoom on canvas area only; panel siblings absorb their own wheel events
+  var _zoomArea = document.querySelector('.iw-canvas-area');
+  if (_zoomArea) {
+    if (iw.wheelHandler) _zoomArea.removeEventListener('wheel', iw.wheelHandler);
+    iw.wheelHandler = function(e) {
+      e.preventDefault();
+      var step = 0.05;
+      iw.userZoom = Math.min(3, Math.max(0.5, iw.userZoom - (e.deltaY > 0 ? step : -step)));
+      iwApplyDisplaySize();
+    };
+    _zoomArea.addEventListener('wheel', iw.wheelHandler, { passive: false });
+  }
+}
+
+function iwPushHistory() {
+  if (!iw.fabricCanvas) return;
+  iw.history.push(iw.fabricCanvas.toJSON(['_isBackground', '_isText', '_textType', '_isLogo']));
+  if (iw.history.length > 30) iw.history.shift();
+  iw.redoStack = [];
+}
+
+// Compute CSS transform scale to fill iw-canvas-area; height-constrained (Bug 1)
+function iwCalcDisplayScale() {
+  var ratio  = IW_RATIOS[iw.ratio];
+  var area   = document.querySelector('.iw-canvas-area');
+  if (!area) return 1;
+  var areaH  = area.clientHeight;
+  var areaW  = area.clientWidth;
+  if (!areaH || !areaW) return 1;
+  var pad    = 16;
+  var scaleH = (areaH - pad * 2) / ratio.h;
+  var scaleW = (areaW - pad * 2) / ratio.w;
+  return Math.min(scaleH, scaleW);
+}
+
+// Apply CSS transform scale to iw-canvas-wrap; Fabric 5 uses getBoundingClientRect for pointer mapping so coordinate correction is automatic (Bug 1)
+function iwApplyDisplaySize() {
+  if (!iw.fabricCanvas) return;
+  var scale = iwCalcDisplayScale();
+  var wrap  = document.getElementById('iwCanvasWrap');
+  if (wrap) {
+    wrap.style.transformOrigin = 'center center';
+    wrap.style.transform       = 'scale(' + (scale * iw.userZoom) + ')';
+  }
+}
+
+// Fix 3 — clamp background so its edges never reveal the canvas boundary
+function iwClampBackground(img) {
+  if (!iw.fabricCanvas) return;
+  var cw    = iw.fabricCanvas.getWidth();
+  var ch    = iw.fabricCanvas.getHeight();
+  var halfW = (img.width  * img.scaleX) / 2;
+  var halfH = (img.height * img.scaleY) / 2;
+  img.left  = Math.max(cw - halfW, Math.min(halfW, img.left));
+  img.top   = Math.max(ch - halfH, Math.min(halfH, img.top));
+  img.setCoords();
+}
+
+function iwUndo() {
+  if (!iw.fabricCanvas || !iw.history.length) return;
+  iw.redoStack.push(iw.fabricCanvas.toJSON(['_isBackground', '_isText', '_textType', '_isLogo']));
+  var prev = iw.history.pop();
+  iw.fabricCanvas.loadFromJSON(prev, function() {
+    iw.fabricCanvas.renderAll();
+  });
+}
+
+function iwRedo() {
+  if (!iw.fabricCanvas || !iw.redoStack.length) return;
+  iw.history.push(iw.fabricCanvas.toJSON(['_isBackground', '_isText', '_textType', '_isLogo']));
+  var next = iw.redoStack.pop();
+  iw.fabricCanvas.loadFromJSON(next, function() {
+    iw.fabricCanvas.renderAll();
+  });
+}
+
+function iwSetAspectRatio(ratio) {
+  if (iw.ratio === ratio) return;
+  var json = iw.fabricCanvas
+    ? iw.fabricCanvas.toJSON(['_isBackground', '_isText', '_textType', '_isLogo'])
+    : null;
+  iw.ratio = ratio;
+  document.querySelectorAll('.iw-ratio-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.dataset.ratio === ratio);
+  });
+  iwInitCanvas();
+  if (json && json.objects && json.objects.length) {
+    iw.fabricCanvas.loadFromJSON(json, function() {
+      iw.fabricCanvas.renderAll();
+    });
+  }
+  // Fix 6 — auto-scroll background panel to matching section
+  var sectionEl = document.getElementById('iwBgSection-' + ratio);
+  if (sectionEl) {
+    var bgPanel = document.getElementById('iwBgPanel');
+    var scroll  = bgPanel ? bgPanel.querySelector('.iw-panel-scroll') : null;
+    if (scroll) scroll.scrollTop = sectionEl.offsetTop - scroll.offsetTop;
+  }
+}
+
+// ── BACKGROUNDS ──────────────────────────────────────────────
+function iwLoadBackgrounds() {
+  document.getElementById('iwBgGrid').innerHTML =
+    '<div class="iw-empty-msg">Loading…</div>';
+  google.script.run
+    .withSuccessHandler(iwRenderBgGrid)
+    .withFailureHandler(function() {
+      document.getElementById('iwBgGrid').innerHTML =
+        '<div class="iw-empty-msg">Could not load backgrounds.</div>';
+    })
+    .getBackgroundLibrary();
+}
+
+// Fix 6 — classify background image aspect ratio from pixel dimensions
+function detectBgRatio(w, h) {
+  if (!w || !h) return 'other';
+  var r = w / h;
+  if (r > 1.15)  return 'other';      // landscape
+  if (r >= 0.85) return 'square';     // ~1:1
+  if (r >= 0.67) return 'feed';       // ~4:5
+  return 'instagram';                 // ~9:16
+}
+
+function iwRenderBgGrid(items) {
+  var container = document.getElementById('iwBgGrid');
+  if (!items || !items.length) {
+    container.innerHTML = '<div class="iw-empty-msg">No backgrounds yet. Upload one above.</div>';
+    return;
+  }
+
+  // Track item metadata (ratio + cached dataUrl) for grouped re-render
+  var classified = items.map(function(item) {
+    return { item: item, ratio: null, dataUrl: bgCache[item.fileId] || null, naturalW: null, naturalH: null };
+  });
+
+  var SECTION_LABELS   = { instagram: 'Instagram', feed: 'Feed', square: 'Square', other: 'Other' };
+  var SECTION_ORDER    = ['instagram', 'feed', 'square', 'other'];
+  var CANONICAL_RATIOS = { instagram: '9/16', feed: '4/5', square: '1/1', other: '16/9' };
+
+  function renderGrouped() {
+    var groups = { instagram: [], feed: [], square: [], other: [] };
+    classified.forEach(function(c) {
+      groups[c.ratio || 'other'].push(c);
+    });
+    var html = '';
+    SECTION_ORDER.forEach(function(key) {
+      if (!groups[key].length) return;
+      html += '<div class="iw-bg-section-header" id="iwBgSection-' + key + '">' + SECTION_LABELS[key] + '</div>';
+      html += '<div class="iw-bg-grid">';
+      groups[key].forEach(function(c) {
+        var item    = c.item;
+        var selCls  = iw.selectedBgId === item.fileId ? ' selected' : '';
+        var arStr   = (c.naturalW && c.naturalH) ? (c.naturalW + '/' + c.naturalH) : CANONICAL_RATIOS[key];
+        var imgHtml = c.dataUrl
+          ? '<img src="' + c.dataUrl + '" alt="' + item.name + '">'
+          : '<div style="width:100%;height:100%;background:var(--surface-2)"></div>';
+        html += '<div class="iw-bg-thumb' + selCls + '" data-file-id="' + item.fileId + '" style="aspect-ratio:' + arStr + '">' +
+          imgHtml +
+          (item.isAiGenerated ? '<span class="iw-ai-badge">AI</span>' : '') +
+          '<button class="iw-bg-delete" title="Delete">&#215;</button>' +
+          '</div>';
+      });
+      html += '</div>';
+    });
+    container.innerHTML = html;
+    // Re-attach event listeners after each re-render
+    container.querySelectorAll('.iw-bg-thumb').forEach(function(div) {
+      var fileId = div.dataset.fileId;
+      div.querySelector('.iw-bg-delete').addEventListener('click', function(e) {
+        e.stopPropagation();
+        iwDeleteBg(fileId);
+      });
+      div.addEventListener('click', function() { iwSelectBg(fileId, div); });
+    });
+  }
+
+  renderGrouped();
+
+  // Load images sequentially; cache + classify as each arrives
+  (function fetchNext(i) {
+    if (i >= items.length) return;
+    var item = items[i];
+    if (bgCache[item.fileId]) {
+      // Already cached — classify from cached image if needed
+      if (!classified[i].ratio) {
+        var tmpImg = new Image();
+        tmpImg.onload = function() {
+          classified[i].naturalW = tmpImg.naturalWidth;
+          classified[i].naturalH = tmpImg.naturalHeight;
+          classified[i].ratio = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
+          renderGrouped();
+          fetchNext(i + 1);
+        };
+        tmpImg.src = bgCache[item.fileId];
+      } else {
+        renderGrouped();
+        fetchNext(i + 1);
+      }
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          bgCache[item.fileId]    = result.dataUrl;
+          classified[i].dataUrl   = result.dataUrl;
+          var tmpImg = new Image();
+          tmpImg.onload = function() {
+            classified[i].naturalW = tmpImg.naturalWidth;
+            classified[i].naturalH = tmpImg.naturalHeight;
+            classified[i].ratio = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
+            renderGrouped();
+            fetchNext(i + 1);
+          };
+          tmpImg.src = result.dataUrl;
+        } else {
+          fetchNext(i + 1);
+        }
+      })
+      .withFailureHandler(function() { fetchNext(i + 1); })
+      .getBackgroundImageData(item.fileId);
+  })(0);
+}
+
+function iwSelectBg(fileId, thumbEl) {
+  iw.selectedBgId = fileId;
+  document.querySelectorAll('.iw-bg-thumb').forEach(function(t) {
+    t.classList.remove('selected');
+  });
+  if (thumbEl) thumbEl.classList.add('selected');
+  // Fix 1 — background swap does NOT push to undo history
+  // Fix 4 — use cached dataUrl if available; zero additional GAS call
+  if (bgCache[fileId]) {
+    iwPlaceBackground(bgCache[fileId]);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        bgCache[fileId] = result.dataUrl;
+        iwPlaceBackground(result.dataUrl);
+      } else {
+        showToast('Could not load image: ' + (result.error || ''), true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Could not load image', true); })
+    .getBackgroundImageData(fileId);
+}
+
+function iwPlaceBackground(imgUrl) {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  fabric.Image.fromURL(imgUrl, function(img) {
+    var cw    = canvas.getWidth();
+    var ch    = canvas.getHeight();
+    var scale = Math.max(cw / img.width, ch / img.height);  // Fix 3: minimum scale covers canvas
+    img.set({
+      scaleX:         scale,
+      scaleY:         scale,
+      left:           cw / 2,
+      top:            ch / 2,
+      originX:        'center',
+      originY:        'center',
+      selectable:     true,
+      evented:        true,
+      lockUniScaling: true,  // Fix 5
+      _isBackground:  true
+    });
+    iwClampBackground(img);  // Fix 3: enforce clamp on initial placement
+    img.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
+    canvas.getObjects().filter(function(o) { return o._isBackground; })
+      .forEach(function(o) { canvas.remove(o); });
+    canvas.add(img);
+    canvas.sendToBack(img);
+    canvas.renderAll();
+  }, { crossOrigin: 'anonymous' });
+}
+
+function iwDeleteBg(fileId) {
+  if (!confirm('Delete this background from the library?')) return;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        delete bgCache[fileId];
+        if (iw.selectedBgId === fileId) {
+          iw.selectedBgId = null;
+          if (iw.fabricCanvas) {
+            iw.fabricCanvas.getObjects()
+              .filter(function(o) { return o._isBackground; })
+              .forEach(function(o) { iw.fabricCanvas.remove(o); });
+            iw.fabricCanvas.renderAll();
+          }
+        }
+        iwLoadBackgrounds();
+      } else {
+        showToast('Delete failed: ' + (result.error || ''), true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Delete failed', true); })
+    .deleteBackgroundFromLibrary(fileId);
+}
+
+function iwTriggerUpload() {
+  document.getElementById('iwFileInput').click();
+}
+
+function iwHandleUpload(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.fileId) {
+          showToast('Background uploaded');
+          iwLoadBackgrounds();
+        } else {
+          showToast('Upload failed: ' + (result.error || ''), true);
+        }
+      })
+      .withFailureHandler(function() { showToast('Upload failed', true); })
+      .uploadBackgroundToLibrary(e.target.result, file.name);
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+// ── QUOTES & HOOKS ───────────────────────────────────────────
+function iwLoadManifest() {
+  document.getElementById('iwQuotesList').innerHTML =
+    '<div class="iw-empty-msg">Loading…</div>';
+  google.script.run
+    .withSuccessHandler(function(manifest) {
+      iw.manifest = manifest;
+      iwRenderQhPanel(manifest);
+      // If Production_Folder_ID was absent, fall back to manifest.staging_folder_id
+      if (manifest && manifest.staging_folder_id) {
+        var viewLink = document.getElementById('iwViewLink');
+        if (viewLink.classList.contains('hidden')) {
+          viewLink.href = 'https://drive.google.com/drive/folders/' + manifest.staging_folder_id;
+          viewLink.classList.remove('hidden');
+        }
+      }
+    })
+    .withFailureHandler(function() {
+      document.getElementById('iwQuotesList').innerHTML =
+        '<div class="iw-empty-msg">Could not load quotes.</div>';
+    })
+    .getEpisodeManifest(iw.episodeUid);
+}
+
+function iwRenderQhPanel(manifest) {
+  var quotes  = (manifest && Array.isArray(manifest.raw_quotes)) ? manifest.raw_quotes : [];
+  var hooks   = (manifest && Array.isArray(manifest.raw_hooks))  ? manifest.raw_hooks  : [];
+  var html    = '';
+
+  if (!quotes.length && !hooks.length) {
+    document.getElementById('iwQuotesList').innerHTML =
+      '<div class="iw-empty-msg">No quotes yet. Complete the Show Notes Writer step and run housekeeping.</div>';
+    return;
+  }
+
+  if (quotes.length) {
+    html += '<div class="iw-qh-section-label">Quotes</div>';
+    quotes.forEach(function(q, i) {
+      var text, speaker;
+      if (typeof q === 'object') {
+        text    = q.text    || '';
+        speaker = q.speaker || iw.guestName || '';
+      } else {
+        var rawStr  = String(q);
+        var dashIdx = rawStr.search(/\s[—–]\s/);
+        if (dashIdx !== -1) {
+          text    = rawStr.slice(0, dashIdx).replace(/^[“”"]+|[“”"]+$/g, '').trim();
+          speaker = rawStr.slice(dashIdx).replace(/^\s*[—–]\s*/, '').trim();
+        } else {
+          text    = rawStr.trim();
+          speaker = iw.guestName || '';
+        }
+      }
+      html += '<div class="iw-qh-item" onclick="iwPlaceQuote(' +
+        JSON.stringify(text).replace(/"/g,'&quot;') + ',' + JSON.stringify(speaker).replace(/"/g,'&quot;') + ',this)">' +
+        '<div class="iw-qh-quote">' + esc(text) + '</div>' +
+        (speaker ? '<div class="iw-qh-speaker">— ' + esc(speaker) + '</div>' : '') +
+        '</div>';
+    });
+  }
+
+  if (hooks.length) {
+    html += '<div class="iw-qh-section-label" style="margin-top:10px">Hooks</div>';
+    hooks.forEach(function(h) {
+      var text = typeof h === 'object' ? (h.text || '') : String(h);
+      html += '<div class="iw-qh-item" onclick="iwPlaceHook(' +
+        JSON.stringify(text).replace(/"/g,'&quot;') + ',this)">' +
+        '<div class="iw-qh-hook">' + esc(text) + '</div>' +
+        '</div>';
+    });
+  }
+
+  document.getElementById('iwQuotesList').innerHTML = html;
+}
+
+function iwPlaceQuote(quoteText, speakerName, itemEl) {
+  document.querySelectorAll('.iw-qh-item').forEach(function(el) { el.classList.remove('selected'); });
+  if (itemEl) itemEl.classList.add('selected');
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  iwPushHistory();
+  canvas.getObjects().filter(function(o) { return o._isText; })
+    .forEach(function(o) { canvas.remove(o); });
+  var cw = canvas.getWidth(), ch = canvas.getHeight();
+
+  var quoteObj = new fabric.Textbox(quoteText, {
+    left:           cw / 2,
+    top:            ch / 2 - 80,
+    width:          cw * 0.82,
+    originX:        'center',
+    originY:        'bottom',
+    fontFamily:     'Libre Baskerville',
+    fontStyle:      'italic',
+    fontSize:       80,
+    fill:           iw.activeColor || '#FEBE18',
+    textAlign:      'center',
+    lockUniScaling: true,  // Fix 5
+    _isText:        true,
+    _textType:      'quote'
+  });
+
+  var attrObj = new fabric.Textbox('— ' + speakerName, {
+    left:           cw / 2,
+    top:            ch / 2 + 40,
+    width:          cw * 0.82,
+    originX:        'center',
+    originY:        'top',
+    fontFamily:     'Nunito',
+    fontSize:       65,
+    fill:           '#FAB016',
+    textAlign:      'center',
+    lockUniScaling: true,  // Fix 5
+    _isText:        true,
+    _textType:      'attribution'
+  });
+
+  quoteObj.setControlsVisibility({ mt: false, mb: false });
+  attrObj.setControlsVisibility({ mt: false, mb: false });
+  canvas.add(quoteObj);
+  canvas.add(attrObj);
+  canvas.renderAll();
+}
+
+function iwPlaceHook(hookText, itemEl) {
+  document.querySelectorAll('.iw-qh-item').forEach(function(el) { el.classList.remove('selected'); });
+  if (itemEl) itemEl.classList.add('selected');
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  iwPushHistory();
+  canvas.getObjects().filter(function(o) { return o._isText; })
+    .forEach(function(o) { canvas.remove(o); });
+  var cw = canvas.getWidth(), ch = canvas.getHeight();
+
+  var hookObj = new fabric.Textbox(hookText, {
+    left:           cw / 2,
+    top:            ch / 2,
+    width:          cw * 0.82,
+    originX:        'center',
+    originY:        'center',
+    fontFamily:     'Libre Baskerville',
+    fontSize:       90,
+    fill:           iw.activeColor || '#FEBE18',
+    textAlign:      'center',
+    lockUniScaling: true,  // Fix 5
+    _isText:        true,
+    _textType:      'hook'
+  });
+  hookObj.setControlsVisibility({ mt: false, mb: false });
+  canvas.add(hookObj);
+  canvas.renderAll();
+}
+
+// ── ADD TEXT ─────────────────────────────────────────────────
+function iwShowTextTypePicker() {
+  document.getElementById('iwAddTextBtn').style.display = 'none';
+  document.getElementById('iwTextTypePicker').style.display = 'block';
+}
+
+function iwAddText(type) {
+  document.getElementById('iwTextTypePicker').style.display = 'none';
+  document.getElementById('iwAddTextBtn').style.display = 'flex';
+
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+
+  var cw = canvas.getWidth();
+  var ch = canvas.getHeight();
+
+  var fontFamily, fontSize, fontWeight;
+  if (type === 'headline') {
+    fontFamily = 'Libre Baskerville';
+    fontSize   = 160;
+    fontWeight = 'bold';
+  } else {
+    fontFamily = 'Nunito';
+    fontSize   = 100;
+    fontWeight = 'normal';
+  }
+
+  iwPushHistory();
+
+  var textObj = new fabric.Textbox('Text', {
+    left:           cw / 2,
+    top:            ch / 2,
+    width:          cw * 0.6,
+    originX:        'center',
+    originY:        'center',
+    fontFamily:     fontFamily,
+    fontSize:       fontSize,
+    fontWeight:     fontWeight,
+    fill:           iw.activeColor || '#FEBE18',
+    textAlign:      'center',
+    lockUniScaling: true
+  });
+
+  textObj.setControlsVisibility({ mt: false, mb: false });
+  canvas.add(textObj);
+  canvas.setActiveObject(textObj);
+  textObj.enterEditing();
+  textObj.selectAll();
+  canvas.renderAll();
+}
+
+// ── LOGO ─────────────────────────────────────────────────────
+var _IW_P1 = 'M330.51,34.67c-28.92-43.39-123.4-54.53-156.66,16.77-16.94,36.31-28.06,84.11-84,83.41-39.99-2.21-60.46-30.16-62.56-53.72-3.03-25.8,24.32-59.88,52.47-57.05,5.26.53,10.09,3.19,13.49,7.23,4.15,4.92,7.89,10.75,12.72,17.82,3.55,5.19,9.55,8.19,15.83,8.17,9.74.21,15.8.36,19.45-1.01,6.52,5.96,13.01,12.4,14.39,15.54.36-3.26-6.05-13.46-6.33-13.87.45.2,11.66,4.64,14.8,3.69-3.39-.8-11.12-6.17-18.27-11.58.45-2.92.27-6.93-.26-12.53-1.95-20.59-9.84-20.59-21.38-24.93-7.09-2.66-13.37-5.47-22.32-9.88C76.25-6.65,24.38,7.94,6.62,48.34.46,61.84-1.46,76.99,1.11,91.61c2.6,14.77,9.77,28.93,28.95,46.93,35.79,33.58,124.23,24.34,149.47-40.62,15.29-45.69,36.67-84.07,91.75-75.57,47.16,6.61,66.37,58.38,45.98,91.53-26.44,45.92-97.96,43.08-128.46-.9,20.35,63.5,97,47.61,117.55,33.15,28.71-20.21,58.88-59.35,24.15-111.45Z';
+var _IW_P2 = 'M262.55,32.59c-24.97,0-50.01,5.78-69.26,64.17,7.25,18.53,31.73,39.57,69.26,38.11,27.81,0,50.35-24.12,50.35-51.93s-22.54-50.35-50.35-50.35ZM256.86,98.96c-8.83,0-15.99-7.16-15.99-15.99s7.16-15.98,15.99-15.98,15.99,7.15,15.99,15.98-7.16,15.99-15.99,15.99Z';
+
+function iwPlaceLogo(variant) {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  iwPushHistory();
+  // Fix 8a — correct SVG: radial gradient body, variant-only eye fill
+  var gradId  = 'rg-logo-' + variant;
+  var eyeFill = variant === 'dark' ? '#FFFFFF' : '#0D0A0A';
+  var svgStr  = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 346.09 159.16">' +
+    '<defs><radialGradient id="' + gradId + '" cx="45.76" cy="45.59" r="301.84" gradientUnits="userSpaceOnUse">' +
+    '<stop offset=".34" stop-color="#d12026"/><stop offset="1" stop-color="#faae17"/>' +
+    '</radialGradient></defs>' +
+    '<path fill="url(#' + gradId + ')" d="' + _IW_P1 + '"/>' +
+    '<path fill="' + eyeFill + '" d="' + _IW_P2 + '"/>' +
+    '</svg>';
+
+  fabric.loadSVGFromString(svgStr, function(objects, options) {
+    var logo    = fabric.util.groupSVGElements(objects, options);
+    var cw      = canvas.getWidth();
+    var ch      = canvas.getHeight();
+    var targetW = cw * 0.28;
+    var scale   = targetW / logo.width;
+    logo.set({
+      left:           cw / 2,
+      top:            ch * 0.85,
+      originX:        'center',
+      originY:        'center',
+      scaleX:         scale,
+      scaleY:         scale,
+      lockUniScaling: true,  // Fix 5
+      _isLogo:        true   // Fix 8b — tag for swap detection
+    });
+    logo.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
+    // Fix 8b — remove any existing logo before placing new one
+    canvas.getObjects().filter(function(o) { return o._isLogo; })
+      .forEach(function(o) { canvas.remove(o); });
+    canvas.add(logo);
+    canvas.setActiveObject(logo);
+    canvas.renderAll();
+  });
+}
+
+function iwToggleLogo() {
+  iw.logoVariant = iw.logoVariant === 'dark' ? 'light' : 'dark';
+  var btn = document.getElementById('iwLogoBtn');
+  if (btn) btn.textContent = iw.logoVariant === 'dark' ? 'Dark Logo' : 'Light Logo';
+  iwPlaceLogo(iw.logoVariant);
+}
+
+// ── COLOR DOTS ───────────────────────────────────────────────
+function iwApplyColor(color) {
+  iw.activeColor = color;
+  document.querySelectorAll('.iw-color-dot').forEach(function(d) {
+    d.classList.toggle('active', d.dataset.color === color);
+  });
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var active = canvas.getActiveObject();
+  if (!active || (active.type !== 'textbox' && active.type !== 'i-text')) return;
+  iwPushHistory();
+  active.set('fill', color);
+  canvas.renderAll();
+}
+
+// ── ITALIC TOGGLE ────────────────────────────────────────────
+function iwToggleItalic() {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var active = canvas.getActiveObject();
+  if (!active || (active.type !== 'textbox' && active.type !== 'i-text')) return;
+  iwPushHistory();
+  active.set('fontStyle', active.fontStyle === 'italic' ? 'normal' : 'italic');
+  canvas.renderAll();
+  iwUpdateItalicBtn();
+}
+
+function iwUpdateItalicBtn() {
+  var btn = document.getElementById('iwItalicBtn');
+  if (!btn) return;
+  var canvas = iw.fabricCanvas;
+  var active = canvas && canvas.getActiveObject();
+  var isText = active && (active.type === 'textbox' || active.type === 'i-text');
+  btn.classList.toggle('active', !!(isText && active.fontStyle === 'italic'));
+}
+
+// ── CENTER OBJECT ────────────────────────────────────────────
+function iwCenterObject() {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var active = canvas.getActiveObject();
+  if (!active) return;
+  iwPushHistory();
+  active.set({ left: canvas.getWidth() / 2, originX: 'center' });
+  active.setCoords();
+  canvas.renderAll();
+}
+
+function iwUpdateCenterBtn() {
+  var btn = document.getElementById('iwCenterBtn');
+  if (!btn) return;
+  var canvas = iw.fabricCanvas;
+  btn.disabled = !(canvas && canvas.getActiveObject());
+}
+
+// ── PANEL COLLAPSE ───────────────────────────────────────────
+function iwTogglePanelCollapse(side) {
+  var panelId = side === 'left' ? 'iwBgPanel' : 'iwQhPanel';
+  var tabId   = side === 'left' ? 'iwBgPanelTab' : 'iwQhPanelTab';
+  var panel   = document.getElementById(panelId);
+  var tab     = document.getElementById(tabId);
+  var collapsing = !panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed', collapsing);
+  var svg = tab ? tab.querySelector('svg') : null;
+  if (svg) {
+    if (side === 'left') {
+      svg.setAttribute('data-lucide', collapsing ? 'chevron-right' : 'chevron-left');
+    } else {
+      svg.setAttribute('data-lucide', collapsing ? 'chevron-left' : 'chevron-right');
+    }
+    lucide.createIcons({ nodes: [tab] });
+  }
+  setTimeout(function() { iwApplyDisplaySize(); }, 240);
+}
+
+// ── EXPORT ───────────────────────────────────────────────────
+function iwExport() {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var btn = document.getElementById('iwExportBtn');
+  btn.disabled    = true;
+  btn.textContent = 'Exporting…';
+
+  // Snapshot viewport, reset to logical coords for export, then restore
+  var origVpt  = canvas.viewportTransform.slice();
+  var origZoom = canvas.getZoom();
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  var dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
+  canvas.setViewportTransform(origVpt);
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled    = false;
+      btn.textContent = 'Export Image';
+      if (result.success) {
+        // Clear canvas on success
+        canvas.getObjects().slice().forEach(function(o) { canvas.remove(o); });
+        iw.selectedBgId = null;
+        document.querySelectorAll('.iw-bg-thumb').forEach(function(t) { t.classList.remove('selected'); });
+        document.querySelectorAll('.iw-qh-item').forEach(function(t) { t.classList.remove('selected'); });
+        canvas.renderAll();
+        iw.history    = [];
+        iw.redoStack  = [];
+        showToast('Saved: ' + result.filename);
+      } else {
+        showToast('Export failed: ' + (result.error || ''), true);
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled    = false;
+      btn.textContent = 'Export Image';
+      showToast('Export failed: ' + ((err && err.message) || err), true);
+    })
+    .saveImageToStaging(iw.episodeUid, dataUrl);
 }
 </script>
 </body>

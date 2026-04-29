@@ -932,7 +932,7 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
 
     var file    = DriveApp.getFileById(fileId);
     var parents = file.getParents();
-    while (parents.hasNext()) file.removeFromFolder(parents.next());
+    while (parents.hasNext()) parents.next().removeFile(file);
     decisionFolder.addFile(file);
 
     return { success: true };

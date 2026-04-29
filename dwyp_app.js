@@ -611,10 +611,12 @@ function getBackgroundLibrary() {
     while (files.hasNext()) {
       var file = files.next();
       var name = file.getName();
+      var id = file.getId();
       result.push({
-        fileId:        file.getId(),
+        fileId:        id,
         name:          name,
-        isAiGenerated: name.indexOf("bg_") === 0
+        isAiGenerated: name.indexOf("bg_") === 0,
+        thumbnailUrl:  'https://drive.google.com/thumbnail?id=' + id + '&sz=w320'
       });
     }
     return result;
@@ -678,6 +680,62 @@ function deleteBackgroundFromLibrary(fileId) {
 }
 
 /**
+ * Calls callGeminiImageAPI() with the prompt and optional canvas image,
+ * saves the returned image to IMAGE_BACKGROUND_LIBRARY_ID, and returns
+ * the base64 data + Drive file ID to the client.
+ * Filename convention: bg_gen_YYMMDD-HHMM.png — picked up by isAiGenerated
+ * detection in getBackgroundLibrary() (name.indexOf("bg_") === 0).
+ * @param {string} prompt
+ * @param {string|null} imageBase64  — base64 only (no data-URL prefix)
+ * @param {string|null} mimeType     — e.g. "image/png"
+ */
+var BG_GEN_SYSTEM =
+  "You are a social media graphic designer creating background images for a podcast about grief, " +
+  "loss, pain, and human resilience. Your images will be used as canvas backgrounds with quote text " +
+  "overlaid. Visual style: atmospheric, contemplative, emotionally honest. Cinematic in quality. Avoid " +
+  "stock photo aesthetics, overly bright or cheerful imagery, and sanitized or generic compositions. " +
+  "The full range of human emotion is appropriate — darkness, tenderness, intensity, quiet. Compose " +
+  "with intentional negative space — the image will have a text quote overlaid, so avoid dense detail " +
+  "across the entire composition. Never include: text, typography, watermarks, logos, brand marks, " +
+  "symbols, decorative borders, or frames. Fill the frame completely. No letterboxing, no padding, " +
+  "no solid color bars.";
+
+function generateBackground(prompt, imageBase64, mimeType) {
+  try {
+    var result    = callGeminiImageAPI(
+      BG_GEN_SYSTEM + "\n\nUser request: " + prompt,
+      imageBase64 || null,
+      mimeType    || null,
+      "ImageWorkshop"
+    );
+    var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
+    if (!libraryId) return { success: false, error: "IMAGE_BACKGROUND_LIBRARY_ID not configured" };
+
+    var now      = new Date();
+    var pad      = function(n) { return String(n).padStart(2, "0"); };
+    var ts       = String(now.getFullYear()).slice(2) +
+                   pad(now.getMonth() + 1) + pad(now.getDate()) + "-" +
+                   pad(now.getHours())     + pad(now.getMinutes());
+    var ext      = (result.mimeType === "image/jpeg") ? "jpg" : "png";
+    var filename = "bg_gen_" + ts + "." + ext;
+
+    var blob   = Utilities.newBlob(Utilities.base64Decode(result.data), result.mimeType, filename);
+    var folder = DriveApp.getFolderById(libraryId);
+    var file   = folder.createFile(blob);
+
+    return {
+      success:  true,
+      data:     result.data,
+      mimeType: result.mimeType,
+      fileId:   file.getId(),
+      name:     filename
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Reads episode_manifest.json for raw_hooks and raw_quotes.
  * Returns manifest object, or { raw_hooks: [], raw_quotes: [] } if not found.
  * @param {string} episodeUid
@@ -695,6 +753,71 @@ function getEpisodeManifest(episodeUid) {
         "WARNING");
     }
     return { raw_hooks: [], raw_quotes: [] };
+  }
+}
+
+/**
+ * Approves Audra's Guest Brief Enrich task and spawns the JT review task.
+ * Called by the web app Approve button on Review_Guest_Brief tasks assigned to Audra.
+ * Looks up Guest_Name from the Episodes tab, then calls spawnGuestBriefReviewForJT()
+ * in herald_fairy.gs.
+ *
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, error?: string }}
+ */
+function approveGuestBriefEnrich(episodeUid) {
+  try {
+    var sheetId   = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var epSheet   = ss.getSheetByName("Episodes");
+    var epData    = epSheet.getDataRange().getValues();
+    var epHeaders = epData[0];
+    var uidCol    = epHeaders.indexOf("Episode_UID");
+    var nameCol   = epHeaders.indexOf("Guest_Name");
+
+    var displayName = episodeUid;
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][uidCol]) === String(episodeUid)) {
+        displayName = epData[i][nameCol] || episodeUid;
+        break;
+      }
+    }
+
+    spawnGuestBriefReviewForJT(episodeUid, displayName);
+    logToAuditTrail("DwypApp", "human_action", episodeUid, "",
+      "[INFO] Guest Brief approved by Audra — JT review task spawned.", "INFO");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Stub — triggered when Audra taps the Fairy button on an All Assets Approved task.
+ * Logs intent and spawns a manual-run notice to Audra.
+ * TODO: Wire to clerk_fairy.gs doPost() in the clerk_fairy rebuild spoke to trigger
+ * runFilingFairy() directly.
+ *
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, error?: string }}
+ */
+function triggerFilingFromTask(episodeUid) {
+  try {
+    logToAuditTrail("DwypApp", "human_action", episodeUid, "",
+      "[INFO] triggerFilingFromTask called — clerk_fairy route unavailable. Manual run required.", "INFO");
+    spawnTask({
+      episodeUid:       episodeUid,
+      workflowStep:     "Filing",
+      actionTitle:      "Filing Fairy triggered from task — run manually",
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "urgent",
+      executiveSummary: "Filing Fairy was triggered via the All Assets Approved button. The clerk_fairy.gs route is not yet wired. Run runFilingFairy(\"" + episodeUid + "\") manually from Apps Script to complete filing."
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 }
 
@@ -722,5 +845,228 @@ function saveImageToStaging(episodeUid, base64Data) {
     return { success: true, filename: filename };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+
+// ── REVIEW TASKS ─────────────────────────────────────────────────────────────
+
+/**
+ * Returns the Drive file ID of the proxy video in the episode's Staging root.
+ * Returns null if no file with a "proxy_" prefix is found.
+ * @param {string} episodeUid
+ * @returns {string|null}
+ */
+function getProxyFileId(episodeUid) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) return null;
+    var episodeFolderIt = DriveApp.getFolderById(folderId).getFoldersByName("Episode");
+    if (!episodeFolderIt.hasNext()) return null;
+    var files = episodeFolderIt.next().getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      if (file.getName().indexOf("proxy_") === 0) return file.getId();
+    }
+    return null;
+  } catch (err) {
+    throw new Error("getProxyFileId failed for " + episodeUid + ": " + err.message);
+  }
+}
+
+/**
+ * Lists files in the root of Staging/[type]/ (Images or Reels).
+ * DriveApp.getFiles() is non-recursive — Approved/Save/Delete subfolders are never traversed.
+ * @param {string} episodeUid
+ * @param {string} type  "Images" | "Reels"
+ * @returns {object[]}  Array of { fileId, fileName, mimeType, thumbnailUrl }
+ */
+function listReviewFiles(episodeUid, type) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) return [];
+    var stagingFolder = DriveApp.getFolderById(folderId);
+    var typeFolders   = stagingFolder.getFoldersByName(type);
+    if (!typeFolders.hasNext()) return [];
+    var typeFolder = typeFolders.next();
+    var files  = typeFolder.getFiles();
+    var result = [];
+    while (files.hasNext()) {
+      var file = files.next();
+      var id   = file.getId();
+      result.push({
+        fileId:       id,
+        fileName:     file.getName(),
+        mimeType:     file.getMimeType(),
+        thumbnailUrl: "https://drive.google.com/thumbnail?id=" + id + "&sz=w400"
+      });
+    }
+    return result;
+  } catch (err) {
+    throw new Error("listReviewFiles failed for " + episodeUid + " / " + type + ": " + err.message);
+  }
+}
+
+/**
+ * Moves a review file into Staging/[type]/[decision]/.
+ * Drive move: removes file from all current parents, then adds to target subfolder.
+ * @param {string} fileId
+ * @param {string} episodeUid
+ * @param {string} type      "Images" | "Reels"
+ * @param {string} decision  "Approved" | "Save" | "Delete"
+ * @returns {{ success: true }}
+ */
+function moveReviewFile(fileId, episodeUid, type, decision) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) throw new Error("Staging folder not found for episode: " + episodeUid);
+    var stagingFolder = DriveApp.getFolderById(folderId);
+
+    var typeFolders = stagingFolder.getFoldersByName(type);
+    if (!typeFolders.hasNext()) throw new Error("Type folder not found: " + type);
+    var typeFolder = typeFolders.next();
+
+    var decisionFolders = typeFolder.getFoldersByName(decision);
+    if (!decisionFolders.hasNext()) throw new Error("Decision folder not found: " + type + "/" + decision);
+    var decisionFolder = decisionFolders.next();
+
+    var file    = DriveApp.getFileById(fileId);
+    var parents = file.getParents();
+    while (parents.hasNext()) file.removeFromFolder(parents.next());
+    decisionFolder.addFile(file);
+
+    return { success: true };
+  } catch (err) {
+    throw new Error("moveReviewFile failed for " + fileId + ": " + err.message);
+  }
+}
+
+/**
+ * Submits timestamped episode comments from JT's review session.
+ * If an open Review_Episode task exists for the episode, appends to its Revision_Notes.
+ * If none exists, spawns a new task for Audra with the comments as the body.
+ * @param {string}   episodeUid
+ * @param {object[]} comments    Array of { timestamp, note }
+ * @param {string}   sessionDate ISO date string — used as session separator
+ * @returns {{ success: true }}
+ */
+function submitEpisodeComments(episodeUid, comments, sessionDate) {
+  try {
+    var separator = "--- " + sessionDate + " ---";
+    var lines     = [separator];
+    for (var i = 0; i < comments.length; i++) {
+      lines.push("[" + comments[i].timestamp + "] " + comments[i].note);
+    }
+    var block = lines.join("\n");
+
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Tasks");
+    var data    = sheet.getDataRange().getValues();
+
+    var found = false;
+    for (var r = 1; r < data.length; r++) {
+      var row = data[r];
+      if (String(row[TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid)) continue;
+      if (String(row[TASKS_COLS.Workflow_Step - 1]) !== "Review_Episode")   continue;
+      if (String(row[TASKS_COLS.Status        - 1]) === "complete")         continue;
+      var existing = String(row[TASKS_COLS.Revision_Notes - 1] || "");
+      var updated  = existing ? existing + "\n" + block : block;
+      sheet.getRange(r + 1, TASKS_COLS.Revision_Notes).setValue(updated);
+      found = true;
+      break;
+    }
+
+    if (!found) {
+      var manifest  = getManifest(getStagingFolderIdByUid(episodeUid));
+      var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;
+      spawnTask({
+        episodeUid:       episodeUid,
+        workflowStep:     "Review_Episode",
+        actionTitle:      "Episode Comments — " + guestName,
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "normal",
+        executiveSummary: block
+      });
+    }
+
+    return { success: true };
+  } catch (err) {
+    throw new Error("submitEpisodeComments failed for " + episodeUid + ": " + err.message);
+  }
+}
+
+/**
+ * Checks whether both the Images/ and Reels/ staging roots have zero files.
+ * Only counts files directly in each root — Approved/Save/Delete subfolders are excluded.
+ * @param {string} episodeUid
+ * @returns {{ ready: boolean, imagesEmpty: boolean, reelsEmpty: boolean }}
+ */
+function checkReadyForRelease(episodeUid) {
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    if (!folderId) return { ready: false, imagesEmpty: false, reelsEmpty: false };
+    var stagingFolder = DriveApp.getFolderById(folderId);
+
+    function countRootFiles(subfolderName) {
+      var subs = stagingFolder.getFoldersByName(subfolderName);
+      if (!subs.hasNext()) return 0;
+      var files = subs.next().getFiles();
+      var n = 0;
+      while (files.hasNext()) { files.next(); n++; }
+      return n;
+    }
+
+    var imagesEmpty = countRootFiles("Images") === 0;
+    var reelsEmpty  = countRootFiles("Reels")  === 0;
+    return { ready: imagesEmpty && reelsEmpty, imagesEmpty: imagesEmpty, reelsEmpty: reelsEmpty };
+  } catch (err) {
+    throw new Error("checkReadyForRelease failed for " + episodeUid + ": " + err.message);
+  }
+}
+
+/**
+ * Closes all open review tasks for the episode, then spawns an Audra filing task.
+ * Workflow_Steps closed: Review_Episode, Review_Host_Graphics, Review_Guest_Graphics, Review_Reels.
+ * @param {string} episodeUid
+ * @returns {{ success: true }}
+ */
+function triggerReadyForRelease(episodeUid) {
+  try {
+    var REVIEW_STEPS = ["Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics", "Review_Reels"];
+
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Tasks");
+    var data    = sheet.getDataRange().getValues();
+    var now     = new Date();
+
+    for (var r = 1; r < data.length; r++) {
+      var row = data[r];
+      if (String(row[TASKS_COLS.Episode_UID - 1]) !== String(episodeUid))         continue;
+      if (String(row[TASKS_COLS.Status      - 1]) === "complete")                 continue;
+      if (REVIEW_STEPS.indexOf(String(row[TASKS_COLS.Workflow_Step - 1])) === -1) continue;
+      sheet.getRange(r + 1, TASKS_COLS.Status).setValue("complete");
+      sheet.getRange(r + 1, TASKS_COLS.Completed_At).setValue(now);
+    }
+
+    var manifest  = getManifest(getStagingFolderIdByUid(episodeUid));
+    var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;
+
+    spawnTask({
+      episodeUid:   episodeUid,
+      workflowStep: "Filing",
+      actionTitle:  "Assets ready to file — " + guestName,
+      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:   "The Fairy Team",
+      status:       "open",
+      priority:     "normal"
+    });
+
+    return { success: true };
+  } catch (err) {
+    throw new Error("triggerReadyForRelease failed for " + episodeUid + ": " + err.message);
   }
 }

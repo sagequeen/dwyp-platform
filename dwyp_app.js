@@ -930,10 +930,17 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
     if (!decisionFolders.hasNext()) throw new Error("Decision folder not found: " + type + "/" + decision);
     var decisionFolder = decisionFolders.next();
 
-    var file    = DriveApp.getFileById(fileId);
-    var parents = file.getParents();
-    while (parents.hasNext()) parents.next().removeFile(file);
-    decisionFolder.addFile(file);
+    Drive.Files.update(
+      {},
+      fileId,
+      null,
+      {
+        addParents:        decisionFolder.getId(),
+        removeParents:     typeFolder.getId(),
+        supportsAllDrives: true,
+        fields:            "id"
+      }
+    );
 
     return { success: true };
   } catch (err) {
@@ -964,12 +971,14 @@ function submitEpisodeComments(episodeUid, comments, sessionDate) {
     var sheet   = ss.getSheetByName("Tasks");
     var data    = sheet.getDataRange().getValues();
 
+    var producerEmail = getGovernance("ASSIGNEE_PRODUCER");
     var found = false;
     for (var r = 1; r < data.length; r++) {
       var row = data[r];
-      if (String(row[TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid)) continue;
-      if (String(row[TASKS_COLS.Workflow_Step - 1]) !== "Review_Episode")   continue;
-      if (String(row[TASKS_COLS.Status        - 1]) === "complete")         continue;
+      if (String(row[TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid))  continue;
+      if (String(row[TASKS_COLS.Workflow_Step - 1]) !== "Revise_Episode")    continue;
+      if (String(row[TASKS_COLS.Assignee      - 1]) !== producerEmail)       continue;
+      if (String(row[TASKS_COLS.Status        - 1]) === "complete")          continue;
       var existing = String(row[TASKS_COLS.Revision_Notes - 1] || "");
       var updated  = existing ? existing + "\n" + block : block;
       sheet.getRange(r + 1, TASKS_COLS.Revision_Notes).setValue(updated);
@@ -982,9 +991,9 @@ function submitEpisodeComments(episodeUid, comments, sessionDate) {
       var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;
       spawnTask({
         episodeUid:       episodeUid,
-        workflowStep:     "Review_Episode",
-        actionTitle:      "Episode Comments — " + guestName,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        workflowStep:     "Revise_Episode",
+        actionTitle:      "Revision Notes — " + guestName,
+        assignee:         producerEmail,
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "normal",

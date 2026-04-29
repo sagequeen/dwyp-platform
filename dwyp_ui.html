@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.3/confetti.browser.min.js"></script>
 
 <style>
 /* ── TOKENS ─────────────────────────────────────────────────── */
@@ -629,7 +630,8 @@ svg { display: block; flex-shrink: 0; }
 .filter-bar {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 .filter-group {
   display: flex;
@@ -937,7 +939,7 @@ body.workshop-open .bottom-nav { display: none; }
 }
 .iw-panel-right { border-right: none; border-left: 1px solid var(--border); }
 .iw-panel-body {
-  width: 240px;
+  width: 320px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1217,6 +1219,204 @@ body.workshop-open .bottom-nav { display: none; }
   margin-top: 4px;
 }
 .iw-bg-section-header:first-child { margin-top: 0; padding-top: 2px; }
+
+/* Library / Generate mode toggle */
+.iw-mode-toggle {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.iw-mode-btn {
+  flex: 1;
+  padding: 9px 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: color var(--transition), border-bottom var(--transition);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.iw-mode-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
+.iw-mode-btn:hover:not(.active) { color: var(--text); }
+
+/* Generate panel layout */
+#iwGeneratePanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.iw-prompt-area {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.iw-prompt-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  resize: none;
+  outline: none;
+  transition: border-color var(--transition);
+  field-sizing: content;
+  min-height: 60px;
+  max-height: 140px;
+}
+.iw-prompt-input:focus { border-color: var(--gold); }
+.iw-prompt-send {
+  align-self: flex-end;
+  padding: 7px 18px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gold);
+  background: var(--gold);
+  color: #0D0A0A;
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: opacity var(--transition);
+}
+.iw-prompt-send:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Generated thumbnail strip */
+.iw-gen-scroll { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.iw-gen-thumb {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
+  overflow: hidden;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color var(--transition);
+}
+.iw-gen-thumb:hover { border-color: var(--gold); }
+.iw-gen-thumb.selected { border-color: var(--gold); }
+.iw-gen-thumb img { width: 100%; display: block; }
+.iw-gen-delete {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(13,10,10,0.72);
+  border: none;
+  color: #fff;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition);
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.iw-gen-thumb:hover .iw-gen-delete { opacity: 1; }
+.iw-gen-spinner {
+  text-align: center;
+  padding: 20px 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Help (?) button in header */
+.iw-help-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  transition: border-color var(--transition), color var(--transition);
+}
+.iw-help-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+/* Help popup */
+.iw-help-popup {
+  position: fixed;
+  top: 62px;
+  right: 12px;
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+  z-index: 400;
+  display: none;
+}
+.iw-help-popup.visible { display: block; }
+.iw-help-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.iw-help-popup-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.iw-help-popup-close {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+}
+.iw-help-popup-body {
+  padding: 12px 14px 16px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.65;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.iw-help-popup-body p { margin: 0 0 8px; }
+.iw-help-popup-body p:last-child { margin-bottom: 0; }
+.iw-help-popup-body strong { color: var(--text); }
+.iw-help-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin: 12px 0 6px;
+}
+.iw-help-section-label:first-child { margin-top: 0; }
+
 .iw-logo-btn {
   flex-direction: column !important;
   align-items: center !important;
@@ -1493,6 +1693,209 @@ body.workshop-open .bottom-nav { display: none; }
   align-items: center;
   gap: 12px;
 }
+
+/* ── REVIEW EPISODE — VIDEO + NOTES ─────────────────────────── */
+.rv-player-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.rv-player-wrap {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%;
+  background: #000;
+}
+.rv-player-wrap iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+.rv-player-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
+}
+.rv-notes-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rv-notes-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.rv-time-row { display: flex; align-items: center; gap: 8px; }
+.rv-marked-time {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.rv-marked-time.has-time { color: var(--red); }
+.btn-mark-time {
+  padding: 8px 14px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+.btn-mark-time:active { background: var(--border); }
+.rv-input-row { display: flex; gap: 8px; }
+.rv-input-row input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+}
+.rv-input-row input:focus { border-color: var(--red); }
+.btn-add-note {
+  padding: 9px 14px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+.btn-add-note:hover { background: var(--border); }
+.rv-note-list { display: flex; flex-direction: column; gap: 6px; }
+.rv-note-item {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+.rv-note-ts {
+  font-weight: 700;
+  color: var(--red);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.rv-note-text { color: var(--text); }
+.btn-send-notes {
+  width: 100%;
+  padding: 11px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-send-notes:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-send-notes:active { opacity: 0.85; }
+
+/* ── REVIEW QUEUE (Images + Reels) ──────────────────────────── */
+.review-queue-item {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  animation: fadeUp 0.2s ease both;
+}
+.review-queue-filename {
+  padding: 7px 12px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.review-queue-media { width: 100%; display: block; background: var(--surface-2); }
+.review-queue-media.img { max-height: 320px; object-fit: contain; }
+.review-queue-media.vid { max-height: 260px; object-fit: contain; }
+.review-queue-actions { display: flex; gap: 8px; padding: 10px 12px; }
+.btn-decide-approve {
+  flex: 1; padding: 9px 6px;
+  background: #e6f4ec; color: #1e7a3c; border: 1px solid #b3dfc3;
+  border-radius: var(--radius-sm); font-family: var(--font-body);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-decide-approve:active { opacity: 0.8; }
+.btn-decide-save {
+  flex: 1; padding: 9px 6px;
+  background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-family: var(--font-body);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background var(--transition);
+}
+.btn-decide-save:active { background: var(--border); }
+.btn-decide-delete {
+  flex: 1; padding: 9px 6px;
+  background: #ffeaea; color: var(--red); border: 1px solid #f5c6c6;
+  border-radius: var(--radius-sm); font-family: var(--font-body);
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: opacity var(--transition);
+}
+.btn-decide-delete:active { opacity: 0.8; }
+.review-queue-error { font-size: 12px; color: var(--red); padding: 6px 12px; }
+
+/* ── READY FOR RELEASE ──────────────────────────────────────── */
+.btn-ready-for-release {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px;
+  background: var(--gold);
+  color: #0D0A0A;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+  margin-top: 4px;
+}
+.btn-ready-for-release:active { opacity: 0.85; }
 </style>
 </head>
 
@@ -1553,7 +1956,8 @@ body.workshop-open .bottom-nav { display: none; }
       <div class="avatar-menu" id="avatarMenu">
         <div class="avatar-menu-name" id="avatarMenuName"></div>
         <button class="avatar-menu-item" id="fairyRemoteMenuItem" style="display:none" onclick="openFairyRemote()">Fairy Remote Control</button>
-        <button class="avatar-menu-item" id="iwTestMenuItem" style="display:none" onclick="closeAvatarMenu();showImageWorkshop(IW_TEST_UID)">Image Workshop (test)</button>
+        <button class="avatar-menu-item" id="iwTestMenuItem"   style="display:none" onclick="closeAvatarMenu();showImageWorkshop(IW_TEST_UID)">Image Workshop (test)</button>
+        <button class="avatar-menu-item" id="iwTestMenuItemJT" style="display:none" onclick="closeAvatarMenu();showImageWorkshop(IW_TEST_UID)">Image Workshop (test)</button>
         <button class="avatar-menu-signout" onclick="signOut()">Sign Out</button>
       </div>
     </div>
@@ -1645,11 +2049,32 @@ body.workshop-open .bottom-nav { display: none; }
       <svg width="16" height="16" data-lucide="chevron-left"></svg>Back
     </button>
     <div class="iw-title" id="iwTitle">Image Workshop</div>
+    <button class="iw-help-btn" onclick="iwToggleHelpPopup()" title="How to use Image Workshop">?</button>
+  </div>
+
+  <!-- Help popup (positioned fixed, shown via .visible class) -->
+  <div class="iw-help-popup" id="iwHelpPopup">
+    <div class="iw-help-popup-header">
+      <span class="iw-help-popup-title">How to use Image Workshop</span>
+      <button class="iw-help-popup-close" onclick="iwCloseHelpPopup()">&#215;</button>
+    </div>
+    <div class="iw-help-popup-body">
+      <div class="iw-help-section-label">Working the canvas</div>
+      <p>Choose <strong>Instagram, Feed, or Square</strong> to set the correct canvas size.</p>
+      <p>Click a <strong>background, quote, or hook</strong> to place it on the canvas. Click again to replace it.</p>
+      <p><strong>Edit text directly</strong> on the canvas. <strong>Add Text</strong> to create your own.</p>
+      <p><strong>Select an object</strong> to move, resize, or delete it.</p>
+      <p><strong>Center</strong> moves the selected object to the horizontal center. <strong>Delete</strong> removes it.</p>
+      <p><strong>Deleting items from the library</strong> removes them permanently.</p>
+      <div class="iw-help-section-label">Generating Backgrounds</div>
+      <p>Type what you want — a <strong>mood, a scene, a color direction.</strong></p>
+      <p>The <strong>image on your canvas is what Gemini sees.</strong> Load a version you like and refine it. Clear the canvas to start fresh.</p>
+      <p><strong>Generated images save to your library automatically.</strong> Delete ones you don't want directly from the Generate panel.</p>
+    </div>
   </div>
 
   <!-- Row 2: Toolbar — Generate / Export / View | platform toggles -->
   <div class="iw-toolbar">
-    <button class="iw-view-btn" onclick="console.log('Generate Images')">Generate Images</button>
     <button class="iw-export-btn" id="iwExportBtn" onclick="iwExport()">Export Image</button>
     <a class="iw-view-btn hidden" id="iwViewLink" href="#" target="_blank">View Images ↗</a>
     <span class="iw-toolbar-sep"></span>
@@ -1681,17 +2106,36 @@ body.workshop-open .bottom-nav { display: none; }
   <!-- Row 3: Three-panel layout -->
   <div class="iw-main">
 
-    <!-- Left panel: Backgrounds -->
+    <!-- Left panel: Backgrounds (Library + Generate) -->
     <div class="iw-panel iw-panel-left" id="iwBgPanel">
       <div class="iw-panel-body">
-        <div class="iw-panel-header">Backgrounds</div>
-        <div class="iw-panel-scroll">
+
+        <!-- Mode toggle -->
+        <div class="iw-mode-toggle">
+          <button class="iw-mode-btn active" id="iwModeLibraryBtn" onclick="iwSetPanelMode('library')">Library</button>
+          <button class="iw-mode-btn" id="iwModeGenerateBtn" onclick="iwSetPanelMode('generate')">Generate</button>
+        </div>
+
+        <!-- Library mode -->
+        <div id="iwLibraryPanel" class="iw-panel-scroll">
           <div class="iw-bg-upload" onclick="iwTriggerUpload()">
             <svg width="13" height="13" data-lucide="upload"></svg>Upload
           </div>
           <input type="file" id="iwFileInput" accept="image/*" style="display:none" onchange="iwHandleUpload(this)">
           <div id="iwBgGrid"></div>
         </div>
+
+        <!-- Generate mode -->
+        <div id="iwGeneratePanel" style="display:none">
+          <div class="iw-prompt-area">
+            <textarea class="iw-prompt-input" id="iwPromptInput" placeholder="A mood, a scene, a color direction…" rows="3"></textarea>
+            <button class="iw-prompt-send" id="iwPromptSend" onclick="iwSubmitPrompt()">Send</button>
+          </div>
+          <div class="iw-gen-scroll" id="iwGenThumbs">
+            <div class="iw-empty-msg">No images yet. Enter a prompt above.</div>
+          </div>
+        </div>
+
       </div>
       <button class="iw-collapse-tab" id="iwBgPanelTab" onclick="iwTogglePanelCollapse('left')" title="Collapse panel">
         <svg width="10" height="10" data-lucide="chevron-left"></svg>
@@ -1781,6 +2225,22 @@ body.workshop-open .bottom-nav { display: none; }
   </div>
 </div>
 
+<!-- Ready for Release Confirmation Modal -->
+<div class="modal-backdrop" id="rfrModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">All done reviewing?</span>
+    </div>
+    <p style="font-size:14px;color:var(--text-2);line-height:1.6">
+      Tapping confirm will clear your review tasks. Your files are safe in their folders — nothing is permanently deleted. If you want to revisit a decision, just let Audra know.
+    </p>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn-submit" id="rfrConfirmBtn" onclick="confirmReadyForRelease()">Yes, I'm done</button>
+      <button class="btn btn-complete" style="flex:1;justify-content:center" onclick="closeRfrModal()">Not yet</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
@@ -1789,6 +2249,7 @@ body.workshop-open .bottom-nav { display: none; }
 var APP_CONFIG = {
   sheetId:       <?= JSON.stringify(sheetId) ?>,
   userEmail:     null,  // set in bootApp() after PIN login
+  userRole:      null,  // set in bootApp() after PIN login
   deployedUrl:   <?= JSON.stringify(deployedUrl) ?>,
   hostEmail:     <?= JSON.stringify(hostEmail) ?>,
   ownerEmail:    <?= JSON.stringify(ownerEmail) ?>,
@@ -1801,6 +2262,7 @@ var DWYP_ID_KEY = "dwyp_identity";
 
 function bootApp(identity) {
   APP_CONFIG.userEmail = identity.userEmail;
+  APP_CONFIG.userRole  = identity.role || null;
   var name = identity.displayName || identity.userEmail;
   document.getElementById("avatarInitials").textContent = getInitials(name);
   document.getElementById("avatarMenuName").textContent = name;
@@ -1815,8 +2277,9 @@ function bootApp(identity) {
   google.script.run
     .withSuccessHandler(function(ownerEmail) {
       APP_CONFIG.ownerEmail = ownerEmail || "";
-      document.getElementById("fairyRemoteMenuItem").style.display = isOwner() ? "" : "none";
-      document.getElementById("iwTestMenuItem").style.display     = isOwner() ? "" : "none";
+      document.getElementById("fairyRemoteMenuItem").style.display  = isOwner() ? "" : "none";
+      document.getElementById("iwTestMenuItem").style.display      = isOwner() ? "" : "none";
+      document.getElementById("iwTestMenuItemJT").style.display    = APP_CONFIG.userRole === 'host' ? "" : "none";
     })
     .getOwnerEmail();
   loadData();
@@ -1844,6 +2307,7 @@ function signOut() {
   state.assetCounts = null;
   state.backTarget  = null;
   APP_CONFIG.userEmail = null;
+  APP_CONFIG.userRole  = null;
   showLoginScreen();
 }
 
@@ -1919,10 +2383,11 @@ function initPinInputs() {
     input.addEventListener("input", function() {
       input.value = input.value.replace(/\D/g, "").slice(-1);
       if (input.value && i < inputs.length - 1) {
-        inputs[i + 1].focus();
+        var next = inputs[i + 1];
+        setTimeout(function() { next.focus(); }, 0);
       }
       var allFilled = inputs.every(function(inp) { return inp.value.length === 1; });
-      if (allFilled) submitPin();
+      if (allFilled) setTimeout(submitPin, 0);
     });
   });
 }
@@ -1943,11 +2408,18 @@ var state = {
   backTarget:  null   // 'episodeList' | 'episodeDetail'
 };
 
+var reviewSession = {
+  episodeUid: null,
+  startTime:  null,
+  markedTime: null,
+  notes:      []
+};
+
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
 var REVIEW_STEPS_ALL = [
   "Review_Guest_Brief", "Review_Episode", "Review_Host_Graphics",
   "Review_Guest_Graphics", "Review_Thumbnails", "Review_Reels",
-  "Review_Episode_Card", "Review_Social_Assets"
+  "Review_Images", "Review_Episode_Card", "Review_Social_Assets"
 ];
 var REVIEW_STEPS_WITH_LINK = [
   "Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics",
@@ -2273,6 +2745,20 @@ function renderEpisodeDetail(ep) {
 
   container.innerHTML = html;
   lucide.createIcons();
+
+  var _rfrUid = ep.Episode_UID;
+  google.script.run
+    .withSuccessHandler(function(status) {
+      var section = document.getElementById("rfrSection-" + _rfrUid);
+      if (!section) return;
+      if (status && status.ready) {
+        section.innerHTML = '<button class="btn-ready-for-release" onclick="openRfrModal(\'' + esc(_rfrUid) + '\')">' +
+          '<svg width="15" height="15" data-lucide="party-popper"></svg>Ready for Release</button>';
+        lucide.createIcons({ nodes: [section] });
+      }
+    })
+    .withFailureHandler(function() {})
+    .checkReadyForRelease(ep.Episode_UID);
 }
 
 function reviewIconBtn(label, icon, task) {
@@ -2304,10 +2790,11 @@ function quickLink(icon, label, url) {
 
 // ── EPISODE TOOLS CARD ───────────────────────────────────────
 function renderEpisodeToolsCard(ep, epTasks) {
-  var counts        = state.assetCounts;
   var audioTask     = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
-  var reelsActive   = !!(counts && counts.reels  > 0);
-  var imagesActive  = !!(counts && counts.images > 0);
+  var reelsTask     = epTasks.find(function(t) { return t.Workflow_Step === "Review_Reels"; });
+  var imagesTask    = epTasks.find(function(t) { return t.Workflow_Step === "Review_Images"; });
+  var reelsActive   = !!reelsTask;
+  var imagesActive  = !!imagesTask;
   var episodeActive = !!audioTask;
 
   var driveUrl = ep.Production_Folder_ID
@@ -2355,6 +2842,7 @@ function renderEpisodeToolsCard(ep, epTasks) {
       '</div>' +
     '</div>' +
     (workshopBtn ? '<div>' + workshopBtn + '</div>' : '') +
+    '<div id="rfrSection-' + uid + '"></div>' +
   '</div>';
 }
 
@@ -2409,17 +2897,31 @@ function showImagesReview(episodeUid) {
 
 function renderEpisodeReview(ep) {
   var uid = esc(ep.Episode_UID);
+  initReviewSession(ep.Episode_UID);
+
   var html = "";
 
-  html += '<div class="review-placeholder">';
-  html += '<div class="review-placeholder-title">' + esc(ep.Guest_Name || "Episode") + "</div>";
-  html += '<div class="review-placeholder-sub">';
-  html += "Video review is coming soon in the desktop version of the app.";
-  html += "<br><br>";
-  html += "If you’ve already watched the episode, you can approve or request revisions below.";
-  html += "</div>";
+  // Player card — filled async below
+  html += '<div class="rv-player-card" id="rvPlayerCard">';
+  html += '<div class="rv-player-notice"><div class="spinner" style="margin:0 auto"></div></div>';
   html += "</div>";
 
+  // Note builder
+  html += '<div class="rv-notes-card">';
+  html += '<div class="rv-notes-label">Notes</div>';
+  html += '<div class="rv-time-row">';
+  html += '<div class="rv-marked-time" id="rvMarkedTimeDisplay">No time marked</div>';
+  html += '<button class="btn-mark-time" onclick="rvMarkTime()">Mark Time</button>';
+  html += "</div>";
+  html += '<div class="rv-input-row">';
+  html += '<input type="text" id="rvNoteInput" placeholder="Add a note…" onkeydown="if(event.key===\'Enter\')rvAddNote()">';
+  html += '<button class="btn-add-note" onclick="rvAddNote()">Add</button>';
+  html += "</div>";
+  html += '<div class="rv-note-list" id="rvNoteList"></div>';
+  html += '<button class="btn-send-notes" id="rvSendBtn" onclick="rvSendNotes(\'' + uid + '\')" disabled>Send to Audra</button>';
+  html += "</div>";
+
+  // Approve / Request Revisions (preserved)
   html += '<div class="task-card">';
   html += '<div class="task-actions">';
   html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
@@ -2435,18 +2937,62 @@ function renderEpisodeReview(ep) {
 
   document.getElementById("episodeReviewContent").innerHTML = html;
   lucide.createIcons();
+
+  // Async: load proxy file for player
+  google.script.run
+    .withSuccessHandler(function(fileId) {
+      var card = document.getElementById("rvPlayerCard");
+      if (!card) return;
+      if (fileId) {
+        card.innerHTML = '<div class="rv-player-wrap">' +
+          '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" allowfullscreen></iframe>' +
+          '</div>';
+      } else {
+        card.innerHTML = '<div class="rv-player-notice">No proxy file found. Check Staging folder.</div>';
+      }
+    })
+    .withFailureHandler(function() {
+      var card = document.getElementById("rvPlayerCard");
+      if (card) card.innerHTML = '<div class="rv-player-notice">Could not load proxy file.</div>';
+    })
+    .getProxyFileId(ep.Episode_UID);
 }
 
 function renderReelsReview(ep) {
   document.getElementById("reelsReviewContent").innerHTML =
     '<div class="loading-state"><div class="spinner"></div><span>Loading reels…</span></div>';
   google.script.run
-    .withSuccessHandler(function(assets) { renderReelSections(ep, assets || []); })
+    .withSuccessHandler(function(files) { renderReelQueue(ep, files || []); })
     .withFailureHandler(function(err) {
       document.getElementById("reelsReviewContent").innerHTML =
         '<div class="empty-state"><p>Could not load reels.</p><small>' + ((err && err.message) || err) + "</small></div>";
     })
-    .getSocialAssets(ep.Episode_UID, ["reel"]);
+    .listReviewFiles(ep.Episode_UID, "Reels");
+}
+
+function renderReelQueue(ep, files) {
+  var container = document.getElementById("reelsReviewContent");
+  if (!files.length) {
+    container.innerHTML = '<div class="review-complete-card"><svg width="20" height="20" data-lucide="check-circle"></svg>No reels left to review.</div>';
+    lucide.createIcons();
+    return;
+  }
+  var uid  = esc(ep.Episode_UID);
+  var html = "";
+  files.forEach(function(file) {
+    var fid  = esc(file.fileId);
+    var name = esc(file.fileName);
+    var src  = "https://drive.google.com/uc?export=download&id=" + fid;
+    html += '<div class="review-queue-item" id="rq-' + fid + '">';
+    html += '<div class="review-queue-filename">' + name + "</div>";
+    html += '<video class="review-queue-media vid" controls muted playsinline src="' + src + '"></video>';
+    html += '<div class="review-queue-actions">';
+    html += '<button class="btn-decide-approve" onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Reels\',\'Approved\')">Approve</button>';
+    html += '<button class="btn-decide-save"    onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Reels\',\'Save\')">Save</button>';
+    html += '<button class="btn-decide-delete"  onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Reels\',\'Delete\')">Delete</button>';
+    html += "</div></div>";
+  });
+  container.innerHTML = html;
 }
 
 function renderReelSections(ep, assets) {
@@ -2514,12 +3060,37 @@ function renderImagesReview(ep) {
   document.getElementById("imagesReviewContent").innerHTML =
     '<div class="loading-state"><div class="spinner"></div><span>Loading images…</span></div>';
   google.script.run
-    .withSuccessHandler(function(assets) { renderImageSections(ep, assets || []); })
+    .withSuccessHandler(function(files) { renderImageQueue(ep, files || []); })
     .withFailureHandler(function(err) {
       document.getElementById("imagesReviewContent").innerHTML =
         '<div class="empty-state"><p>Could not load images.</p><small>' + ((err && err.message) || err) + "</small></div>";
     })
-    .getSocialAssets(ep.Episode_UID, IMAGE_ASSET_TYPES);
+    .listReviewFiles(ep.Episode_UID, "Images");
+}
+
+function renderImageQueue(ep, files) {
+  var container = document.getElementById("imagesReviewContent");
+  if (!files.length) {
+    container.innerHTML = '<div class="review-complete-card"><svg width="20" height="20" data-lucide="check-circle"></svg>No images left to review.</div>';
+    lucide.createIcons();
+    return;
+  }
+  var uid  = esc(ep.Episode_UID);
+  var html = "";
+  files.forEach(function(file) {
+    var fid  = esc(file.fileId);
+    var name = esc(file.fileName);
+    var src  = esc(file.thumbnailUrl);
+    html += '<div class="review-queue-item" id="rq-' + fid + '">';
+    html += '<div class="review-queue-filename">' + name + "</div>";
+    html += '<img class="review-queue-media img" src="' + src + '" alt="' + name + '">';
+    html += '<div class="review-queue-actions">';
+    html += '<button class="btn-decide-approve" onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Images\',\'Approved\')">Approve</button>';
+    html += '<button class="btn-decide-save"    onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Images\',\'Save\')">Save</button>';
+    html += '<button class="btn-decide-delete"  onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Images\',\'Delete\')">Delete</button>';
+    html += "</div></div>";
+  });
+  container.innerHTML = html;
 }
 
 function renderImageSections(ep, assets) {
@@ -2580,6 +3151,183 @@ function decideImageAsset(postId, rowIndex, status, episodeUid) {
       }
     })
     .writeSocialAssetStatus(rowIndex, status);
+}
+
+// ── REVIEW FILE QUEUE ────────────────────────────────────────
+function decideFile(fileId, episodeUid, type, decision) {
+  var item = document.getElementById("rq-" + fileId);
+  if (item) {
+    item.querySelectorAll("button").forEach(function(btn) { btn.disabled = true; });
+  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        if (item) {
+          item.style.transition = "opacity 0.2s, transform 0.2s";
+          item.style.opacity    = "0";
+          item.style.transform  = "translateX(8px)";
+          setTimeout(function() {
+            if (item.parentNode) item.parentNode.removeChild(item);
+            var remaining = document.querySelectorAll('[id^="rq-"]');
+            if (!remaining.length) {
+              var contentId = type === "Reels" ? "reelsReviewContent" : "imagesReviewContent";
+              var content   = document.getElementById(contentId);
+              if (content) {
+                content.innerHTML = '<div class="review-complete-card">' +
+                  '<svg width="20" height="20" data-lucide="check-circle"></svg>All ' +
+                  type.toLowerCase() + ' sorted.</div>';
+                lucide.createIcons();
+              }
+            }
+          }, 220);
+        }
+      } else {
+        showToast("Error moving file", true);
+        if (item) {
+          item.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+          var errEl = item.querySelector(".review-queue-error");
+          if (!errEl) {
+            errEl = document.createElement("div");
+            errEl.className = "review-queue-error";
+            item.appendChild(errEl);
+          }
+          errEl.textContent = "Move failed — try again";
+        }
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + ((err && err.message) || err), true);
+      if (item) {
+        item.querySelectorAll("button").forEach(function(btn) { btn.disabled = false; });
+      }
+    })
+    .moveReviewFile(fileId, episodeUid, type, decision);
+}
+
+// ── REVIEW SESSION (Episode notes) ───────────────────────────
+function initReviewSession(episodeUid) {
+  reviewSession.episodeUid = episodeUid;
+  reviewSession.startTime  = Date.now();
+  reviewSession.markedTime = null;
+  reviewSession.notes      = [];
+}
+
+function rvMarkTime() {
+  var elapsed = Math.floor((Date.now() - (reviewSession.startTime || Date.now())) / 1000);
+  var mins    = Math.floor(elapsed / 60);
+  var secs    = elapsed % 60;
+  reviewSession.markedTime = mins + ":" + String(secs).padStart(2, "0");
+  var display = document.getElementById("rvMarkedTimeDisplay");
+  if (display) {
+    display.textContent = "Marked: " + reviewSession.markedTime;
+    display.classList.add("has-time");
+  }
+}
+
+function rvAddNote() {
+  var input = document.getElementById("rvNoteInput");
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+  reviewSession.notes.push({ timestamp: reviewSession.markedTime || "—", note: text });
+  input.value          = "";
+  reviewSession.markedTime = null;
+  var display = document.getElementById("rvMarkedTimeDisplay");
+  if (display) {
+    display.textContent = "No time marked";
+    display.classList.remove("has-time");
+  }
+  rvRenderNoteList();
+  var sendBtn = document.getElementById("rvSendBtn");
+  if (sendBtn) sendBtn.disabled = reviewSession.notes.length === 0;
+}
+
+function rvRenderNoteList() {
+  var list = document.getElementById("rvNoteList");
+  if (!list) return;
+  if (!reviewSession.notes.length) { list.innerHTML = ""; return; }
+  var html = "";
+  reviewSession.notes.forEach(function(n) {
+    html += '<div class="rv-note-item">';
+    html += '<span class="rv-note-ts">'   + esc(n.timestamp) + "</span>";
+    html += '<span class="rv-note-text">' + esc(n.note)      + "</span>";
+    html += "</div>";
+  });
+  list.innerHTML = html;
+}
+
+function rvSendNotes(episodeUid) {
+  if (!reviewSession.notes.length) return;
+  var sendBtn = document.getElementById("rvSendBtn");
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Sending…"; }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success !== false) {
+        reviewSession.notes = [];
+        rvRenderNoteList();
+        showToast("Notes sent to Audra");
+      } else {
+        showToast("Error sending notes", true);
+      }
+      if (sendBtn) {
+        sendBtn.textContent = "Send to Audra";
+        sendBtn.disabled    = reviewSession.notes.length === 0;
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + ((err && err.message) || err), true);
+      if (sendBtn) {
+        sendBtn.textContent = "Send to Audra";
+        sendBtn.disabled    = reviewSession.notes.length === 0;
+      }
+    })
+    .submitEpisodeComments(episodeUid, reviewSession.notes, new Date().toLocaleDateString());
+}
+
+// ── READY FOR RELEASE ─────────────────────────────────────────
+var rfrState = { episodeUid: null };
+
+function openRfrModal(episodeUid) {
+  rfrState.episodeUid = episodeUid;
+  var confirmBtn = document.getElementById("rfrConfirmBtn");
+  if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "Yes, I'm done"; }
+  document.getElementById("rfrModal").classList.add("open");
+}
+
+function closeRfrModal() {
+  document.getElementById("rfrModal").classList.remove("open");
+  rfrState.episodeUid = null;
+}
+
+function confirmReadyForRelease() {
+  var uid = rfrState.episodeUid;
+  if (!uid) { closeRfrModal(); return; }
+  var confirmBtn = document.getElementById("rfrConfirmBtn");
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Sending…"; }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      closeRfrModal();
+      if (result && result.success !== false) {
+        var section = document.getElementById("rfrSection-" + uid);
+        if (section) section.innerHTML = "";
+        showToast("Done — Audra has been notified");
+        google.script.run
+          .withSuccessHandler(function(tasks) {
+            state.tasks = tasks || [];
+            refreshCurrentView();
+          })
+          .withFailureHandler(function() { refreshCurrentView(); })
+          .getTasks();
+      } else {
+        showToast("Error — please try again", true);
+        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "Yes, I'm done"; }
+      }
+    })
+    .withFailureHandler(function(err) {
+      closeRfrModal();
+      showToast("Error: " + ((err && err.message) || err), true);
+    })
+    .triggerReadyForRelease(uid);
 }
 
 // ── EPISODE REVIEW ACTIONS ───────────────────────────────────
@@ -2809,6 +3557,22 @@ function renderTaskButtons(task) {
   var tid  = esc(task.Task_ID);
   var ridx = task._rowIndex;
 
+  // In-app review navigation — these steps open a review surface, not an approval flow
+  if (ws === "Review_Episode" || ws === "Review_Images" || ws === "Review_Reels") {
+    var reviewUid = esc(task.Episode_UID || "");
+    if (ws === "Review_Episode") {
+      html += '<button class="btn btn-approve" onclick="showEpisodeReview(\'' + reviewUid + '\')">';
+      html += '<svg width="12" height="12" data-lucide="play"></svg> Review Episode</button>';
+    } else if (ws === "Review_Images") {
+      html += '<button class="btn btn-approve" onclick="showImagesReview(\'' + reviewUid + '\')">';
+      html += '<svg width="12" height="12" data-lucide="image"></svg> Sort Images</button>';
+    } else {
+      html += '<button class="btn btn-approve" onclick="showReelsReview(\'' + reviewUid + '\')">';
+      html += '<svg width="12" height="12" data-lucide="film"></svg> Sort Reels</button>';
+    }
+    return html;
+  }
+
   // Review link button
   if (task.Payload_Link && REVIEW_STEPS_WITH_LINK.indexOf(ws) !== -1) {
     html += '<button class="btn btn-open-link" onclick="window.open(\'' + esc(task.Payload_Link) + '\',\'_blank\')">';
@@ -2824,9 +3588,16 @@ function renderTaskButtons(task) {
 
   // Approve button
   if (APPROVE_STEPS.indexOf(ws) !== -1) {
-    html += '<button class="btn btn-approve" id="approve-' + tid + '" onclick="approveTask(\'' + tid + "'," + ridx + ')">';
-    html += '  <svg width="12" height="12" data-lucide="square-check-big"></svg> Approve';
-    html += "</button>";
+    if (ws === "Review_Guest_Brief") {
+      var gbEpUid = esc(task.Episode_UID || "");
+      html += '<button class="btn btn-approve" id="approve-' + tid + '" onclick="approveGuestBriefTask(\'' + tid + "'," + ridx + ",'" + gbEpUid + '\')">';
+      html += '  <svg width="12" height="12" data-lucide="square-check-big"></svg> Approve';
+      html += "</button>";
+    } else {
+      html += '<button class="btn btn-approve" id="approve-' + tid + '" onclick="approveTask(\'' + tid + "'," + ridx + ')">';
+      html += '  <svg width="12" height="12" data-lucide="square-check-big"></svg> Approve';
+      html += "</button>";
+    }
   }
 
   // Complete button
@@ -2834,6 +3605,14 @@ function renderTaskButtons(task) {
   if (completeSteps.indexOf(ws) !== -1 || task.Assigned_By !== "The Fairy Team") {
     html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeTask(\'' + tid + "'," + ridx + ')">';
     html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
+    html += "</button>";
+  }
+
+  // Fairy button (Filing tasks — triggers Filing Fairy stub)
+  if (ws === "Filing") {
+    var filingEpUid = esc(task.Episode_UID || "");
+    html += '<button class="btn btn-open-link" id="fairy-' + tid + '" onclick="triggerFilingFairy(\'' + filingEpUid + "','" + tid + '\')">';
+    html += '  <svg width="12" height="12" data-lucide="sparkles"></svg> Run Fairy';
     html += "</button>";
   }
 
@@ -2870,6 +3649,66 @@ function approveTask(taskId, rowIndex) {
     .writeTaskComplete(rowIndex);
 }
 
+function approveGuestBriefTask(taskId, rowIndex, episodeUid) {
+  setButtonLoading("approve-"  + taskId, true);
+  setButtonLoading("complete-" + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result.success) {
+        showToast("Error: " + result.error, true);
+        setButtonLoading("approve-"  + taskId, false);
+        setButtonLoading("complete-" + taskId, false);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function() {
+          removeTaskFromState(taskId);
+          showToast("Brief approved — JT notified");
+          refreshCurrentView();
+        })
+        .withFailureHandler(function(err2) {
+          showToast("Brief approved, but JT task failed: " + (err2.message || err2), true);
+          removeTaskFromState(taskId);
+          refreshCurrentView();
+        })
+        .approveGuestBriefEnrich(episodeUid);
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("approve-" + taskId, false);
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+function triggerFilingFairy(episodeUid, taskId) {
+  setButtonLoading("fairy-" + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setButtonLoading("fairy-" + taskId, false);
+      if (result.success) {
+        showToast("Filing Fairy triggered — check tasks for next steps");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+      }
+    })
+    .withFailureHandler(function(err) {
+      setButtonLoading("fairy-" + taskId, false);
+      showToast("Error: " + (err.message || err), true);
+    })
+    .triggerFilingFromTask(episodeUid);
+}
+
+function fireConfetti() {
+  if (typeof confetti !== "function") return;
+  confetti({
+    particleCount: 80,
+    spread:        70,
+    origin:        { y: 0.6 },
+    colors:        ["#FAB016", "#D12225"]
+  });
+}
+
 function completeTask(taskId, rowIndex) {
   setButtonLoading("complete-" + taskId, true);
   setButtonLoading("approve-"  + taskId, true);
@@ -2877,6 +3716,7 @@ function completeTask(taskId, rowIndex) {
     .withSuccessHandler(function(result) {
       if (result.success) {
         removeTaskFromState(taskId);
+        fireConfetti();
         showToast("Marked complete");
         refreshCurrentView();
       } else {
@@ -3146,34 +3986,38 @@ fabric.Object.prototype.transparentCorners = false;
 var bgCache = {};  // persistent cache for background base64 data URLs
 
 var iw = {
-  fabricCanvas:  null,
-  episodeUid:    null,
-  guestName:     null,
-  ratio:         'instagram',
-  selectedBgId:  null,
-  manifest:      null,
-  history:       [],
-  redoStack:     [],
-  pinchLastDist: null,
-  keyHandler:    null,
-  resizeHandler: null,
-  wheelHandler:  null,
-  userZoom:      1,
-  logoVariant:   'dark',
-  activeColor:   '#FEBE18'
+  fabricCanvas:     null,
+  episodeUid:       null,
+  guestName:        null,
+  ratio:            'instagram',
+  selectedBgId:     null,
+  manifest:         null,
+  history:          [],
+  redoStack:        [],
+  pinchLastDist:    null,
+  keyHandler:       null,
+  resizeHandler:    null,
+  wheelHandler:     null,
+  userZoom:         1,
+  logoVariant:      'dark',
+  activeColor:      '#FEBE18',
+  genMode:          'library',
+  generatedImages:  []
 };
 
 function showImageWorkshop(episodeUid) {
   var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
   iw.episodeUid  = episodeUid;
   iw.guestName   = ep ? (ep.Guest_Name || 'Episode') : 'Episode';
-  iw.ratio       = 'instagram';
-  iw.selectedBgId = null;
-  iw.history     = [];
-  iw.redoStack   = [];
-  iw.activeColor  = '#FEBE18';
-  iw.userZoom     = 1;
-  iw.logoVariant  = 'dark';
+  iw.ratio            = 'instagram';
+  iw.selectedBgId     = null;
+  iw.history          = [];
+  iw.redoStack        = [];
+  iw.activeColor      = '#FEBE18';
+  iw.userZoom         = 1;
+  iw.logoVariant      = 'dark';
+  iw.genMode          = 'library';
+  iw.generatedImages  = [];
 
   document.body.classList.add('workshop-open');
   var el = document.getElementById('imageWorkshop');
@@ -3217,6 +4061,7 @@ function showImageWorkshop(episodeUid) {
     viewLink.classList.add('hidden');
   }
 
+  iwSetPanelMode('library');
   iwInitCanvas();
   iwLoadBackgrounds();
   iwLoadManifest();
@@ -3242,10 +4087,13 @@ function closeImageWorkshop() {
   }
   document.body.classList.remove('workshop-open');
   document.getElementById('imageWorkshop').style.display = 'none';
-  iw.episodeUid = null;
-  iw.manifest   = null;
-  iw.history    = [];
-  iw.redoStack  = [];
+  iw.episodeUid       = null;
+  iw.manifest         = null;
+  iw.history          = [];
+  iw.redoStack        = [];
+  iw.genMode          = 'library';
+  iw.generatedImages  = [];
+  iwCloseHelpPopup();
 }
 
 function iwInitCanvas() {
@@ -3496,19 +4344,25 @@ function iwRenderBgGrid(items) {
     return;
   }
 
-  // Track item metadata (ratio + cached dataUrl) for grouped re-render
+  var SECTION_LABELS   = { generated: 'Generated', instagram: 'Instagram', feed: 'Feed', square: 'Square', other: 'Other' };
+  var SECTION_ORDER    = ['generated', 'instagram', 'feed', 'square', 'other'];
+  var CANONICAL_RATIOS = { generated: '9/16', instagram: '9/16', feed: '4/5', square: '1/1', other: '16/9' };
+
   var classified = items.map(function(item) {
-    return { item: item, ratio: null, dataUrl: bgCache[item.fileId] || null, naturalW: null, naturalH: null };
+    return { item: item, ratio: null, naturalW: null, naturalH: null };
   });
 
-  var SECTION_LABELS   = { instagram: 'Instagram', feed: 'Feed', square: 'Square', other: 'Other' };
-  var SECTION_ORDER    = ['instagram', 'feed', 'square', 'other'];
-  var CANONICAL_RATIOS = { instagram: '9/16', feed: '4/5', square: '1/1', other: '16/9' };
-
   function renderGrouped() {
-    var groups = { instagram: [], feed: [], square: [], other: [] };
+    var groups = { generated: [], instagram: [], feed: [], square: [], other: [] };
     classified.forEach(function(c) {
-      groups[c.ratio || 'other'].push(c);
+      if (c.item.isAiGenerated) {
+        groups.generated.push(c);
+      } else {
+        groups[c.ratio || 'other'].push(c);
+      }
+    });
+    groups.generated.sort(function(a, b) {
+      return b.item.name.localeCompare(a.item.name);
     });
     var html = '';
     SECTION_ORDER.forEach(function(key) {
@@ -3516,14 +4370,11 @@ function iwRenderBgGrid(items) {
       html += '<div class="iw-bg-section-header" id="iwBgSection-' + key + '">' + SECTION_LABELS[key] + '</div>';
       html += '<div class="iw-bg-grid">';
       groups[key].forEach(function(c) {
-        var item    = c.item;
-        var selCls  = iw.selectedBgId === item.fileId ? ' selected' : '';
-        var arStr   = (c.naturalW && c.naturalH) ? (c.naturalW + '/' + c.naturalH) : CANONICAL_RATIOS[key];
-        var imgHtml = c.dataUrl
-          ? '<img src="' + c.dataUrl + '" alt="' + item.name + '">'
-          : '<div style="width:100%;height:100%;background:var(--surface-2)"></div>';
+        var item   = c.item;
+        var selCls = iw.selectedBgId === item.fileId ? ' selected' : '';
+        var arStr  = (c.naturalW && c.naturalH) ? (c.naturalW + '/' + c.naturalH) : CANONICAL_RATIOS[key];
         html += '<div class="iw-bg-thumb' + selCls + '" data-file-id="' + item.fileId + '" style="aspect-ratio:' + arStr + '">' +
-          imgHtml +
+          '<img src="' + item.thumbnailUrl + '" alt="' + item.name + '">' +
           (item.isAiGenerated ? '<span class="iw-ai-badge">AI</span>' : '') +
           '<button class="iw-bg-delete" title="Delete">&#215;</button>' +
           '</div>';
@@ -3531,7 +4382,6 @@ function iwRenderBgGrid(items) {
       html += '</div>';
     });
     container.innerHTML = html;
-    // Re-attach event listeners after each re-render
     container.querySelectorAll('.iw-bg-thumb').forEach(function(div) {
       var fileId = div.dataset.fileId;
       div.querySelector('.iw-bg-delete').addEventListener('click', function(e) {
@@ -3542,49 +4392,33 @@ function iwRenderBgGrid(items) {
     });
   }
 
+  // Render immediately — thumbnails load from Drive CDN in parallel, no GAS round-trips
   renderGrouped();
 
-  // Load images sequentially; cache + classify as each arrives
-  (function fetchNext(i) {
+  // Classify ratios from thumbnail dims — browser-native Image loads, all fire in parallel
+  classified.forEach(function(c, i) {
+    if (c.item.isAiGenerated) return;
+    var tmpImg = new Image();
+    tmpImg.onload = function() {
+      classified[i].naturalW = tmpImg.naturalWidth;
+      classified[i].naturalH = tmpImg.naturalHeight;
+      classified[i].ratio    = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
+      renderGrouped();
+    };
+    tmpImg.src = c.item.thumbnailUrl;
+  });
+
+  // Background-prefetch full-res into bgCache sequentially so canvas placement is instant on click
+  (function prefetchNext(i) {
     if (i >= items.length) return;
     var item = items[i];
-    if (bgCache[item.fileId]) {
-      // Already cached — classify from cached image if needed
-      if (!classified[i].ratio) {
-        var tmpImg = new Image();
-        tmpImg.onload = function() {
-          classified[i].naturalW = tmpImg.naturalWidth;
-          classified[i].naturalH = tmpImg.naturalHeight;
-          classified[i].ratio = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
-          renderGrouped();
-          fetchNext(i + 1);
-        };
-        tmpImg.src = bgCache[item.fileId];
-      } else {
-        renderGrouped();
-        fetchNext(i + 1);
-      }
-      return;
-    }
+    if (bgCache[item.fileId]) { prefetchNext(i + 1); return; }
     google.script.run
       .withSuccessHandler(function(result) {
-        if (result && result.success) {
-          bgCache[item.fileId]    = result.dataUrl;
-          classified[i].dataUrl   = result.dataUrl;
-          var tmpImg = new Image();
-          tmpImg.onload = function() {
-            classified[i].naturalW = tmpImg.naturalWidth;
-            classified[i].naturalH = tmpImg.naturalHeight;
-            classified[i].ratio = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
-            renderGrouped();
-            fetchNext(i + 1);
-          };
-          tmpImg.src = result.dataUrl;
-        } else {
-          fetchNext(i + 1);
-        }
+        if (result && result.success) bgCache[item.fileId] = result.dataUrl;
+        prefetchNext(i + 1);
       })
-      .withFailureHandler(function() { fetchNext(i + 1); })
+      .withFailureHandler(function() { prefetchNext(i + 1); })
       .getBackgroundImageData(item.fileId);
   })(0);
 }
@@ -3691,6 +4525,167 @@ function iwHandleUpload(input) {
   reader.readAsDataURL(file);
   input.value = '';
 }
+
+// ── GENERATE MODE ────────────────────────────────────────────
+
+function iwSetPanelMode(mode) {
+  iw.genMode = mode;
+  var isLib = mode === 'library';
+  document.getElementById('iwLibraryPanel').style.display  = isLib ? '' : 'none';
+  document.getElementById('iwGeneratePanel').style.display = isLib ? 'none' : '';
+  document.getElementById('iwModeLibraryBtn').classList.toggle('active', isLib);
+  document.getElementById('iwModeGenerateBtn').classList.toggle('active', !isLib);
+  if (isLib) {
+    iwLoadBackgrounds();
+  } else {
+    iwRenderGenThumbs();
+    document.getElementById('iwPromptInput').focus();
+  }
+}
+
+function iwSubmitPrompt() {
+  var prompt = (document.getElementById('iwPromptInput').value || '').trim();
+  if (!prompt) return;
+
+  var sendBtn = document.getElementById('iwPromptSend');
+  sendBtn.disabled = true;
+
+  // Export background only — hide text/logos before capture, restore after.
+  // Happens synchronously before browser paint; JT sees nothing change.
+  var imageBase64 = null;
+  var mimeType    = null;
+  if (iw.fabricCanvas) {
+    var allObjs = iw.fabricCanvas.getObjects();
+    var hasBg   = allObjs.some(function(o) { return o._isBackground; });
+    if (hasBg) {
+      allObjs.forEach(function(o) { if (!o._isBackground) o.visible = false; });
+      var dataUrl = iw.fabricCanvas.toDataURL({ format: 'png', multiplier: 1 });
+      allObjs.forEach(function(o) { if (!o._isBackground) o.visible = true; });
+      iw.fabricCanvas.renderAll();
+      imageBase64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+      mimeType    = 'image/png';
+    }
+  }
+
+  // Show spinner in the thumbnail strip
+  var thumbsEl = document.getElementById('iwGenThumbs');
+  thumbsEl.insertAdjacentHTML('afterbegin',
+    '<div class="iw-gen-spinner" id="iwGenSpinner">Generating…</div>');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var spinner = document.getElementById('iwGenSpinner');
+      if (spinner) spinner.remove();
+      sendBtn.disabled = false;
+      if (result && result.success) {
+        iw.generatedImages.unshift({
+          data:    result.data,
+          mimeType: result.mimeType,
+          fileId:  result.fileId,
+          name:    result.name,
+          dataUrl: 'data:' + result.mimeType + ';base64,' + result.data
+        });
+        bgCache[result.fileId] = 'data:' + result.mimeType + ';base64,' + result.data;
+        iwRenderGenThumbs();
+        // Auto-load newest image onto canvas
+        iwPlaceBackground(iw.generatedImages[0].dataUrl);
+        iw.selectedBgId = result.fileId;
+        document.getElementById('iwPromptInput').value = '';
+      } else {
+        showToast('Generation failed: ' + (result.error || 'unknown error'), true);
+      }
+    })
+    .withFailureHandler(function(err) {
+      var spinner = document.getElementById('iwGenSpinner');
+      if (spinner) spinner.remove();
+      sendBtn.disabled = false;
+      showToast('Generation failed', true);
+    })
+    .generateBackground(prompt, imageBase64, mimeType);
+}
+
+function iwRenderGenThumbs() {
+  var el = document.getElementById('iwGenThumbs');
+  if (!iw.generatedImages.length) {
+    el.innerHTML = '<div class="iw-empty-msg">No images yet. Enter a prompt above.</div>';
+    return;
+  }
+  var html = '';
+  iw.generatedImages.forEach(function(img, idx) {
+    var selCls = (iw.selectedBgId === img.fileId) ? ' selected' : '';
+    html += '<div class="iw-gen-thumb' + selCls + '" data-idx="' + idx + '">' +
+      '<img src="' + img.dataUrl + '" alt="Generated background">' +
+      '<button class="iw-gen-delete" title="Delete permanently">&#215;</button>' +
+      '</div>';
+  });
+  el.innerHTML = html;
+  el.querySelectorAll('.iw-gen-thumb').forEach(function(div) {
+    var idx = parseInt(div.dataset.idx, 10);
+    div.querySelector('.iw-gen-delete').addEventListener('click', function(e) {
+      e.stopPropagation();
+      iwDeleteGenThumb(idx);
+    });
+    div.addEventListener('click', function() {
+      iw.selectedBgId = iw.generatedImages[idx].fileId;
+      iwPlaceBackground(iw.generatedImages[idx].dataUrl);
+      iwRenderGenThumbs();
+    });
+  });
+}
+
+function iwDeleteGenThumb(idx) {
+  if (!confirm('Delete this generated background permanently?')) return;
+  var img    = iw.generatedImages[idx];
+  var fileId = img.fileId;
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        delete bgCache[fileId];
+        iw.generatedImages.splice(idx, 1);
+        if (iw.selectedBgId === fileId) iw.selectedBgId = null;
+        iwRenderGenThumbs();
+      } else {
+        showToast('Delete failed: ' + (result.error || ''), true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Delete failed', true); })
+    .deleteBackgroundFromLibrary(fileId);
+}
+
+// Enter key submits prompt (Shift+Enter inserts newline)
+document.addEventListener('DOMContentLoaded', function() {
+  var inp = document.getElementById('iwPromptInput');
+  if (inp) {
+    inp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        iwSubmitPrompt();
+      }
+    });
+  }
+});
+
+// ── HELP POPUP ───────────────────────────────────────────────
+
+function iwToggleHelpPopup() {
+  var popup = document.getElementById('iwHelpPopup');
+  popup.classList.toggle('visible');
+}
+
+function iwCloseHelpPopup() {
+  var popup = document.getElementById('iwHelpPopup');
+  if (popup) popup.classList.remove('visible');
+}
+
+// Close help popup on outside click
+document.addEventListener('click', function(e) {
+  var popup   = document.getElementById('iwHelpPopup');
+  var helpBtn = document.querySelector('.iw-help-btn');
+  if (!popup || !popup.classList.contains('visible')) return;
+  if (!popup.contains(e.target) && e.target !== helpBtn) {
+    popup.classList.remove('visible');
+  }
+});
 
 // ── QUOTES & HOOKS ───────────────────────────────────────────
 function iwLoadManifest() {

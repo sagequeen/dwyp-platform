@@ -1708,6 +1708,9 @@ body.workshop-open .bottom-nav { display: none; }
   padding-top: 56.25%;
   background: #000;
 }
+.rv-player-wrap.portrait {
+  padding-top: 177.78%;
+}
 .rv-player-wrap iframe {
   position: absolute;
   inset: 0;
@@ -2982,10 +2985,10 @@ function renderReelQueue(ep, files) {
   files.forEach(function(file) {
     var fid  = esc(file.fileId);
     var name = esc(file.fileName);
-    var src  = "https://drive.google.com/uc?export=download&id=" + fid;
+    var src  = "https://drive.google.com/file/d/" + fid + "/preview";
     html += '<div class="review-queue-item" id="rq-' + fid + '">';
     html += '<div class="review-queue-filename">' + name + "</div>";
-    html += '<video class="review-queue-media vid" controls muted playsinline src="' + src + '"></video>';
+    html += '<div class="rv-player-wrap portrait"><iframe src="' + src + '" allowfullscreen></iframe></div>';
     html += '<div class="review-queue-actions">';
     html += '<button class="btn-decide-approve" onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Reels\',\'Approved\')">Approve</button>';
     html += '<button class="btn-decide-save"    onclick="decideFile(\'' + fid + '\',\'' + uid + '\',\'Reels\',\'Save\')">Save</button>';

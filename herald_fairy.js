@@ -166,7 +166,7 @@ function runHerald(contactId, episodeUid) {
       contactId:        contactId,
       episodeUid:       episodeUid || "",
       workflowStep:     "Verify_Guest_Identity",
-      executiveSummary: `New guest detected — verify identity: ${displayNameCheck}`
+      executiveSummary: `Herald couldn't confirm this guest's identity with enough confidence to proceed. Check their public profiles, update the contact record with any missing details (email, website, social handles), then re-run Herald from the Fairy Remote Control.`
     });
 
     logToAuditTrail(actor, "state_change", episodeUid, contactId,
@@ -822,13 +822,13 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
     return;
   }
 
-  // --- Step 6: Spawn task — brief ready for review ---
-  // FIX 10 — workflowStep required for AppSheet action buttons.
-  // FIX 19 — payloadLink set to briefDocUrl so JT can open the brief
-  //           directly from the Review_Guest_Brief task in Pulse.
+  // --- Step 6: Spawn task to Audra — brief ready for enrich/approve ---
+  // Two-step chain: Audra reviews and enriches first (#2), then approves to
+  // trigger spawnGuestBriefReviewForJT() which sends the brief task to JT (#3).
+  const confidenceLevel = identityResult?.possibleMatches?.[0]?.confidence || "not checked";
   spawnTask({
-    actionTitle:      "Review guest brief",
-    assignee:         getGovernance("ASSIGNEE_HOST"),
+    actionTitle:      `Review guest brief: ${displayName}`,
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
     assignedBy:       "The Fairy Team",
     status:           "open",
     priority:         "normal",
@@ -836,11 +836,31 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
     episodeUid:       episodeUid,
     workflowStep:     "Review_Guest_Brief",
     payloadLink:      briefDocUrl,
-    executiveSummary: `Guest brief for ${displayName} is ready in the Contact Library folder.`
+    executiveSummary: `Herald has generated the guest brief for ${displayName} (confidence: ${confidenceLevel}). Review it, add any missing handles or websites using the Enrich button, then approve to send it to JT.`
   });
 
   logToAuditTrail(actor, "state_change", episodeUid, contactId,
-    `Guest brief generated and written to Contact Library for ${displayName}.`, "INFO");
+    `Guest brief generated and written to Contact Library for ${displayName}. Audra review task spawned.`, "INFO");
+}
+
+
+// =============================================================================
+// GUEST BRIEF REVIEW — JT task (called when Audra approves)
+// Called from the web app Approve button on the Enrich task.
+// Call site wiring is a separate spoke — do not add it here.
+// =============================================================================
+
+function spawnGuestBriefReviewForJT(episodeUid, displayName) {
+  spawnTask({
+    actionTitle:      `Review guest brief: ${displayName}`,
+    assignee:         getGovernance("ASSIGNEE_HOST"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    episodeUid:       episodeUid,
+    workflowStep:     "Review_Guest_Brief",
+    executiveSummary: `The guest brief for ${displayName} is ready for your review. Tap to open it.`
+  });
 }
 
 

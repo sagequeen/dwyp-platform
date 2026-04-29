@@ -939,7 +939,7 @@ body.workshop-open .bottom-nav { display: none; }
 }
 .iw-panel-right { border-right: none; border-left: 1px solid var(--border); }
 .iw-panel-body {
-  width: 320px;
+  width: 360px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1052,6 +1052,7 @@ body.workshop-open .bottom-nav { display: none; }
 .iw-tool-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(250,176,22,0.08); }
 .iw-tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 #iwItalicBtn { font-style: italic; font-family: Georgia, 'Times New Roman', serif; }
+#iwShadowBtn { font-weight: 700; text-shadow: 1px 2px 4px rgba(0,0,0,0.55); }
 .iw-mob-toggle { display: none; }
 
 /* Export bar */
@@ -1209,6 +1210,133 @@ body.workshop-open .bottom-nav { display: none; }
 .iw-qh-speaker { font-size: 10px; color: var(--text-3); font-weight: 700; }
 .iw-qh-hook { font-size: 12px; line-height: 1.4; color: var(--text); }
 .iw-empty-msg { font-size: 12px; color: var(--text-3); text-align: center; padding: 16px 8px; line-height: 1.5; }
+
+/* Generated thumbnail name label */
+.iw-gen-label {
+  font-size: 10px;
+  color: var(--text-3);
+  padding: 3px 6px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Social Vert chat panel */
+.sv-chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sv-msg {
+  max-width: 92%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.sv-msg.user {
+  align-self: flex-end;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.sv-msg.model {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.sv-msg.typing { color: var(--text-3); font-style: italic; }
+.sv-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  margin: 2px 2px 0 0;
+  transition: opacity var(--transition);
+  vertical-align: middle;
+}
+.sv-chip:hover { opacity: 0.75; }
+.sv-chip.hook {
+  background: var(--red-light);
+  color: var(--red);
+  border-color: var(--red);
+}
+.sv-chip.quote {
+  background: var(--gold-light);
+  color: #a07010;
+  border-color: var(--gold);
+}
+.sv-chip.prompt {
+  background: var(--surface-2);
+  color: var(--text-2);
+  border-color: var(--border);
+}
+.sv-input-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sv-input {
+  width: 100%;
+  padding: 7px 10px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  resize: none;
+  line-height: 1.4;
+}
+.sv-input:focus { outline: none; border-color: var(--red); }
+.sv-send {
+  align-self: flex-end;
+  padding: 5px 14px;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.sv-send:disabled { opacity: 0.45; cursor: not-allowed; }
+.sv-empty-msg {
+  font-size: 12px;
+  color: var(--text-3);
+  text-align: center;
+  padding: 24px 12px;
+  line-height: 1.6;
+}
+/* Add Text toolbar picker dropdown */
+.iw-addtext-wrap { position: relative; display: inline-flex; }
+.iw-addtext-picker {
+  display: none;
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  z-index: 50;
+  min-width: 90px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
 .iw-bg-section-header {
   font-size: 9px;
   font-weight: 700;
@@ -1450,7 +1578,7 @@ body.workshop-open .bottom-nav { display: none; }
 
 /* Mobile: narrow panels, start collapsed via JS */
 @media (max-width: 600px) {
-  .iw-panel-body { width: 160px; }
+  .iw-panel-body { width: 180px; }
   .iw-ratio-btn { padding: 4px 7px; font-size: 10px; }
   .iw-title { font-size: 13px; }
 }
@@ -1879,6 +2007,73 @@ body.workshop-open .bottom-nav { display: none; }
 .btn-decide-delete:active { opacity: 0.8; }
 .review-queue-error { font-size: 12px; color: var(--red); padding: 6px 12px; }
 
+/* ── IMAGES SWIPE SORTER ────────────────────────────────────── */
+.img-sorter-wrap { display: flex; flex-direction: column; min-height: 0; }
+.img-sorter-counter {
+  text-align: center; font-size: 12px; font-weight: 600;
+  color: var(--text-3); padding: 8px 0 4px;
+}
+.img-sorter-stage {
+  position: relative; display: flex; align-items: center;
+  justify-content: center; padding: 0 44px; flex-shrink: 0;
+}
+.img-sorter-frame { position: relative; display: inline-block; line-height: 0; }
+.img-sorter-img {
+  max-width: 100%; max-height: 360px; object-fit: contain;
+  border-radius: var(--radius); display: block; background: var(--surface-2);
+}
+.img-sorter-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: var(--shadow); font-size: 16px;
+  color: var(--text-1); transition: opacity var(--transition); z-index: 1;
+}
+.img-sorter-nav:disabled { opacity: 0.25; cursor: default; }
+.img-sorter-nav.prev { left: 2px; }
+.img-sorter-nav.next { right: 2px; }
+.img-sorter-corner {
+  position: absolute; top: 6px; right: 6px;
+  display: flex; flex-direction: column; gap: 5px; z-index: 2;
+}
+.img-sorter-icon-btn {
+  width: 30px; height: 30px; border-radius: 50%; padding: 0;
+  border: 1.5px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.42);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: #fff; transition: background var(--transition);
+}
+.img-sorter-icon-btn.delete-active { background: var(--red); border-color: var(--red); }
+.img-sorter-icon-btn[disabled]     { opacity: 0.4; cursor: default; }
+.img-sorter-state-badge {
+  position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; font-weight: 800; padding: 2px 10px; border-radius: 20px;
+  letter-spacing: 0.06em; text-transform: uppercase; pointer-events: none; white-space: nowrap;
+}
+.img-sorter-state-badge.approved { background: rgba(30,122,60,0.85);  color: #fff; }
+.img-sorter-state-badge.save     { background: rgba(0,0,0,0.52);       color: #fff; }
+.img-sorter-state-badge.delete   { background: rgba(209,34,37,0.85);   color: #fff; }
+.img-sorter-bottom {
+  display: flex; gap: 8px; padding: 10px 16px 6px;
+}
+.img-sorter-bottom button {
+  flex: 1; padding: 10px 6px; border-radius: var(--radius-sm);
+  font-family: var(--font-body); font-size: 13px; font-weight: 700;
+  cursor: pointer; border: 1px solid transparent; transition: opacity var(--transition);
+}
+.img-sorter-bottom button:active   { opacity: 0.75; }
+.img-sorter-bottom button:disabled { opacity: 0.4; cursor: default; }
+.img-sorter-btn-approve { background: #e6f4ec; color: #1e7a3c; border-color: #b3dfc3; }
+.img-sorter-btn-save    { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
+.img-sorter-submit-row  { padding: 0 16px 14px; }
+.img-sorter-btn-submit {
+  width: 100%; padding: 11px; background: var(--gold); color: #0D0A0A;
+  border: none; border-radius: var(--radius-sm); font-family: var(--font-body);
+  font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity var(--transition);
+}
+.img-sorter-btn-submit:active   { opacity: 0.85; }
+.img-sorter-btn-submit:disabled { opacity: 0.5; cursor: default; }
+
 /* ── READY FOR RELEASE ──────────────────────────────────────── */
 .btn-ready-for-release {
   display: flex;
@@ -2064,8 +2259,9 @@ body.workshop-open .bottom-nav { display: none; }
     <div class="iw-help-popup-body">
       <div class="iw-help-section-label">Working the canvas</div>
       <p>Choose <strong>Instagram, Feed, or Square</strong> to set the correct canvas size.</p>
-      <p>Click a <strong>background, quote, or hook</strong> to place it on the canvas. Click again to replace it.</p>
-      <p><strong>Edit text directly</strong> on the canvas. <strong>Add Text</strong> to create your own.</p>
+      <p>Click a <strong>background</strong> to place it on the canvas. Click again to replace it.</p>
+      <p><strong>Edit text directly</strong> on the canvas. Use <strong>Add Text</strong> in the toolbar to create your own.</p>
+      <p>Ask <strong>Social Vert</strong> (right panel) for hook and quote ideas. Tap a chip to load it onto the canvas. Tap a <strong>Prompt chip</strong> to pre-fill the GenGem prompt box.</p>
       <p><strong>Select an object</strong> to move, resize, or delete it.</p>
       <p><strong>Center</strong> moves the selected object to the horizontal center. <strong>Delete</strong> removes it.</p>
       <p><strong>Deleting items from the library</strong> removes them permanently.</p>
@@ -2082,9 +2278,10 @@ body.workshop-open .bottom-nav { display: none; }
     <a class="iw-view-btn hidden" id="iwViewLink" href="#" target="_blank">View Images ↗</a>
     <span class="iw-toolbar-sep"></span>
     <div class="iw-ratio-group">
-      <button class="iw-ratio-btn active" data-ratio="instagram" onclick="iwSetAspectRatio('instagram')">Instagram</button>
-      <button class="iw-ratio-btn" data-ratio="feed"      onclick="iwSetAspectRatio('feed')">Feed</button>
-      <button class="iw-ratio-btn" data-ratio="square"    onclick="iwSetAspectRatio('square')">Square</button>
+      <button class="iw-ratio-btn active" data-ratio="instagram"  onclick="iwSetAspectRatio('instagram')">Instagram</button>
+      <button class="iw-ratio-btn" data-ratio="feed"       onclick="iwSetAspectRatio('feed')">Feed</button>
+      <button class="iw-ratio-btn" data-ratio="square"     onclick="iwSetAspectRatio('square')">Square</button>
+      <button class="iw-ratio-btn" data-ratio="landscape"  onclick="iwSetAspectRatio('landscape')">Landscape</button>
     </div>
   </div>
 
@@ -2100,10 +2297,21 @@ body.workshop-open .bottom-nav { display: none; }
     </div>
     <span class="iw-toolbar-sep"></span>
     <button id="iwItalicBtn" class="iw-tool-btn" onclick="iwToggleItalic()" title="Toggle italic">I</button>
+    <button id="iwShadowBtn" class="iw-tool-btn" onclick="iwToggleShadow()" title="Toggle text shadow">T</button>
     <button id="iwCenterBtn" class="iw-tool-btn" onclick="iwCenterObject()" title="Center horizontally" disabled>Center</button>
     <span class="iw-toolbar-sep"></span>
     <button class="iw-tool-btn" onclick="iwUndo()">Undo</button>
     <button class="iw-tool-btn" onclick="iwRedo()">Redo</button>
+    <span class="iw-toolbar-sep"></span>
+    <button class="iw-tool-btn" onclick="iwClearCanvas()" title="Clear all canvas objects">Clear</button>
+    <span class="iw-toolbar-sep"></span>
+    <div class="iw-addtext-wrap">
+      <div id="iwAddTextBtn" class="iw-tool-btn" style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick="iwShowTextTypePicker()">Add Text</div>
+      <div id="iwTextTypePicker" class="iw-addtext-picker">
+        <div class="iw-text-type-btn" onclick="iwAddText('headline')">Headline</div>
+        <div class="iw-text-type-btn" onclick="iwAddText('normal')">Normal</div>
+      </div>
+    </div>
   </div>
 
   <!-- Row 3: Three-panel layout -->
@@ -2152,22 +2360,19 @@ body.workshop-open .bottom-nav { display: none; }
       </div>
     </div>
 
-    <!-- Right panel: Quotes & Hooks -->
+    <!-- Right panel: Social Vert -->
     <div class="iw-panel iw-panel-right" id="iwQhPanel">
       <button class="iw-collapse-tab" id="iwQhPanelTab" onclick="iwTogglePanelCollapse('right')" title="Collapse panel">
         <svg width="10" height="10" data-lucide="chevron-right"></svg>
       </button>
       <div class="iw-panel-body">
         <div class="iw-panel-header">Quotes &amp; Hooks</div>
-        <div class="iw-panel-scroll">
-          <div id="iwAddTextBtn" class="iw-bg-upload" onclick="iwShowTextTypePicker()">
-            <svg width="13" height="13" data-lucide="type"></svg>Add Text
-          </div>
-          <div id="iwTextTypePicker" style="display:none">
-            <div class="iw-text-type-btn" onclick="iwAddText('headline')">Headline</div>
-            <div class="iw-text-type-btn" onclick="iwAddText('normal')">Normal</div>
-          </div>
-          <div id="iwQuotesList"></div>
+        <div id="svChatHistory" class="sv-chat-history">
+          <div class="sv-empty-msg">Ask about guests, themes, episodes — or request hook and quote ideas for your graphic.</div>
+        </div>
+        <div class="sv-input-bar">
+          <textarea class="sv-input" id="svInput" placeholder="Ask about episodes, hooks, quotes…" rows="2"></textarea>
+          <button class="sv-send" id="svSend" onclick="svSendMessage()">Send</button>
         </div>
       </div>
     </div>
@@ -2840,7 +3045,8 @@ function renderEpisodeToolsCard(ep, epTasks) {
       '<div class="ep-tools-section-label">Tools</div>' +
       '<div class="ep-tools-row">' +
         toolBtn("Drive",      "folder-open", driveUrl) +
-        toolBtn("Gems",       "sparkles",    gemsUrl)  +
+        '<button class="ep-tool-btn" onclick="showImageWorkshop(\'' + uid + '\')">' +
+          '<svg width="15" height="15" data-lucide="image"></svg>Image Workshop</button>' +
         toolBtn("NotebookLM", "book-open",   nlmUrl)   +
       '</div>' +
     '</div>' +
@@ -3063,7 +3269,7 @@ function renderImagesReview(ep) {
   document.getElementById("imagesReviewContent").innerHTML =
     '<div class="loading-state"><div class="spinner"></div><span>Loading images…</span></div>';
   google.script.run
-    .withSuccessHandler(function(files) { renderImageQueue(ep, files || []); })
+    .withSuccessHandler(function(files) { renderImageCarousel(ep, files || []); })
     .withFailureHandler(function(err) {
       document.getElementById("imagesReviewContent").innerHTML =
         '<div class="empty-state"><p>Could not load images.</p><small>' + ((err && err.message) || err) + "</small></div>";
@@ -3094,6 +3300,129 @@ function renderImageQueue(ep, files) {
     html += "</div></div>";
   });
   container.innerHTML = html;
+}
+
+// ── IMAGES SWIPE SORTER ──────────────────────────────────────
+var imgSorterEp    = null;
+var imgSorterFiles = [];
+var imgSorterIdx   = 0;
+var imgSorterState = {};   // { [fileId]: 'approved'|'save'|'delete'|'untouched' }
+var imgSorterBusy  = false;
+
+function renderImageCarousel(ep, files) {
+  imgSorterEp    = ep;
+  imgSorterFiles = files;
+  imgSorterIdx   = 0;
+  imgSorterState = {};
+  imgSorterBusy  = false;
+  files.forEach(function(f) { imgSorterState[f.fileId] = 'untouched'; });
+
+  var container = document.getElementById('imagesReviewContent');
+  if (!files.length) {
+    container.innerHTML = '<div class="review-complete-card"><svg width="20" height="20" data-lucide="check-circle"></svg>No images left to review.</div>';
+    lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML =
+    '<div class="img-sorter-wrap">' +
+      '<div class="img-sorter-counter" id="imgCounter"></div>' +
+      '<div class="img-sorter-stage">' +
+        '<button class="img-sorter-nav prev" id="imgNavPrev" onclick="imgNav(-1)">' +
+          '<svg width="16" height="16" data-lucide="chevron-left"></svg></button>' +
+        '<div class="img-sorter-frame">' +
+          '<img class="img-sorter-img" id="imgMain" src="" alt="">' +
+          '<div class="img-sorter-corner">' +
+            '<button class="img-sorter-icon-btn" id="imgDelBtn" onclick="imgToggleDelete()" title="Mark as Delete">' +
+              '<svg width="14" height="14" data-lucide="trash-2"></svg></button>' +
+            '<button class="img-sorter-icon-btn" disabled title="Comment (coming soon)">' +
+              '<svg width="14" height="14" data-lucide="message-circle"></svg></button>' +
+          '</div>' +
+          '<div class="img-sorter-state-badge" id="imgStateBadge"></div>' +
+        '</div>' +
+        '<button class="img-sorter-nav next" id="imgNavNext" onclick="imgNav(1)">' +
+          '<svg width="16" height="16" data-lucide="chevron-right"></svg></button>' +
+      '</div>' +
+      '<div class="img-sorter-bottom">' +
+        '<button class="img-sorter-btn-approve" onclick="imgDecide(\'approved\')">Approve</button>' +
+        '<button class="img-sorter-btn-save"    onclick="imgDecide(\'save\')">Save</button>' +
+      '</div>' +
+    '</div>';
+
+  lucide.createIcons();
+  imgRender();
+}
+
+function imgRender() {
+  var f      = imgSorterFiles[imgSorterIdx];
+  var state  = imgSorterState[f.fileId] || 'untouched';
+  var n      = imgSorterFiles.length;
+  var counter = document.getElementById('imgCounter');
+  var imgEl   = document.getElementById('imgMain');
+  var navPrev = document.getElementById('imgNavPrev');
+  var navNext = document.getElementById('imgNavNext');
+  var delBtn  = document.getElementById('imgDelBtn');
+  var badge   = document.getElementById('imgStateBadge');
+  if (!counter || !imgEl) return;
+
+  counter.textContent  = (imgSorterIdx + 1) + ' of ' + n;
+  imgEl.src = (f.thumbnailUrl || '').replace(/sz=w\d+/, 'sz=w800');
+  imgEl.alt = f.fileName;
+  navPrev.disabled     = imgSorterIdx === 0;
+  navNext.disabled     = imgSorterIdx === n - 1;
+  delBtn.className     = 'img-sorter-icon-btn' + (state === 'delete' ? ' delete-active' : '');
+  badge.textContent    = state === 'untouched' ? '' : ({ approved: 'Approved', save: 'Save', delete: 'Delete' })[state] || '';
+  badge.className      = 'img-sorter-state-badge' + (state !== 'untouched' ? ' ' + state : '');
+}
+
+function imgNav(dir) {
+  var next = imgSorterIdx + dir;
+  if (next < 0 || next >= imgSorterFiles.length) return;
+  imgSorterIdx = next;
+  imgRender();
+}
+
+function imgToggleDelete() {
+  var f = imgSorterFiles[imgSorterIdx];
+  imgSorterState[f.fileId] = imgSorterState[f.fileId] === 'delete' ? 'untouched' : 'delete';
+  imgRender();
+}
+
+function imgDecide(decision) {
+  var f = imgSorterFiles[imgSorterIdx];
+  imgSorterState[f.fileId] = decision;
+  if (imgSorterIdx < imgSorterFiles.length - 1) { imgSorterIdx++; }
+  imgRender();
+}
+
+function imgSubmitAll() {
+  if (imgSorterBusy) return;
+  imgSorterBusy = true;
+  var submitBtn = document.getElementById('imgSubmitBtn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Submitting…'; }
+
+  var episodeUid = imgSorterEp.Episode_UID;
+  var decisions  = imgSorterFiles.map(function(f) {
+    var s = imgSorterState[f.fileId] || 'untouched';
+    return { fileId: f.fileId, decision: s === 'approved' ? 'Approved' : s === 'delete' ? 'Delete' : 'Save' };
+  });
+
+  (function submitNext(i) {
+    if (i >= decisions.length) {
+      document.getElementById('imagesReviewContent').innerHTML =
+        '<div class="review-complete-card"><svg width="20" height="20" data-lucide="check-circle"></svg>All images submitted.</div>';
+      lucide.createIcons();
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function() { submitNext(i + 1); })
+      .withFailureHandler(function(err) {
+        showToast('Error submitting image ' + (i + 1) + ': ' + ((err && err.message) || err), true);
+        imgSorterBusy = false;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Done — Submit All'; }
+      })
+      .moveReviewFile(decisions[i].fileId, episodeUid, 'Images', decisions[i].decision);
+  })(0);
 }
 
 function renderImageSections(ep, assets) {
@@ -3976,11 +4305,13 @@ var IW_TEST_UID = 'EP-260423-1454';
 var IW_RATIOS = {
   instagram: { w: 1080, h: 1920 },
   feed:      { w: 1080, h: 1350 },
-  square:    { w: 1080, h: 1080 }
+  square:    { w: 1080, h: 1080 },
+  landscape: { w: 1920, h: 1080 }
 };
 
 // ── FABRIC GLOBAL HANDLE STYLE ───────────────────────────────
-fabric.Object.prototype.cornerSize          = 16;
+fabric.Object.prototype.cornerSize          = 20;
+fabric.Object.prototype.touchCornerSize     = 30;
 fabric.Object.prototype.cornerColor        = '#FAB016';
 fabric.Object.prototype.cornerStrokeColor  = '#D12225';
 fabric.Object.prototype.borderColor        = '#FAB016';
@@ -4064,10 +4395,17 @@ function showImageWorkshop(episodeUid) {
     viewLink.classList.add('hidden');
   }
 
+  svHistory = [];
+  var svEl = document.getElementById('svChatHistory');
+  if (svEl) svEl.innerHTML = '<div class="sv-empty-msg">Ask about guests, themes, episodes — or request hook and quote ideas for your graphic.</div>';
+  var svSendBtn = document.getElementById('svSend');
+  if (svSendBtn) svSendBtn.disabled = false;
+  var svInp = document.getElementById('svInput');
+  if (svInp) svInp.value = '';
+
   iwSetPanelMode('library');
   iwInitCanvas();
   iwLoadBackgrounds();
-  iwLoadManifest();
 }
 
 function closeImageWorkshop() {
@@ -4096,6 +4434,9 @@ function closeImageWorkshop() {
   iw.redoStack        = [];
   iw.genMode          = 'library';
   iw.generatedImages  = [];
+  svHistory = [];
+  var svEl = document.getElementById('svChatHistory');
+  if (svEl) svEl.innerHTML = '';
   iwCloseHelpPopup();
 }
 
@@ -4210,9 +4551,9 @@ function iwInitCanvas() {
   };
   document.addEventListener('keydown', iw.keyHandler);
 
-  iw.fabricCanvas.on('selection:created',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
-  iw.fabricCanvas.on('selection:updated',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
-  iw.fabricCanvas.on('selection:cleared',  function() { iwUpdateItalicBtn(); iwUpdateCenterBtn(); });
+  iw.fabricCanvas.on('selection:created',  function() { iwUpdateItalicBtn(); iwUpdateShadowBtn(); iwUpdateCenterBtn(); });
+  iw.fabricCanvas.on('selection:updated',  function() { iwUpdateItalicBtn(); iwUpdateShadowBtn(); iwUpdateCenterBtn(); });
+  iw.fabricCanvas.on('selection:cleared',  function() { iwUpdateItalicBtn(); iwUpdateShadowBtn(); iwUpdateCenterBtn(); });
 
   // Fix 2 — apply display sizing after layout is available
   requestAnimationFrame(iwApplyDisplaySize);
@@ -4411,19 +4752,6 @@ function iwRenderBgGrid(items) {
     tmpImg.src = c.item.thumbnailUrl;
   });
 
-  // Background-prefetch full-res into bgCache sequentially so canvas placement is instant on click
-  (function prefetchNext(i) {
-    if (i >= items.length) return;
-    var item = items[i];
-    if (bgCache[item.fileId]) { prefetchNext(i + 1); return; }
-    google.script.run
-      .withSuccessHandler(function(result) {
-        if (result && result.success) bgCache[item.fileId] = result.dataUrl;
-        prefetchNext(i + 1);
-      })
-      .withFailureHandler(function() { prefetchNext(i + 1); })
-      .getBackgroundImageData(item.fileId);
-  })(0);
 }
 
 function iwSelectBg(fileId, thumbEl) {
@@ -4467,7 +4795,7 @@ function iwPlaceBackground(imgUrl) {
       originY:        'center',
       selectable:     true,
       evented:        true,
-      lockUniScaling: true,  // Fix 5
+      lockScalingY:   true,
       _isBackground:  true
     });
     iwClampBackground(img);  // Fix 3: enforce clamp on initial placement
@@ -4604,7 +4932,8 @@ function iwSubmitPrompt() {
       sendBtn.disabled = false;
       showToast('Generation failed', true);
     })
-    .generateBackground(prompt, imageBase64, mimeType);
+    .generateBackground(prompt, imageBase64, mimeType,
+      ({ instagram: '9:16', feed: '4:5', square: '1:1', landscape: '16:9' })[iw.ratio] || '9:16');
 }
 
 function iwRenderGenThumbs() {
@@ -4616,9 +4945,11 @@ function iwRenderGenThumbs() {
   var html = '';
   iw.generatedImages.forEach(function(img, idx) {
     var selCls = (iw.selectedBgId === img.fileId) ? ' selected' : '';
+    var label = img.name ? img.name.replace(/\.[^.]+$/, '').replace(/^bg_/, '').replace(/_\d{6}-\d{4}$/, '') : '';
     html += '<div class="iw-gen-thumb' + selCls + '" data-idx="' + idx + '">' +
       '<img src="' + img.dataUrl + '" alt="Generated background">' +
       '<button class="iw-gen-delete" title="Delete permanently">&#215;</button>' +
+      (label ? '<div class="iw-gen-label">' + esc(label) + '</div>' : '') +
       '</div>';
   });
   el.innerHTML = html;
@@ -4666,6 +4997,15 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+  var svInp = document.getElementById('svInput');
+  if (svInp) {
+    svInp.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        svSendMessage();
+      }
+    });
+  }
 });
 
 // ── HELP POPUP ───────────────────────────────────────────────
@@ -4690,79 +5030,157 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── QUOTES & HOOKS ───────────────────────────────────────────
-function iwLoadManifest() {
-  document.getElementById('iwQuotesList').innerHTML =
-    '<div class="iw-empty-msg">Loading…</div>';
-  google.script.run
-    .withSuccessHandler(function(manifest) {
-      iw.manifest = manifest;
-      iwRenderQhPanel(manifest);
-      // If Production_Folder_ID was absent, fall back to manifest.staging_folder_id
-      if (manifest && manifest.staging_folder_id) {
-        var viewLink = document.getElementById('iwViewLink');
-        if (viewLink.classList.contains('hidden')) {
-          viewLink.href = 'https://drive.google.com/drive/folders/' + manifest.staging_folder_id;
-          viewLink.classList.remove('hidden');
-        }
-      }
-    })
-    .withFailureHandler(function() {
-      document.getElementById('iwQuotesList').innerHTML =
-        '<div class="iw-empty-msg">Could not load quotes.</div>';
-    })
-    .getEpisodeManifest(iw.episodeUid);
+
+// ── CLEAR CANVAS ─────────────────────────────────────────────
+function iwClearCanvas() {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  if (!confirm('Clear the canvas? This removes all objects and cannot be undone with Undo.')) return;
+  iwPushHistory();
+  canvas.clear();
+  canvas.renderAll();
+  iw.selectedBgId = null;
+  document.querySelectorAll('.iw-bg-thumb').forEach(function(t) { t.classList.remove('selected'); });
 }
 
-function iwRenderQhPanel(manifest) {
-  var quotes  = (manifest && Array.isArray(manifest.raw_quotes)) ? manifest.raw_quotes : [];
-  var hooks   = (manifest && Array.isArray(manifest.raw_hooks))  ? manifest.raw_hooks  : [];
+// ── SOCIAL VERT ───────────────────────────────────────────────
+
+var svHistory = [];
+
+function svSendMessage() {
+  var input   = document.getElementById('svInput');
+  var sendBtn = document.getElementById('svSend');
+  var msg     = (input ? input.value : '').trim();
+  if (!msg || (sendBtn && sendBtn.disabled)) return;
+
+  input.value = '';
+  if (sendBtn) sendBtn.disabled = true;
+
+  svAppendBubble('user', msg);
+  var typingEl = svAppendTyping();
+
+  var callHistory = svHistory.slice();
+
+  google.script.run
+    .withSuccessHandler(function(responseText) {
+      if (typingEl && typingEl.parentNode) typingEl.remove();
+      svHistory.push({ role: 'user',  content: msg });
+      svHistory.push({ role: 'model', content: responseText });
+      svAppendBubble('model', responseText);
+      if (sendBtn) sendBtn.disabled = false;
+    })
+    .withFailureHandler(function() {
+      if (typingEl && typingEl.parentNode) typingEl.remove();
+      svAppendBubble('model', 'Something went wrong. Please try again.');
+      if (sendBtn) sendBtn.disabled = false;
+    })
+    .querySocialVert(msg, callHistory);
+}
+
+function svAppendBubble(role, text) {
+  var historyEl = document.getElementById('svChatHistory');
+  if (!historyEl) return null;
+  var emptyMsg = historyEl.querySelector('.sv-empty-msg');
+  if (emptyMsg) emptyMsg.remove();
+  var el       = document.createElement('div');
+  el.className = 'sv-msg ' + role;
+  if (role === 'model') {
+    el.innerHTML = svRenderModelMessage(text);
+    el.querySelectorAll('.sv-chip').forEach(function(chip) {
+      chip.addEventListener('click', function() {
+        svTapChip(chip.dataset.type, chip.dataset.text);
+      });
+    });
+  } else {
+    el.textContent = text;
+  }
+  historyEl.appendChild(el);
+  historyEl.scrollTop = historyEl.scrollHeight;
+  return el;
+}
+
+function svAppendTyping() {
+  var historyEl = document.getElementById('svChatHistory');
+  if (!historyEl) return null;
+  var el        = document.createElement('div');
+  el.className  = 'sv-msg model typing';
+  el.textContent = 'Thinking…';
+  historyEl.appendChild(el);
+  historyEl.scrollTop = historyEl.scrollHeight;
+  return el;
+}
+
+function svRenderModelMessage(text) {
   var html    = '';
-
-  if (!quotes.length && !hooks.length) {
-    document.getElementById('iwQuotesList').innerHTML =
-      '<div class="iw-empty-msg">No quotes yet. Complete the Show Notes Writer step and run housekeeping.</div>';
-    return;
+  var pattern = /\[\[(HOOK|QUOTE|PROMPT):\s*([\s\S]*?)\]\]/g;
+  var lastIdx = 0;
+  var match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      html += esc(text.slice(lastIdx, match.index));
+    }
+    var chipType = match[1].toLowerCase();
+    var chipText = match[2].trim();
+    html += '<span class="sv-chip ' + chipType + '" data-type="' + chipType +
+            '" data-text="' + esc(chipText) + '">' + esc(chipText) + '</span>';
+    lastIdx = match.index + match[0].length;
   }
+  if (lastIdx < text.length) {
+    html += esc(text.slice(lastIdx));
+  }
+  return html;
+}
 
-  if (quotes.length) {
-    html += '<div class="iw-qh-section-label">Quotes</div>';
-    quotes.forEach(function(q, i) {
-      var text, speaker;
-      if (typeof q === 'object') {
-        text    = q.text    || '';
-        speaker = q.speaker || iw.guestName || '';
-      } else {
-        var rawStr  = String(q);
-        var dashIdx = rawStr.search(/\s[—–]\s/);
-        if (dashIdx !== -1) {
-          text    = rawStr.slice(0, dashIdx).replace(/^[“”"]+|[“”"]+$/g, '').trim();
-          speaker = rawStr.slice(dashIdx).replace(/^\s*[—–]\s*/, '').trim();
-        } else {
-          text    = rawStr.trim();
-          speaker = iw.guestName || '';
-        }
-      }
-      html += '<div class="iw-qh-item" onclick="iwPlaceQuote(' +
-        JSON.stringify(text).replace(/"/g,'&quot;') + ',' + JSON.stringify(speaker).replace(/"/g,'&quot;') + ',this)">' +
-        '<div class="iw-qh-quote">' + esc(text) + '</div>' +
-        (speaker ? '<div class="iw-qh-speaker">— ' + esc(speaker) + '</div>' : '') +
-        '</div>';
+function svTapChip(type, text) {
+  if (type === 'prompt') {
+    svTapPrompt(text);
+  } else {
+    svTapCanvasText(text);
+  }
+}
+
+function svTapCanvasText(text) {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var active = canvas.getActiveObject();
+  if (active && (active.type === 'textbox' || active.type === 'i-text') && active._isText) {
+    iwPushHistory();
+    active.set('text', text);
+    canvas.renderAll();
+  } else {
+    var cw      = canvas.getWidth();
+    var ch      = canvas.getHeight();
+    iwPushHistory();
+    var textObj = new fabric.Textbox(text, {
+      left:           cw / 2,
+      top:            ch / 2,
+      width:          cw * 0.82,
+      originX:        'center',
+      originY:        'center',
+      fontFamily:     'Libre Baskerville',
+      fontStyle:      'italic',
+      fontSize:       80,
+      fill:           iw.activeColor || '#FEBE18',
+      textAlign:      'center',
+      lockScalingY:   true,
+      shadow:         new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
+      _isText:        true,
+      _textType:      'quote'
     });
+    textObj.setControlsVisibility({ mt: false, mb: false });
+    canvas.add(textObj);
+    canvas.setActiveObject(textObj);
+    canvas.renderAll();
   }
+}
 
-  if (hooks.length) {
-    html += '<div class="iw-qh-section-label" style="margin-top:10px">Hooks</div>';
-    hooks.forEach(function(h) {
-      var text = typeof h === 'object' ? (h.text || '') : String(h);
-      html += '<div class="iw-qh-item" onclick="iwPlaceHook(' +
-        JSON.stringify(text).replace(/"/g,'&quot;') + ',this)">' +
-        '<div class="iw-qh-hook">' + esc(text) + '</div>' +
-        '</div>';
-    });
+function svTapPrompt(text) {
+  var inp = document.getElementById('iwPromptInput');
+  if (inp) {
+    inp.value = text;
+    iwSetPanelMode('generate');
+    inp.focus();
   }
-
-  document.getElementById('iwQuotesList').innerHTML = html;
 }
 
 function iwPlaceQuote(quoteText, speakerName, itemEl) {
@@ -4786,7 +5204,8 @@ function iwPlaceQuote(quoteText, speakerName, itemEl) {
     fontSize:       80,
     fill:           iw.activeColor || '#FEBE18',
     textAlign:      'center',
-    lockUniScaling: true,  // Fix 5
+    lockScalingY:   true,
+    shadow:         new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
     _isText:        true,
     _textType:      'quote'
   });
@@ -4801,7 +5220,8 @@ function iwPlaceQuote(quoteText, speakerName, itemEl) {
     fontSize:       65,
     fill:           '#FAB016',
     textAlign:      'center',
-    lockUniScaling: true,  // Fix 5
+    lockScalingY:   true,
+    shadow:         new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
     _isText:        true,
     _textType:      'attribution'
   });
@@ -4833,7 +5253,8 @@ function iwPlaceHook(hookText, itemEl) {
     fontSize:       90,
     fill:           iw.activeColor || '#FEBE18',
     textAlign:      'center',
-    lockUniScaling: true,  // Fix 5
+    lockScalingY:   true,
+    shadow:         new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
     _isText:        true,
     _textType:      'hook'
   });
@@ -4882,7 +5303,7 @@ function iwAddText(type) {
     fontWeight:     fontWeight,
     fill:           iw.activeColor || '#FEBE18',
     textAlign:      'center',
-    lockUniScaling: true
+    lockScalingY:   true
   });
 
   textObj.setControlsVisibility({ mt: false, mb: false });
@@ -4925,7 +5346,7 @@ function iwPlaceLogo(variant) {
       originY:        'center',
       scaleX:         scale,
       scaleY:         scale,
-      lockUniScaling: true,  // Fix 5
+      lockScalingY:   true,
       _isLogo:        true   // Fix 8b — tag for swap detection
     });
     logo.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
@@ -4979,6 +5400,28 @@ function iwUpdateItalicBtn() {
   var active = canvas && canvas.getActiveObject();
   var isText = active && (active.type === 'textbox' || active.type === 'i-text');
   btn.classList.toggle('active', !!(isText && active.fontStyle === 'italic'));
+}
+
+function iwToggleShadow() {
+  var canvas = iw.fabricCanvas;
+  if (!canvas) return;
+  var active = canvas.getActiveObject();
+  if (!active || (active.type !== 'textbox' && active.type !== 'i-text')) return;
+  iwPushHistory();
+  active.set('shadow', active.shadow
+    ? null
+    : new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }));
+  canvas.renderAll();
+  iwUpdateShadowBtn();
+}
+
+function iwUpdateShadowBtn() {
+  var btn = document.getElementById('iwShadowBtn');
+  if (!btn) return;
+  var canvas = iw.fabricCanvas;
+  var active = canvas && canvas.getActiveObject();
+  var isText = active && (active.type === 'textbox' || active.type === 'i-text');
+  btn.classList.toggle('active', !!(isText && active.shadow));
 }
 
 // ── CENTER OBJECT ────────────────────────────────────────────

@@ -40,6 +40,19 @@
 //          workstream/category/fairyNudge keys removed, assignedBy normalized
 //          to "The Fairy Team", priority deep_work → normal.
 //
+// PATCH LOG (Missing Tasks Part 2):
+//   #7 — spawnReviseAssetTask(): new exported function. Spawns Revise_[Asset]
+//          task for Audra when JT requests revisions. FRIENDLY_NAMES map resolves
+//          asset display name. Idempotent — skips spawn if open or in_progress
+//          Revise task already exists for the episode. Call site deferred to
+//          clerk_fairy rebuild.
+//   #8 — dailyPulse() Loop 1 restored: Recording_Reminder date-sync and
+//          self-complete. Reads hoisted tasksData snapshot — no extra sheet read.
+//   #9 — dailyPulse() Loop 2 restored: Release_Reminder spawn (D-1 + day-of),
+//          date-sync, self-complete. Scribe email portion remains deferred.
+//          Idempotency via Workflow_Step = "Release_Reminder" — no
+//          Release_Reminder_Sent field used. Two spawns per episode (HOST + PRODUCER).
+//
 // PATCH LOG (Review_Episode spoke — Handoff v50):
 //   #6 — dailyPulse(): Loop 3b added. Detects Video_Status = "ready" on
 //          active episodes and spawns Review_Episode task for JT. Idempotency
@@ -282,6 +295,86 @@ function callGeminiAPINoSearch(prompt, systemInstruction, agentName) {
     } catch (e) {
       if (i === CONFIG.RETRY_LIMIT - 1) {
         logToAuditTrail(agentName, "error", "", "", `[ERROR] API failure after ${CONFIG.RETRY_LIMIT} attempts: ${e.message}`, "ERROR");
+        throw e;
+      }
+      Utilities.sleep(delay);
+      delay *= 2;
+    }
+  }
+}
+
+/**
+ * Gemini API call for image generation and editing (image-in / image-out).
+ * Model: gemini-2.0-flash-preview-image-generation
+ * Payload: optional base64 canvas image + text prompt → returns generated image base64.
+ * Response parsing: scans parts array for inlineData — never assumes .text (text-call pattern).
+ * imageBase64 and mimeType are nullable; when null, generates from text prompt only.
+ */
+function callGeminiImageAPI(prompt, imageBase64, mimeType, agentName, aspectRatio) {
+  const apiKey = getGovernance("GEMINI_API_KEY");
+  const model  = "gemini-2.5-flash-image";
+  const url    = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const parts = [];
+  if (imageBase64 && mimeType) {
+    parts.push({ inlineData: { mimeType: mimeType, data: imageBase64 } });
+  }
+  parts.push({ text: prompt });
+
+  const generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
+
+  const payload = {
+    contents:         [{ parts: parts }],
+    generationConfig: generationConfig
+  };
+
+  let delay = 1000;
+  const IMAGE_RETRY_LIMIT = 2;  // image gen quota windows don't recover within a standard backoff cycle
+  for (let i = 0; i < IMAGE_RETRY_LIMIT; i++) {
+    try {
+      const response     = UrlFetchApp.fetch(url, {
+        method:             "post",
+        contentType:        "application/json",
+        payload:            JSON.stringify(payload),
+        muteHttpExceptions: true
+      });
+      const responseCode = response.getResponseCode();
+      const responseText = response.getContentText();
+
+      if (responseCode === 200) {
+        const result     = JSON.parse(responseText);
+        const candidate  = result.candidates && result.candidates[0];
+        const content    = candidate && candidate.content;
+        if (!content || !content.parts) {
+          const reason = (candidate && candidate.finishReason) || "unknown";
+          throw new Error(`Gemini returned no content. Finish reason: ${reason}. Check input image or prompt.`);
+        }
+        for (let p = 0; p < content.parts.length; p++) {
+          if (content.parts[p].inlineData) {
+            return {
+              data:     content.parts[p].inlineData.data,
+              mimeType: content.parts[p].inlineData.mimeType
+            };
+          }
+        }
+        throw new Error("No image part found in Gemini image response.");
+      }
+
+      if (responseCode === 429) {
+        const rateLimitDelay = i === 0 ? 30000 : delay;
+        logToAuditTrail(agentName, "state_change", "", "", `[WARNING] HTTP 429 — rate limited (quota window). Attempt ${i + 1}. Backing off ${rateLimitDelay / 1000}s.`, "WARNING");
+        sleepInChunks(rateLimitDelay);
+        delay = rateLimitDelay * 2;
+      } else if ([500, 503].includes(responseCode)) {
+        logToAuditTrail(agentName, "state_change", "", "", `[WARNING] HTTP ${responseCode} — transient server error. Attempt ${i + 1}. Backing off ${delay / 1000}s.`, "WARNING");
+        Utilities.sleep(delay);
+        delay *= 2;
+      } else {
+        throw new Error(`Critical API Error ${responseCode}: ${responseText}`);
+      }
+    } catch (e) {
+      if (i === IMAGE_RETRY_LIMIT - 1) {
+        logToAuditTrail(agentName, "error", "", "", `[ERROR] Image API failure after ${IMAGE_RETRY_LIMIT} attempts: ${e.message}`, "ERROR");
         throw e;
       }
       Utilities.sleep(delay);
@@ -747,6 +840,68 @@ function updateTaskStatus(taskId, newStatus) {
     `[WARNING] Task not found for update: ${taskId}`,
     "WARNING"
   );
+}
+
+/**
+ * Spawns a Revise_[Asset] task for Audra when JT requests revisions on a Review task.
+ * Exported for call from dwyp_app.gs when JT taps Request Revision in the web app.
+ * Idempotent — skips spawn if an open or in_progress Revise task already exists for
+ * this episode and asset type.
+ *
+ * TODO: Web app call site not yet wired — clerk_fairy.gs doPost() not yet rebuilt.
+ * Call site: spawnReviseAssetTask(episodeUid, assetType) via dwyp_app.gs once wired.
+ *
+ * @param {string} episodeUid - Episode UID
+ * @param {string} assetType  - Asset key (e.g. "Social_Images", "Reels")
+ */
+function spawnReviseAssetTask(episodeUid, assetType) {
+  const FRIENDLY_NAMES = { "Social_Images": "Images", "Reels": "Reels" };
+  const friendlyName   = FRIENDLY_NAMES[assetType] || assetType;
+  const workflowKey    = `Revise_${assetType}`;
+
+  try {
+    const scriptProps = PropertiesService.getScriptProperties();
+    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    if (!sheetId) throw new Error("MASTER_SHEET_ID not set.");
+
+    const ss    = SpreadsheetApp.openById(sheetId);
+    const sheet = ss.getSheetByName("Tasks");
+    if (!sheet) throw new Error("Tasks tab not found.");
+
+    const data       = sheet.getDataRange().getValues();
+    const headers    = data[0];
+    const epUidCol   = headers.indexOf("Episode_UID");
+    const statusCol  = headers.indexOf("Status");
+    const workflowCol = headers.indexOf("Workflow_Step");
+
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][epUidCol])    !== String(episodeUid)) continue;
+      if (String(data[i][workflowCol]) !== workflowKey)        continue;
+      const st = String(data[i][statusCol]);
+      if (st === "open" || st === "in_progress") {
+        logToAuditTrail("Task_Fairy", "state_change", episodeUid, "",
+          `[INFO] spawnReviseAssetTask: open ${workflowKey} task already exists — skipping spawn.`, "INFO");
+        return;
+      }
+    }
+  } catch (e) {
+    logToAuditTrail("Task_Fairy", "error", episodeUid, "",
+      `[WARNING] spawnReviseAssetTask idempotency check failed: ${e.message}. Proceeding with spawn.`, "WARNING");
+  }
+
+  spawnTask({
+    actionTitle:      `JT requested revisions — ${friendlyName}`,
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    episodeUid:       episodeUid,
+    workflowStep:     workflowKey,
+    executiveSummary: `JT has reviewed the ${friendlyName} assets and requested revisions. See their notes in the Episode Log.`
+  });
+
+  logToAuditTrail("Task_Fairy", "state_change", episodeUid, "",
+    `[INFO] Revise task spawned for ${friendlyName} — ${episodeUid}.`, "INFO");
 }
 
 /**
@@ -1579,13 +1734,11 @@ function getEpisodeRow(episodeUid) {
 // DAILY PULSE
 // Time-based trigger — runs once daily. eventCategory: human_action
 //
-// Loop 2 (release reminder) — REMOVED in v1.5 sweep.
-//   Depended on Release_Reminder_Sent (retired from Episodes schema) and
-//   Scribe template keys not yet populated. Restore in dedicated Scribe
-//   session once keys are populated and reminder field design is resolved.
-//   Post-run patch queue item: "Restore Loop 2 (release reminder) when
-//   Scribe keys are populated and Release_Reminder_Sent field design resolved."
-//
+// Loop 1  — Recording Date Reminder date-sync and self-complete
+// Loop 2  — Release Day reminder spawn (D-1 + day-of fallback), date-sync,
+//            self-complete. Restored from v1.5 removal. Scribe email portion
+//            remains deferred. Task idempotency (Workflow_Step = "Release_Reminder")
+//            is the sole dedup mechanism — Release_Reminder_Sent field not used.
 // Loop 3  — Safety audit scan
 // Loop 3b — Review_Episode spawn (Video_Status = "ready" detection)
 // Loop 4  — _ready subfolder scan
@@ -1616,8 +1769,11 @@ function dailyPulse() {
     const rawFolderCol    = headers.indexOf("Raw_Folder_ID");
     const guestNameCol    = headers.indexOf("Guest_Name");
     const contactIdCol    = headers.indexOf("Contact_ID");
-    const videoStatusCol  = headers.indexOf("Video_Status");
-    const imagesStatusCol = headers.indexOf("Images_Status");
+    const videoStatusCol   = headers.indexOf("Video_Status");
+    const imagesStatusCol  = headers.indexOf("Images_Status");
+    const recordingDateCol = headers.indexOf("Recording_Date");
+    const releaseDateCol   = headers.indexOf("Release_Date");
+    const proxyFileIdCol   = headers.indexOf("Proxy_File_ID");
 
     if (uidCol === -1 || statusCol === -1 || prodFolCol === -1) {
       logToAuditTrail(agentName, "error", "", "", "[ERROR] Required columns missing from Episodes tab (Episode_UID, Status, Production_Folder_ID). Daily Pulse cannot run.", "ERROR");
@@ -1636,6 +1792,206 @@ function dailyPulse() {
     const taskEpUidCol    = tasksHeaders.indexOf("Episode_UID");
     const taskStatusCol   = tasksHeaders.indexOf("Status");
     const taskWorkflowCol = tasksHeaders.indexOf("Workflow_Step");
+    const taskIdCol       = tasksHeaders.indexOf("Task_ID");
+    const taskDueDateCol  = tasksHeaders.indexOf("Due_Date");
+
+    // =========================================================================
+    // LOOP 1: Recording Date Reminder — date-sync and self-complete
+    // For each active episode with open Recording_Reminder tasks:
+    //   - If Recording_Date changed: update task Due_Date.
+    //   - If Due_Date <= today: mark task complete.
+    // Two tasks per episode (HOST + PRODUCER) — both processed in one pass.
+    // =========================================================================
+    let recReminderProcessed = 0;
+
+    if (recordingDateCol === -1) {
+      logToAuditTrail(agentName, "error", "", "", "[WARNING] Recording_Date column not found in Episodes tab. Skipping Recording Reminder sync.", "WARNING");
+    } else {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      for (let i = 1; i < data.length; i++) {
+        const epUid         = data[i][uidCol];
+        const status        = String(data[i][statusCol]);
+        const recordingDate = data[i][recordingDateCol];
+
+        if (!epUid)                  continue;
+        if (status === "complete")   continue;
+        if (!recordingDate)          continue;
+
+        const recDate = new Date(recordingDate);
+        recDate.setHours(0, 0, 0, 0);
+
+        if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1 ||
+            taskIdCol === -1 || taskDueDateCol === -1) continue;
+
+        for (let t = 1; t < tasksData.length; t++) {
+          if (tasksData[t][taskEpUidCol]    !== epUid)             continue;
+          if (String(tasksData[t][taskWorkflowCol]) !== "Recording_Reminder") continue;
+          const tStatus = String(tasksData[t][taskStatusCol]);
+          if (tStatus !== "open" && tStatus !== "in_progress")     continue;
+
+          recReminderProcessed++;
+
+          const rawDue    = tasksData[t][taskDueDateCol];
+          const taskDue   = rawDue ? new Date(rawDue) : null;
+          if (taskDue) taskDue.setHours(0, 0, 0, 0);
+
+          // Self-complete: Due_Date is today or past
+          if (taskDue && taskDue <= today) {
+            const taskId = tasksData[t][taskIdCol];
+            try {
+              updateTaskStatus(String(taskId), "complete");
+              logToAuditTrail(agentName, "state_change", epUid, "",
+                `[INFO] Recording_Reminder task ${taskId} self-completed — due date reached.`, "INFO");
+            } catch (e) {
+              logToAuditTrail(agentName, "error", epUid, "",
+                `[ERROR] Failed to self-complete Recording_Reminder task ${taskId}: ${e.message}`, "ERROR");
+            }
+            continue;
+          }
+
+          // Due_Date update: Recording_Date has changed
+          if (taskDue && recDate.getTime() !== taskDue.getTime()) {
+            const taskId = tasksData[t][taskIdCol];
+            try {
+              tasksSheet.getRange(t + 1, taskDueDateCol + 1).setValue(recDate);
+              logToAuditTrail(agentName, "state_change", epUid, "",
+                `[INFO] Recording_Reminder task ${taskId} Due_Date updated to ${recDate.toDateString()}.`, "INFO");
+            } catch (e) {
+              logToAuditTrail(agentName, "error", epUid, "",
+                `[ERROR] Failed to update Due_Date on Recording_Reminder task ${taskId}: ${e.message}`, "ERROR");
+            }
+          }
+        }
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Recording Reminder sync complete. Tasks processed: ${recReminderProcessed}.`, "INFO");
+    }
+
+    // =========================================================================
+    // LOOP 2: Release Day — spawn reminder and self-complete
+    // Spawn condition: Release_Date - 1 = today (D-1) or Release_Date = today
+    //   (day-of fallback). Two tasks per episode (HOST + PRODUCER).
+    // Idempotency: open Workflow_Step = "Release_Reminder" is sole dedup.
+    // Due_Date update: if existing release task and Release_Date changed.
+    // Self-complete: if release task Due_Date <= today (morning run on release day).
+    // =========================================================================
+    let releaseRemindersSpawned = 0;
+
+    if (releaseDateCol === -1) {
+      logToAuditTrail(agentName, "error", "", "", "[WARNING] Release_Date column not found in Episodes tab. Skipping Release Day loop.", "WARNING");
+    } else {
+      const todayRel = new Date();
+      todayRel.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(todayRel);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      for (let i = 1; i < data.length; i++) {
+        const epUid       = data[i][uidCol];
+        const status      = String(data[i][statusCol]);
+        const releaseDate = data[i][releaseDateCol];
+        const guestName   = guestNameCol !== -1 ? data[i][guestNameCol]  : epUid;
+        const contactId   = contactIdCol !== -1 ? data[i][contactIdCol]  : "";
+
+        if (!epUid)                  continue;
+        if (status === "complete")   continue;
+        if (!releaseDate)            continue;
+
+        const relDate = new Date(releaseDate);
+        relDate.setHours(0, 0, 0, 0);
+
+        if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1 ||
+            taskIdCol === -1 || taskDueDateCol === -1) continue;
+
+        // Collect all open Release_Reminder tasks for this episode
+        let existingTaskCount = 0;
+        for (let t = 1; t < tasksData.length; t++) {
+          if (tasksData[t][taskEpUidCol]    !== epUid)             continue;
+          if (String(tasksData[t][taskWorkflowCol]) !== "Release_Reminder") continue;
+          const tStatus = String(tasksData[t][taskStatusCol]);
+          if (tStatus !== "open" && tStatus !== "in_progress")     continue;
+
+          existingTaskCount++;
+
+          const rawDue  = tasksData[t][taskDueDateCol];
+          const taskDue = rawDue ? new Date(rawDue) : null;
+          if (taskDue) taskDue.setHours(0, 0, 0, 0);
+
+          // Self-complete: Due_Date is today or past
+          if (taskDue && taskDue <= todayRel) {
+            const taskId = tasksData[t][taskIdCol];
+            try {
+              updateTaskStatus(String(taskId), "complete");
+              logToAuditTrail(agentName, "state_change", epUid, contactId,
+                `[INFO] Release_Reminder task ${taskId} self-completed — release date reached.`, "INFO");
+            } catch (e) {
+              logToAuditTrail(agentName, "error", epUid, "",
+                `[ERROR] Failed to self-complete Release_Reminder task ${taskId}: ${e.message}`, "ERROR");
+            }
+            continue;
+          }
+
+          // Due_Date update: Release_Date has changed
+          if (taskDue && relDate.getTime() !== taskDue.getTime()) {
+            const taskId = tasksData[t][taskIdCol];
+            try {
+              tasksSheet.getRange(t + 1, taskDueDateCol + 1).setValue(relDate);
+              logToAuditTrail(agentName, "state_change", epUid, contactId,
+                `[INFO] Release_Reminder task ${taskId} Due_Date updated to ${relDate.toDateString()}.`, "INFO");
+            } catch (e) {
+              logToAuditTrail(agentName, "error", epUid, "",
+                `[ERROR] Failed to update Due_Date on Release_Reminder task ${taskId}: ${e.message}`, "ERROR");
+            }
+          }
+        }
+
+        if (existingTaskCount > 0) continue;  // existing tasks found — skip spawn
+
+        // Determine spawn title based on date proximity
+        let spawnTitle = null;
+        if (relDate.getTime() === tomorrow.getTime()) {
+          spawnTitle = `Episode drops tomorrow — ${guestName} is almost live!`;
+        } else if (relDate.getTime() === todayRel.getTime()) {
+          spawnTitle = `Release day! ${guestName} episode is live today.`;
+        }
+
+        if (!spawnTitle) continue;
+
+        // Spawn two tasks (HOST + PRODUCER) — spawnTask() supports single assignee only
+        spawnTask({
+          actionTitle:      spawnTitle,
+          assignee:         getGovernance("ASSIGNEE_HOST"),
+          assignedBy:       "The Fairy Team",
+          status:           "open",
+          priority:         "normal",
+          dueDate:          relDate,
+          contactId:        contactId,
+          episodeUid:       epUid,
+          workflowStep:     "Release_Reminder",
+          executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
+        });
+        spawnTask({
+          actionTitle:      spawnTitle,
+          assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+          assignedBy:       "The Fairy Team",
+          status:           "open",
+          priority:         "normal",
+          dueDate:          relDate,
+          contactId:        contactId,
+          episodeUid:       epUid,
+          workflowStep:     "Release_Reminder",
+          executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
+        });
+        releaseRemindersSpawned += 2;
+        logToAuditTrail(agentName, "state_change", epUid, contactId,
+          `[INFO] Release_Reminder tasks spawned for ${guestName} (${relDate.toDateString()}).`, "INFO");
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Release Day loop complete. Tasks spawned: ${releaseRemindersSpawned}.`, "INFO");
+    }
 
     // =========================================================================
     // LOOP 3: Safety audit scan
@@ -1692,6 +2048,252 @@ function dailyPulse() {
     }
 
     // =========================================================================
+    // LOOP A: Proxy Detection — Review Episode
+    // Scans Staging/Episode/ subfolder for files with proxy_ prefix.
+    // If found: writes Proxy_File_ID to Episodes row, spawns Review Episode task for JT.
+    // Idempotency: skips if open or in_progress Review_Episode task already exists.
+    // =========================================================================
+    let proxyScanned = 0;
+    let proxySpawned = 0;
+
+    if (prodFolCol === -1) {
+      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping proxy detection.", "WARNING");
+    } else {
+      for (let i = 1; i < data.length; i++) {
+        const epUid        = data[i][uidCol];
+        const status       = String(data[i][statusCol]);
+        const prodFolderId = data[i][prodFolCol];
+        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
+        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
+
+        if (!epUid)                continue;
+        if (status === "complete") continue;
+        if (!prodFolderId)         continue;
+
+        proxyScanned++;
+
+        try {
+          // Idempotency check — skip if open or in_progress Review_Episode task exists
+          let reviewTaskExists = false;
+          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
+            for (let t = 1; t < tasksData.length; t++) {
+              if (tasksData[t][taskEpUidCol]    !== epUid)                    continue;
+              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Episode") continue;
+              const tStatus = String(tasksData[t][taskStatusCol]);
+              if (tStatus === "open" || tStatus === "in_progress") {
+                reviewTaskExists = true;
+                break;
+              }
+            }
+          }
+          if (reviewTaskExists) continue;
+
+          // Navigate to Episode/ subfolder inside Staging
+          const stagingFolder  = DriveApp.getFolderById(prodFolderId);
+          const episodeFolderIt = stagingFolder.getFoldersByName("Episode");
+          if (!episodeFolderIt.hasNext()) continue;
+          const episodeFolder = episodeFolderIt.next();
+
+          // Scan Episode/ for proxy_ file
+          const files     = episodeFolder.getFiles();
+          let proxyFileId = null;
+
+          while (files.hasNext()) {
+            const f = files.next();
+            if (f.getName().startsWith("proxy_")) {
+              proxyFileId = f.getId();
+              break;
+            }
+          }
+
+          if (!proxyFileId) continue;
+
+          // Write Proxy_File_ID to Episodes row
+          if (proxyFileIdCol !== -1) {
+            sheet.getRange(i + 1, proxyFileIdCol + 1).setValue(proxyFileId);
+          }
+
+          spawnTask({
+            actionTitle:      `Review episode: ${guestName}`,
+            assignee:         getGovernance("ASSIGNEE_HOST"),
+            assignedBy:       "The Fairy Team",
+            status:           "open",
+            priority:         "normal",
+            contactId:        contactId,
+            episodeUid:       epUid,
+            workflowStep:     "Review_Episode",
+            executiveSummary: `The episode proxy for ${guestName} is ready for your review.`
+          });
+
+          proxySpawned++;
+          logToAuditTrail(agentName, "state_change", epUid, contactId,
+            `[INFO] Proxy file detected for ${guestName}. Proxy_File_ID written. Review Episode task spawned.`, "INFO");
+
+        } catch (e) {
+          logToAuditTrail(agentName, "error", epUid, "",
+            `[ERROR] Proxy detection failed for episode ${epUid}: ${e.message}`, "ERROR");
+        }
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Proxy detection complete. Episodes scanned: ${proxyScanned}. Tasks spawned: ${proxySpawned}.`, "INFO");
+    }
+
+    // =========================================================================
+    // LOOP B: Images Detection — Review Images
+    // Checks Images/ root in Staging folder for files ready to review.
+    // Files placed directly in Images/ (not in subfolders) signal readiness.
+    // Idempotency: skips if open or in_progress Review_Images task already exists.
+    // =========================================================================
+    let imagesDetectScanned = 0;
+    let imagesDetectSpawned = 0;
+
+    if (prodFolCol === -1) {
+      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping Images detection.", "WARNING");
+    } else {
+      for (let i = 1; i < data.length; i++) {
+        const epUid        = data[i][uidCol];
+        const status       = String(data[i][statusCol]);
+        const prodFolderId = data[i][prodFolCol];
+        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
+        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
+
+        if (!epUid)                continue;
+        if (status === "complete") continue;
+        if (!prodFolderId)         continue;
+
+        imagesDetectScanned++;
+
+        try {
+          // Idempotency check — skip if open or in_progress Review_Images task exists
+          let reviewTaskExists = false;
+          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
+            for (let t = 1; t < tasksData.length; t++) {
+              if (tasksData[t][taskEpUidCol]    !== epUid)                   continue;
+              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Images") continue;
+              const tStatus = String(tasksData[t][taskStatusCol]);
+              if (tStatus === "open" || tStatus === "in_progress") {
+                reviewTaskExists = true;
+                break;
+              }
+            }
+          }
+          if (reviewTaskExists) continue;
+
+          // Navigate to Images/ subfolder
+          const stagingFolder  = DriveApp.getFolderById(prodFolderId);
+          const imagesFolderIt = stagingFolder.getFoldersByName("Images");
+          if (!imagesFolderIt.hasNext()) continue;
+          const imagesFolder = imagesFolderIt.next();
+
+          // Check for files directly in Images/ root (not in subfolders)
+          if (!imagesFolder.getFiles().hasNext()) continue;
+
+          spawnTask({
+            actionTitle:      `Review images: ${guestName}`,
+            assignee:         getGovernance("ASSIGNEE_HOST"),
+            assignedBy:       "The Fairy Team",
+            status:           "open",
+            priority:         "normal",
+            contactId:        contactId,
+            episodeUid:       epUid,
+            workflowStep:     "Review_Images",
+            executiveSummary: `New images are ready for your review for ${guestName}.`
+          });
+
+          imagesDetectSpawned++;
+          logToAuditTrail(agentName, "state_change", epUid, contactId,
+            `[INFO] Images detected in staging for ${guestName}. Review Images task spawned.`, "INFO");
+
+        } catch (e) {
+          logToAuditTrail(agentName, "error", epUid, "",
+            `[ERROR] Images detection failed for episode ${epUid}: ${e.message}`, "ERROR");
+        }
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Images detection complete. Episodes scanned: ${imagesDetectScanned}. Tasks spawned: ${imagesDetectSpawned}.`, "INFO");
+    }
+
+    // =========================================================================
+    // LOOP C: Reels Detection — Review Reels
+    // Checks Reels/ root in Staging folder for files ready to review.
+    // Files placed directly in Reels/ (not in subfolders) signal readiness.
+    // Idempotency: skips if open or in_progress Review_Reels task already exists.
+    // =========================================================================
+    let reelsDetectScanned = 0;
+    let reelsDetectSpawned = 0;
+
+    if (prodFolCol === -1) {
+      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping Reels detection.", "WARNING");
+    } else {
+      for (let i = 1; i < data.length; i++) {
+        const epUid        = data[i][uidCol];
+        const status       = String(data[i][statusCol]);
+        const prodFolderId = data[i][prodFolCol];
+        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
+        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
+
+        if (!epUid)                continue;
+        if (status === "complete") continue;
+        if (!prodFolderId)         continue;
+
+        reelsDetectScanned++;
+
+        try {
+          // Idempotency check — skip if open or in_progress Review_Reels task exists
+          let reviewTaskExists = false;
+          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
+            for (let t = 1; t < tasksData.length; t++) {
+              if (tasksData[t][taskEpUidCol]    !== epUid)                  continue;
+              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Reels") continue;
+              const tStatus = String(tasksData[t][taskStatusCol]);
+              if (tStatus === "open" || tStatus === "in_progress") {
+                reviewTaskExists = true;
+                break;
+              }
+            }
+          }
+          if (reviewTaskExists) continue;
+
+          // Navigate to Reels/ subfolder
+          const stagingFolder = DriveApp.getFolderById(prodFolderId);
+          const reelsFolderIt = stagingFolder.getFoldersByName("Reels");
+          if (!reelsFolderIt.hasNext()) continue;
+          const reelsFolder = reelsFolderIt.next();
+
+          // Check for files directly in Reels/ root (not in subfolders)
+          if (!reelsFolder.getFiles().hasNext()) continue;
+
+          spawnTask({
+            actionTitle:      `Review reels: ${guestName}`,
+            assignee:         getGovernance("ASSIGNEE_HOST"),
+            assignedBy:       "The Fairy Team",
+            status:           "open",
+            priority:         "normal",
+            contactId:        contactId,
+            episodeUid:       epUid,
+            workflowStep:     "Review_Reels",
+            executiveSummary: `New reels are ready for your review for ${guestName}.`
+          });
+
+          reelsDetectSpawned++;
+          logToAuditTrail(agentName, "state_change", epUid, contactId,
+            `[INFO] Reels detected in staging for ${guestName}. Review Reels task spawned.`, "INFO");
+
+        } catch (e) {
+          logToAuditTrail(agentName, "error", epUid, "",
+            `[ERROR] Reels detection failed for episode ${epUid}: ${e.message}`, "ERROR");
+        }
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Reels detection complete. Episodes scanned: ${reelsDetectScanned}. Tasks spawned: ${reelsDetectSpawned}.`, "INFO");
+    }
+
+    /* SUPERSEDED — Loop 3b replaced by Loop A (file-based proxy detection).
+       Video_Status = "ready" was a placeholder trigger that was never properly implemented.
+    // =========================================================================
     // LOOP 3b: Review_Episode spawn
     // Detects when Audra has set Video_Status = "ready" on an episode and
     // spawns a Review_Episode task for JT if one doesn't already exist.
@@ -1737,12 +2339,13 @@ function dailyPulse() {
 
         if (reviewEpisodeTaskExists) continue;
 
+        // TODO: payloadLink currently opens a Drive folder. Should open in-app review view once wired.
         const payloadLink = prodFolderId
           ? `https://drive.google.com/drive/folders/${prodFolderId}`
           : "";
 
         spawnTask({
-          actionTitle:      `Review episode: ${guestName}`,
+          actionTitle:      `Review: Episode video — ${guestName}`,
           assignee:         getGovernance("ASSIGNEE_HOST"),
           assignedBy:       "The Fairy Team",
           status:           "open",
@@ -1751,7 +2354,7 @@ function dailyPulse() {
           episodeUid:       epUid,
           workflowStep:     "Review_Episode",
           payloadLink:      payloadLink,
-          executiveSummary: `The finished episode for ${guestName} is ready for your review. Open the production folder to find the video file.`
+          executiveSummary: `The finished episode video for ${guestName} is ready for your review. Tap to watch, then approve or request revisions.`
         });
 
         reviewEpisodeSpawned++;
@@ -1760,7 +2363,9 @@ function dailyPulse() {
 
       logToAuditTrail(agentName, "state_change", "", "", `[INFO] Review_Episode scan complete. Tasks spawned: ${reviewEpisodeSpawned}.`, "INFO");
     }
+    */
 
+    /* SUPERSEDED — Loop 4 replaced by Loops A, B, C (direct folder detection).
     // =========================================================================
     // LOOP 4: _ready subfolder scan
     // =========================================================================
@@ -1813,8 +2418,12 @@ function dailyPulse() {
 
           if (openTaskExists) continue;
 
+          // TODO: payloadLink should open in-app review view once wired — same as Review_Episode.
+          const FRIENDLY_NAMES = { "Social_Images": "Images", "Reels": "Reels" };
+          const friendlyName = FRIENDLY_NAMES[baseName] || baseName;
+
           spawnTask({
-            actionTitle:      `Review assets: ${baseName} — ${guestName}`,
+            actionTitle:      `Review: ${friendlyName} — ${guestName}`,
             assignee:         getGovernance("ASSIGNEE_HOST"),
             assignedBy:       "The Fairy Team",
             status:           "open",
@@ -1822,7 +2431,7 @@ function dailyPulse() {
             contactId:        contactId,
             episodeUid:       epUid,
             workflowStep:     `Review_${baseName}`,
-            executiveSummary: `${baseName} assets are ready for your review.`
+            executiveSummary: `Assets are ready for your review. Tap to view, then approve or request revisions.`
           });
 
           reviewsSpawned++;
@@ -1850,7 +2459,7 @@ function dailyPulse() {
 
           if (!filingTaskExists) {
             spawnTask({
-              actionTitle:      `All assets approved — file this episode: ${guestName}`,
+              actionTitle:      `Ready to file: ${guestName}`,
               assignee:         getGovernance("ASSIGNEE_PRODUCER"),
               assignedBy:       "The Fairy Team",
               status:           "open",
@@ -1858,7 +2467,7 @@ function dailyPulse() {
               contactId:        contactId,
               episodeUid:       epUid,
               workflowStep:     "Filing",
-              executiveSummary: `Video and images approved. Episode is ready to file.`
+              executiveSummary: `All assets are approved. Tap the button below to trigger Filing Fairy and close out this episode.`
             });
 
             filingSpawned++;
@@ -1872,6 +2481,7 @@ function dailyPulse() {
     }
 
     logToAuditTrail(agentName, "state_change", "", "", `[INFO] _ready subfolder scan complete. Episodes scanned: ${subfolderScanned}. Review tasks spawned: ${reviewsSpawned}. Filing tasks spawned: ${filingSpawned}.`, "INFO");
+    */
 
     logToAuditTrail(agentName, "human_action", "", "", "[INFO] Daily Pulse complete.", "INFO");
 

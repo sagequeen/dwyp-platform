@@ -92,7 +92,7 @@ function preflightCheck(epUid, agentName) {
     status:           "open",
     priority:         "urgent",
     payloadLink:      `https://drive.google.com/drive/folders/${getStagingFolderIdByUid(epUid)}`,
-    executiveSummary: `Filing Fairy cannot close this episode yet. The following assets are not approved: ${blockedSummary}. Complete the review cycle before re-triggering Filing Fairy. Pending: ${blockedSummary}. Once approved in AppSheet, re-trigger Filing Fairy from your task.`
+    executiveSummary: `Filing Fairy cannot close this episode yet. Pending approval: ${blockedSummary}. Complete the review cycle, then re-trigger Filing Fairy from your task.`
   });
 
   return false;
@@ -363,18 +363,85 @@ function runFilingFairy(epUid) {
     // =========================================================================
     // STEP 11: SPAWN CONFIRMATION TASK FOR JT
     // =========================================================================
+    const episodeRow  = getEpisodeRow(epUid);
+    const releaseDate = episodeRow && episodeRow.Release_Date
+      ? Utilities.formatDate(new Date(episodeRow.Release_Date), Session.getScriptTimeZone(), "MMMM d, yyyy")
+      : "TBD";
+
     spawnTask({
       episodeUid:       epUid,
       contactId:        contactId,
       workflowStep:     "Filing",
-      actionTitle:      `Episode archived: ${guestName}`,
+      actionTitle:      `${guestName} is ready for release`,
       assignee:         getGovernance("ASSIGNEE_HOST"),
       assignedBy:       "The Fairy Team",
       status:           "open",
       priority:         "normal",
       payloadLink:      episodeCardUrl,
-      executiveSummary: `Episode for ${guestName} filed to Finished Episodes. Swipe folder created. NotebookLM copy done. Release email draft in Gmail. Filing complete. Add the episode URL to the release email draft before sending. Swipe folder: ${swipeFolderUrl}`
+      executiveSummary: `Everything is filed and ready. This episode is scheduled for release on ${releaseDate}. No action needed — your Release Day task will appear the day before.`
     });
+
+    // =========================================================================
+    // STEP 11a: SPAWN TASK #4 — Image Workshop Ready (JT)
+    // STEP 11b: SPAWN TASK #5 — Produce Episode (Audra)
+    // Trigger: post-archive, same point as JT confirmation. Both idempotent.
+    // =========================================================================
+    let imageWorkshopTaskExists = false;
+    let produceEpisodeTaskExists = false;
+    try {
+      const ssCheck  = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+      const tsCheck  = ssCheck.getSheetByName("Tasks");
+      if (tsCheck) {
+        const td = tsCheck.getDataRange().getValues();
+        const th = td[0];
+        const tEpCol = th.indexOf("Episode_UID");
+        const tWsCol = th.indexOf("Workflow_Step");
+        const tStCol = th.indexOf("Status");
+        for (let t = 1; t < td.length; t++) {
+          if (String(td[t][tEpCol]) !== String(epUid)) continue;
+          const tSt = String(td[t][tStCol]);
+          if (tSt !== "open" && tSt !== "in_progress") continue;
+          const tWs = String(td[t][tWsCol]);
+          if (tWs === "Image_Workshop_Ready") imageWorkshopTaskExists  = true;
+          if (tWs === "Produce_Episode")       produceEpisodeTaskExists = true;
+        }
+      }
+    } catch (e) {
+      logToAuditTrail(agentName, "error", epUid, "",
+        `[WARNING] Idempotency check for production cue tasks failed: ${e.message}`, "WARNING");
+    }
+
+    if (!imageWorkshopTaskExists) {
+      spawnTask({
+        episodeUid:       epUid,
+        contactId:        contactId,
+        workflowStep:     "Image_Workshop_Ready",
+        actionTitle:      `Image Workshop is ready for ${guestName}`,
+        assignee:         getGovernance("ASSIGNEE_HOST"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "normal",
+        executiveSummary: `The episode transcript has been deposited to the corpus. Image Workshop is now available for this episode.`
+      });
+      logToAuditTrail(agentName, "state_change", epUid, contactId,
+        `[INFO] Image Workshop Ready task spawned for ${guestName}.`, "INFO");
+    }
+
+    if (!produceEpisodeTaskExists) {
+      spawnTask({
+        episodeUid:       epUid,
+        contactId:        contactId,
+        workflowStep:     "Produce_Episode",
+        actionTitle:      `Ready to produce — ${guestName} transcript is in Studio`,
+        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:       "The Fairy Team",
+        status:           "open",
+        priority:         "normal",
+        executiveSummary: `The transcript for ${guestName} is in Studio and ready for production.`
+      });
+      logToAuditTrail(agentName, "state_change", epUid, contactId,
+        `[INFO] Produce Episode task spawned for ${guestName}.`, "INFO");
+    }
 
     logToAuditTrail(agentName, "state_change", epUid, "",
       `Filing complete for ${epUid}. Episode archived.`);

@@ -700,13 +700,18 @@ var BG_GEN_SYSTEM =
   "symbols, decorative borders, or frames. Fill the frame completely. No letterboxing, no padding, " +
   "no solid color bars.";
 
-function generateBackground(prompt, imageBase64, mimeType) {
+function generateBackground(prompt, imageBase64, mimeType, aspectRatio) {
   try {
+    var aspectLabels = { "9:16": "9:16 portrait (tall vertical)", "4:5": "4:5 portrait (feed)", "1:1": "1:1 square", "16:9": "16:9 landscape (wide horizontal)" };
+    var aspectNote   = aspectRatio && aspectLabels[aspectRatio]
+      ? "\n\nCanvas format: " + aspectLabels[aspectRatio] + " — compose and fill the frame completely for this orientation."
+      : "";
     var result    = callGeminiImageAPI(
-      BG_GEN_SYSTEM + "\n\nUser request: " + prompt,
-      imageBase64 || null,
-      mimeType    || null,
-      "ImageWorkshop"
+      BG_GEN_SYSTEM + aspectNote + "\n\nUser request: " + prompt,
+      imageBase64  || null,
+      mimeType     || null,
+      "ImageWorkshop",
+      null
     );
     var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
     if (!libraryId) return { success: false, error: "IMAGE_BACKGROUND_LIBRARY_ID not configured" };
@@ -717,7 +722,9 @@ function generateBackground(prompt, imageBase64, mimeType) {
                    pad(now.getMonth() + 1) + pad(now.getDate()) + "-" +
                    pad(now.getHours())     + pad(now.getMinutes());
     var ext      = (result.mimeType === "image/jpeg") ? "jpg" : "png";
-    var filename = "bg_gen_" + ts + "." + ext;
+    var slug     = prompt.trim().replace(/[^a-zA-Z0-9\s]/g, "").split(/\s+/).slice(0, 5)
+                     .join("-").toLowerCase().replace(/-+$/, "");
+    var filename = slug ? "bg_" + slug + "_" + ts + "." + ext : "bg_gen_" + ts + "." + ext;
 
     var blob   = Utilities.newBlob(Utilities.base64Decode(result.data), result.mimeType, filename);
     var folder = DriveApp.getFolderById(libraryId);
@@ -833,6 +840,12 @@ function saveImageToStaging(episodeUid, base64Data) {
   try {
     var folderId = getStagingFolderIdByUid(episodeUid);
     if (!folderId) return { success: false, error: "Production folder not found for episode: " + episodeUid };
+
+    var stagingFolder  = DriveApp.getFolderById(folderId);
+    var imagesFolderIt = stagingFolder.getFoldersByName("Images");
+    if (!imagesFolderIt.hasNext()) return { success: false, error: "Images folder not found in staging for episode: " + episodeUid };
+    var imagesFolder   = imagesFolderIt.next();
+
     var now      = new Date();
     var pad      = function(n) { return String(n).padStart(2, "0"); };
     var ts       = String(now.getFullYear()).slice(2) +
@@ -841,7 +854,7 @@ function saveImageToStaging(episodeUid, base64Data) {
     var filename = "image_" + episodeUid + "_" + ts + ".png";
     var raw      = base64Data.replace(/^data:[^;]+;base64,/, "");
     var blob     = Utilities.newBlob(Utilities.base64Decode(raw), "image/png", filename);
-    DriveApp.getFolderById(folderId).createFile(blob);
+    imagesFolder.createFile(blob);
     return { success: true, filename: filename };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1035,6 +1048,169 @@ function checkReadyForRelease(episodeUid) {
     throw new Error("checkReadyForRelease failed for " + episodeUid + ": " + err.message);
   }
 }
+
+// ── SOCIAL VERT ──────────────────────────────────────────────────────────────
+
+var SOCIAL_VERT_SYSTEM =
+  "You are Social Vert, the creative collaborator for the podcast \"Don't Waste Your Pain,\" " +
+  "hosted by Jennifer Trepanier. The podcast explores grief, loss, pain, and human resilience. " +
+  "You have access to episode transcripts as context. " +
+  "Help develop compelling social media content grounded in specific episode moments. " +
+  "When relevant, embed structured chips inline with conversational prose:\n" +
+  "  [[HOOK: text]] -- a compelling social hook drawn from the content\n" +
+  "  [[QUOTE: text]] -- a verbatim guest quote worth sharing\n" +
+  "  [[PROMPT: text]] -- a background image generation prompt for episode graphics\n" +
+  "Chips must be specific and content-grounded, not generic. " +
+  "Plain prose is fine for everything else. Mix chips and prose freely.\n\n" +
+  "QUOTE RULES (non-negotiable):\n" +
+  "- Quotes must be verbatim from the transcript. No paraphrasing, no reconstruction, no inference.\n" +
+  "- Maximum 15 words. If a quote cannot stand alone under 15 words, do not use it.\n" +
+  "- Ellipsis (...) is only permitted if the omitted words do not change meaning or intent, and never to compress two separate ideas into one quote.\n" +
+  "- Quotes must be stand-alone — they must make complete sense without episode context.\n" +
+  "- Quotes must be declarations or revelations. Never use a question as a quote chip.\n\n" +
+  "HOOK RULES (non-negotiable):\n" +
+  "- A hook is a single declarative sentence sourced directly from episode content.\n" +
+  "- Written from an omniscient point of view — a truth that lands as a statement, not a summary, teaser, or introduction.\n" +
+  "- Do not write hooks as questions, teasers (\"Find out...\"), or episode summaries.\n\n" +
+  "NO HALLUCINATION:\n" +
+  "- Every claim, quote, and hook must come from the source material provided. " +
+  "Do not infer, assume, or reconstruct anything not explicitly in the transcripts.";
+
+/**
+ * Queries Social Vert via Gemini API using GCS transcript files as inline context.
+ * Lists all files in SOCIAL_VERT_BUCKET (Governance_Config) at query time via
+ * the GCS JSON API, downloads each file's content using the script OAuth token,
+ * and passes them as inline text parts in the first user turn. Vertex AI
+ * generateContent, no RAG retrieval. Supports multi-turn history.
+ *
+ * Governance keys used:
+ *   SOCIAL_VERT_BUCKET — GCS bucket name (e.g. dwyp-social-vert-transcripts)
+ *   GEMINI_API_KEY     — Gemini API key (same pool as all other Gemini callers)
+ *   MODEL_NAME         — Gemini model (fallback: gemini-2.5-flash)
+ *
+ * @param {string}   userMessage
+ * @param {object[]} history  — array of { role, content }
+ * @returns {string} model response text
+ */
+function querySocialVert(userMessage, history) {
+  var bucketName = getGovernance("SOCIAL_VERT_BUCKET");
+  if (!bucketName) throw new Error("SOCIAL_VERT_BUCKET not configured in Governance_Config.");
+
+  var apiKey = getGovernance("GEMINI_API_KEY");
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured in Governance_Config.");
+
+  var model = getGovernance("MODEL_NAME") || "gemini-2.5-flash";
+  var url   = "https://generativelanguage.googleapis.com/v1beta/models/" + model +
+              ":generateContent?key=" + apiKey;
+
+  var token = ScriptApp.getOAuthToken(); // used for GCS listing + download only
+
+  // List all files in the GCS bucket
+  var gcsListUrl = "https://storage.googleapis.com/storage/v1/b/" + bucketName + "/o";
+  var gcsResp    = UrlFetchApp.fetch(gcsListUrl, {
+    method:             "get",
+    headers:            { Authorization: "Bearer " + token },
+    muteHttpExceptions: true
+  });
+  var gcsCode = gcsResp.getResponseCode();
+  var gcsBody = gcsResp.getContentText();
+  if (gcsCode !== 200) {
+    logToAuditTrail("SocialVert", "error", "", "",
+      "[ERROR] GCS bucket listing failed (" + gcsCode + "): " + gcsBody, "ERROR");
+    throw new Error("Social Vert GCS bucket listing failed (" + gcsCode + "): " + gcsBody);
+  }
+
+  var gcsItems  = JSON.parse(gcsBody).items || [];
+  var textParts = [];
+  for (var f = 0; f < gcsItems.length; f++) {
+    var mediaUrl  = "https://storage.googleapis.com/storage/v1/b/" + bucketName +
+                    "/o/" + encodeURIComponent(gcsItems[f].name) + "?alt=media";
+    var mediaResp = UrlFetchApp.fetch(mediaUrl, {
+      method:             "get",
+      headers:            { Authorization: "Bearer " + token },
+      muteHttpExceptions: true
+    });
+    if (mediaResp.getResponseCode() === 200) {
+      textParts.push({ text: "=== " + gcsItems[f].name + " ===\n" + mediaResp.getContentText() });
+    }
+  }
+
+  // Build contents: optional file context exchange, then history, then current message
+  var contents = [];
+  if (textParts.length > 0) {
+    contents.push({ role: "user",  parts: textParts });
+    contents.push({ role: "model", parts: [{ text: "I have reviewed the episode transcripts and I'm ready to help." }] });
+  }
+  if (Array.isArray(history)) {
+    for (var i = 0; i < history.length; i++) {
+      var turn = history[i];
+      contents.push({
+        role:  (turn.role === "model" || turn.role === "assistant") ? "model" : "user",
+        parts: [{ text: turn.content }]
+      });
+    }
+  }
+  contents.push({ role: "user", parts: [{ text: userMessage }] });
+
+  var payload = {
+    systemInstruction: { parts: [{ text: SOCIAL_VERT_SYSTEM }] },
+    contents:          contents,
+    generationConfig:  { maxOutputTokens: 32768 }
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code !== 200) {
+    logToAuditTrail("SocialVert", "error", "", "",
+      "[ERROR] Social Vert Gemini call returned " + code + ": " + body, "ERROR");
+    throw new Error("Social Vert Gemini call returned " + code + ": " + body);
+  }
+
+  var json       = JSON.parse(body);
+  var candidates = json.candidates;
+  if (!candidates || !candidates[0]) throw new Error("No candidates in Social Vert response.");
+  var respParts  = candidates[0].content && candidates[0].content.parts;
+  if (!respParts || !respParts[0]) throw new Error("No parts in Social Vert candidate.");
+  return respParts[0].text || "";
+}
+
+/**
+ * Fallback for querySocialVert when the RAG corpus is unavailable (quota, provisioning).
+ * Uses Gemini API directly with Social Vert persona. Multi-turn history is flattened
+ * into the prompt. Chips format is preserved via system instruction.
+ * @param {string}   userMessage
+ * @param {object[]} history  — array of { role, content }
+ * @returns {string}
+ */
+function querySocialVertDirect(userMessage, history) {
+  var systemInstruction =
+    "You are Social Vert, the creative collaborator for the DWYP podcast ('Did We Yell at People'). " +
+    "You help the host (JT) and producer (Audra) ideate compelling social media content: hooks, quotes, " +
+    "and image generation prompts for podcast episode graphics. " +
+    "Respond conversationally. Use these chip formats when relevant: " +
+    "[[HOOK: text]] for hook copy, [[QUOTE: text]] for quote suggestions, " +
+    "[[PROMPT: text]] for background image generation prompts. " +
+    "Plain prose is fine for everything else. Keep responses focused and useful.";
+
+  var lines = [];
+  if (Array.isArray(history)) {
+    for (var i = 0; i < history.length; i++) {
+      var turn   = history[i];
+      var prefix = (turn.role === "model" || turn.role === "assistant") ? "Social Vert" : "JT";
+      lines.push(prefix + ": " + turn.content);
+    }
+  }
+  var prompt = lines.length ? lines.join("\n") + "\nJT: " + userMessage : userMessage;
+
+  return callGeminiAPINoSearch(prompt, systemInstruction, "SocialVert");
+}
+
 
 /**
  * Closes all open review tasks for the episode, then spawns an Audra filing task.

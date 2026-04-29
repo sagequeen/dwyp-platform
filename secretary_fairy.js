@@ -34,6 +34,12 @@
 //   #11 — createContactStub() rewritten to header-driven write. Guest tab retired.
 //   #12 — FormContext folder lookup retargeted from Guest → Contacts tab.
 //
+// PATCH LOG (Missing Tasks Part 2):
+//   #20 — runSecretaryForNewEvent(): Task #1 Recording Date Reminder spawned
+//           at episode creation. Two tasks (HOST + PRODUCER) with workflowStep
+//           "Recording_Reminder" and dueDate = Recording_Date. Idempotent via
+//           upstream routing — only fires on new calendar events.
+//
 // PATCH LOG (v1.5 schema sweep — Handoff v33):
 //   #13 — createContactStub(): removed stale v1.4 fields (Workstream,
 //           Cultural_Identity, Geography, Social_Handle, Is_Guest, Is_Sponsor,
@@ -747,49 +753,6 @@ function createEpisodeFolder(parentFolderId, folderName) {
 }
 
 // =============================================================================
-// FRAME.IO PROJECT CREATION
-// Creates a Frame.io project for the episode at scheduling time.
-// Private to Secretary — called once per new episode event.
-//
-// @param {string} episodeUid - Episode UID used as the project name
-// @param {string} guestName  - Guest name appended to project name for readability
-// @returns {string}          - Frame.io project ID from response
-// @throws                    - On non-200 response or network failure
-// =============================================================================
-
-function createFrameioProject(episodeUid, guestName) {
-  const token  = getGovernance("FRAMEIO_API_TOKEN");
-  const teamId = getGovernance("FRAMEIO_TEAM_ID");
-
-  const url     = `https://api.frame.io/v2/teams/${teamId}/projects`;
-  const payload = JSON.stringify({ name: `${episodeUid}_${guestName}` });
-
-  const options = {
-    method:      "post",
-    contentType: "application/json",
-    headers:     { Authorization: `Bearer ${token}` },
-    payload:     payload,
-    muteHttpExceptions: true
-  };
-
-  const response     = UrlFetchApp.fetch(url, options);
-  const responseCode = response.getResponseCode();
-  const responseBody = response.getContentText();
-
-  if (responseCode !== 201) {
-    throw new Error(`Frame.io project creation failed. HTTP ${responseCode}: ${responseBody}`);
-  }
-
-  const parsed = JSON.parse(responseBody);
-  if (!parsed.id) {
-    throw new Error(`Frame.io project creation returned no project ID. Response: ${responseBody}`);
-  }
-
-  return parsed.id;
-}
-
-
-// =============================================================================
 // NEW EVENT ORCHESTRATOR
 // =============================================================================
 
@@ -885,19 +848,23 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
 
   // #16 — Create asset subfolders inside Staging.
   // Episode: finished video lands here (Audra uploads).
-  // Host_Graphics, Guest_Graphics, Thumbnails: Artist Fairy populates.
-  // Reels/Approved, Reels/DNU: Audra sorts clips; Filing packages from Approved.
+  // Images: Artist Fairy populates (replaces Host_Graphics + Guest_Graphics).
+  // Thumbnails: Artist Fairy populates.
+  // Reels/Approved, Reels/Save, Reels/Delete: Audra sorts clips; Filing packages from Approved.
   const episodeFolderId    = createEpisodeFolder(stagingFolderId, "Episode");
   const reelsFolderId      = createEpisodeFolder(stagingFolderId, "Reels");
-  createEpisodeFolder(stagingFolderId, "Host_Graphics");
-  createEpisodeFolder(stagingFolderId, "Guest_Graphics");
+  const imagesFolderId     = createEpisodeFolder(stagingFolderId, "Images");
+  createEpisodeFolder(imagesFolderId,  "Approved");
+  createEpisodeFolder(imagesFolderId,  "Save");
+  createEpisodeFolder(imagesFolderId,  "Delete");
   createEpisodeFolder(stagingFolderId, "Thumbnails");
   createEpisodeFolder(reelsFolderId,   "Approved");
-  createEpisodeFolder(reelsFolderId,   "DNU");
+  createEpisodeFolder(reelsFolderId,   "Save");
+  createEpisodeFolder(reelsFolderId,   "Delete");
 
 
   logToAuditTrail(agentName, "state_change", episodeUid, contactId,
-    `[INFO] Asset subfolders created in Staging: Episode, Host_Graphics, Guest_Graphics, Thumbnails, Reels/Approved, Reels/DNU.`, "INFO");
+    `[INFO] Asset subfolders created in Staging: Episode, Images/Approved, Images/Save, Images/Delete, Thumbnails, Reels/Approved, Reels/Save, Reels/Delete.`, "INFO");
 
 
   // Create Production Notes shell doc in Raw folder
@@ -960,29 +927,37 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
   logToAuditTrail(agentName, "state_change", episodeUid, contactId,
     `[INFO] Episode record created for "${guestName}". Episode_UID: ${episodeUid}.`, "INFO");
 
-  // --- Frame.io project creation ---
-  // Non-fatal. Episode row already exists. Failure spawns an urgent task
-  // and leaves Frameio_Project_ID blank for manual recovery.
-  try {
-    const frameioProjId = createFrameioProject(episodeUid, guestName);
-    patchEpisodes(episodeUid, { Frameio_Project_ID: frameioProjId });
-    logToAuditTrail(agentName, "state_change", episodeUid, contactId,
-      `[INFO] Frame.io project created and ID written to Episodes row: ${frameioProjId}`, "INFO");
-  } catch (err) {
-    logToAuditTrail(agentName, "error", episodeUid, contactId,
-      `[ERROR] Frame.io project creation failed for "${guestName}": ${err.message}`, "ERROR");
-    spawnTask({
-      actionTitle:      `Frame.io project creation failed — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "urgent",
-      contactId:        contactId,
-      episodeUid:       episodeUid,
-      workflowStep:     "Produce_Episode",
-      executiveSummary: `Secretary could not create the Frame.io project for "${guestName}" / ${episodeUid}. Create the project manually in Frame.io, then paste the project ID into the Frameio_Project_ID column on the Episodes tab. Artist Fairy reads this ID when uploading assets.`
-    });
-  }
+  // --- Task #1: Recording Date Reminder ---
+  // spawnTask() supports single assignee — two tasks spawned (HOST + PRODUCER).
+  // Daily Pulse Loop 1 updates Due_Date if Recording_Date changes and
+  // auto-completes both tasks at EOD on the recording date.
+  spawnTask({
+    actionTitle:      "Recording is today — you've got this!",
+    assignee:         getGovernance("ASSIGNEE_HOST"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    dueDate:          recordingDate,
+    contactId:        contactId,
+    episodeUid:       episodeUid,
+    workflowStep:     "Recording_Reminder",
+    executiveSummary: `Recording reminder: the interview with ${guestName} is scheduled for ${recordingDate.toDateString()}.`
+  });
+  spawnTask({
+    actionTitle:      "Recording is today — you've got this!",
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    dueDate:          recordingDate,
+    contactId:        contactId,
+    episodeUid:       episodeUid,
+    workflowStep:     "Recording_Reminder",
+    executiveSummary: `Recording reminder: the interview with ${guestName} is scheduled for ${recordingDate.toDateString()}.`
+  });
+
+  logToAuditTrail(agentName, "state_change", episodeUid, contactId,
+    `[INFO] Recording Date Reminder tasks spawned for ${guestName}.`, "INFO");
 
   // --- Herald handoff ---
   // Check manifest for herald_form_data: true before firing Herald.

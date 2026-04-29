@@ -104,16 +104,6 @@ function runMarcom(epUid) {
   } catch (err) {
     logToAuditTrail(agentName, "error", epUid, null,
       `runMarcom failed: ${err.message}`, "error");
-    spawnTask({
-      actionTitle:  `Marcom Fairy failed: ${epUid}`,
-      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:   "The Fairy Team",
-      status:       "open",
-      priority:     "urgent",
-      episodeUid:   epUid,
-      workflowStep: "Produce_Episode",
-      payloadLink:  `https://drive.google.com/drive/folders/${getStagingFolderIdByUid(epUid)}`
-    });
   }
 }
 
@@ -185,17 +175,6 @@ function gatherEpisodeContext(epUid, agentName) {
     if (!transcriptText) {
       logToAuditTrail(agentName, "error", epUid, null,
         "No transcript found in Staging folder. Marcom cannot run without a finished transcript.", "error");
-      spawnTask({
-        actionTitle:      `Transcript missing — Marcom blocked: ${manifest.guest_name || epUid}`,
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-        assignedBy:       "The Fairy Team",
-        status:           "open",
-        priority:         "urgent",
-        episodeUid:       epUid,
-        workflowStep:     "Produce_Episode",
-        payloadLink:      `https://drive.google.com/drive/folders/${stagingFolderId}`,
-        executiveSummary: `Marcom cannot run — no finished transcript found in the Staging folder for ${epUid}. Upload a finished transcript and re-run.`
-      });
       throw new Error("No transcript found. Marcom cannot proceed.");
     }
 

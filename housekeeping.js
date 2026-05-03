@@ -364,3 +364,186 @@ function runHousekeeping() {
 function testParsePipelineBlock() {
   parsePipelineBlock("EP-260423-1454");
 }
+
+
+// =============================================================================
+// CORPUS SYNC (Vertex AI RAG Engine)
+// =============================================================================
+//
+// DISABLED — 2026-05-01
+//
+// The Vertex AI RAG importRagFiles API returns 404 for the us-south1 region
+// where the dwyp-rag corpus lives. Both v1 and v1beta1 endpoints were tried.
+// us-central1 does support the import API but could not connect to Google Drive
+// as a source. Manual import via GCP Console (Vertex AI → RAG Engine → corpus
+// → Import files) works and is the current workaround.
+//
+// To revisit: check if Google has expanded importRagFiles support to us-south1,
+// or if there is a service account / OAuth scope that unlocks Drive-sourced
+// imports in us-central1. The code below is correct and ready to uncomment.
+//
+// GOVERNANCE KEYS USED (when active):
+//   STUDIO_CORPUS_ID       — full Vertex AI RAG corpus resource name
+//                            (projects/dwyp-rag/locations/us-south1/ragCorpora/...)
+//   CORPUS_DRIVE_FOLDER_ID — Drive folder ID to watch for transcript files
+// =============================================================================
+
+/*
+
+function onCorpusFolderChange(e) {
+  const agentName = "Corpus_Sync";
+
+  if (!e || !e.id) {
+    logToAuditTrail(agentName, "error", "", "", "[WARNING] onCorpusFolderChange: no file ID in event. Skipping.", "WARNING");
+    return;
+  }
+
+  const corpusFolderId = getGovernance("CORPUS_DRIVE_FOLDER_ID");
+  if (!corpusFolderId) {
+    logToAuditTrail(agentName, "error", "", "", "[ERROR] CORPUS_DRIVE_FOLDER_ID not set in Governance_Config.", "ERROR");
+    return;
+  }
+
+  try {
+    const file    = DriveApp.getFileById(e.id);
+    const parents = file.getParents();
+    let inCorpusFolder = false;
+    while (parents.hasNext()) {
+      if (parents.next().getId() === corpusFolderId) { inCorpusFolder = true; break; }
+    }
+
+    if (!inCorpusFolder) return;
+
+    logToAuditTrail(agentName, "state_change", "", "",
+      `[INFO] Corpus folder change detected: "${file.getName()}" (${e.id}). Triggering RAG import.`, "INFO");
+
+    importFileToRagCorpus(e.id, file.getName());
+
+  } catch (err) {
+    logToAuditTrail(agentName, "error", "", "",
+      `[ERROR] onCorpusFolderChange failed: ${err.message}`, "ERROR");
+  }
+}
+
+
+function syncCorpusFolder() {
+  const agentName = "Corpus_Sync";
+  logToAuditTrail(agentName, "human_action", "", "", "[INFO] syncCorpusFolder: full folder import starting.", "INFO");
+
+  const corpusFolderId = getGovernance("CORPUS_DRIVE_FOLDER_ID");
+  if (!corpusFolderId) {
+    logToAuditTrail(agentName, "error", "", "", "[ERROR] CORPUS_DRIVE_FOLDER_ID not set in Governance_Config.", "ERROR");
+    return;
+  }
+
+  try {
+    importFolderToRagCorpus(corpusFolderId);
+  } catch (err) {
+    logToAuditTrail(agentName, "error", "", "",
+      `[ERROR] syncCorpusFolder failed: ${err.message}`, "ERROR");
+  }
+}
+
+
+function importFileToRagCorpus(fileId, fileName) {
+  const agentName  = "Corpus_Sync";
+  const corpusName = getGovernance("STUDIO_CORPUS_ID");
+  if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
+
+  const location = corpusName.split("/")[3];
+  const url      = "https://" + location + "-aiplatform.googleapis.com/v1/" +
+                   corpusName + ":importRagFiles";
+
+  const payload = {
+    import_rag_files_config: {
+      google_drive_source: {
+        resource_ids: [{ resource_id: fileId, resource_type: "GOOGLE_DRIVE_FILE" }]
+      }
+    }
+  };
+
+  const response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    headers:            { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+
+  if (code !== 200) {
+    logToAuditTrail(agentName, "error", "", "",
+      `[ERROR] RAG import failed for "${fileName || fileId}" (${code}): ${body}`, "ERROR");
+    throw new Error(`RAG import returned ${code}: ${body}`);
+  }
+
+  const opName = JSON.parse(body).name || "started";
+  logToAuditTrail(agentName, "state_change", "", "",
+    `[INFO] RAG import triggered for "${fileName || fileId}". Operation: ${opName}.`, "INFO");
+}
+
+
+function importFolderToRagCorpus(folderId) {
+  const agentName  = "Corpus_Sync";
+  const corpusName = getGovernance("STUDIO_CORPUS_ID");
+  if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
+
+  const location = corpusName.split("/")[3];
+  const url      = "https://" + location + "-aiplatform.googleapis.com/v1/" +
+                   corpusName + ":importRagFiles";
+
+  const payload = {
+    import_rag_files_config: {
+      google_drive_source: {
+        resource_ids: [{ resource_id: folderId, resource_type: "GOOGLE_DRIVE_FOLDER" }]
+      }
+    }
+  };
+
+  const response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    headers:            { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+
+  if (code !== 200) {
+    logToAuditTrail(agentName, "error", "", "",
+      `[ERROR] RAG folder import failed for folder ${folderId} (${code}): ${body}`, "ERROR");
+    throw new Error(`RAG folder import returned ${code}: ${body}`);
+  }
+
+  const opName = JSON.parse(body).name || "started";
+  logToAuditTrail(agentName, "state_change", "", "",
+    `[INFO] RAG folder import triggered for ${folderId}. Operation: ${opName}.`, "INFO");
+}
+
+
+function installCorpusTrigger() {
+  // GAS does not support programmatic Drive onChange triggers — those must be
+  // wired manually via Extensions > Apps Script > Triggers (set handler to
+  // onCorpusFolderChange, event source: From Drive, event type: onChange).
+  // This function installs an hourly time-based trigger on syncCorpusFolder
+  // as the automated path. For a ~20-file corpus the 1-hour cadence is fine.
+
+  // Idempotent — remove any existing hourly corpus sync trigger first
+  ScriptApp.getProjectTriggers().forEach(function(t) {
+    if (t.getHandlerFunction() === "syncCorpusFolder") ScriptApp.deleteTrigger(t);
+  });
+
+  ScriptApp.newTrigger("syncCorpusFolder")
+    .timeBased()
+    .everyHours(1)
+    .create();
+
+  logToAuditTrail("Corpus_Sync", "state_change", "", "",
+    "[INFO] Hourly time-based trigger installed for syncCorpusFolder.", "INFO");
+}
+
+*/

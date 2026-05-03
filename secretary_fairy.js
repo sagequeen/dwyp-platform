@@ -35,10 +35,16 @@
 //   #12 — FormContext folder lookup retargeted from Guest → Contacts tab.
 //
 // PATCH LOG (Missing Tasks Part 2):
-//   #20 — runSecretaryForNewEvent(): Task #1 Recording Date Reminder spawned
-//           at episode creation. Two tasks (HOST + PRODUCER) with workflowStep
-//           "Recording_Reminder" and dueDate = Recording_Date. Idempotent via
-//           upstream routing — only fires on new calendar events.
+//   #20 — runSecretaryForNewEvent(): Recording_Reminder spawn removed.
+//           Moved to dailyPulse() Loop 1 — fires D-1 and day-of only,
+//           matching Release_Reminder pattern. Secretary no longer spawns
+//           reminder tasks at episode creation regardless of recording proximity.
+//   #21 — checkCalendarForInterviews(): switched from CalendarApp.getCalendarById()
+//           to Calendar.Events.list() (Advanced Service) so all DWYP calendar
+//           events are captured regardless of who created them. Added
+//           Utilities.sleep(3000) between events to avoid Drive API rate limits
+//           when multiple recordings exist. wrapCalendarApiEvent() adapter added
+//           so processInterviewEvent and downstream functions are unchanged.
 //
 // PATCH LOG (v1.5 schema sweep — Handoff v33):
 //   #13 — createContactStub(): removed stale v1.4 fields (Workstream,
@@ -411,48 +417,66 @@ function buildFormContextFile(contactId, contactFolderId, namedValues, name, ema
 function checkCalendarForInterviews() {
   const agentName = "Secretary";
 
-
   logToAuditTrail(agentName, "human_action", "", "",
     "[INFO] Secretary scanning DWYP calendar for interview events.", "INFO");
 
-
   try {
     const calendarId = getGovernance("DWYP_CALENDAR_ID");
-    const calendar = CalendarApp.getCalendarById(calendarId);
-
-
-    if (!calendar) {
-      logToAuditTrail(agentName, "error", "", "",
-        `[ERROR] Cannot access DWYP calendar. Check DWYP_CALENDAR_ID in Governance_Config.`, "ERROR");
-      return;
-    }
-
-
-    const prefix = getGovernance("CALENDAR_TRIGGER_PREFIX");
-    const now = new Date();
-    const scanEnd = new Date();
+    const prefix     = getGovernance("CALENDAR_TRIGGER_PREFIX");
+    const now        = new Date();
+    const scanEnd    = new Date();
     scanEnd.setDate(now.getDate() + 60);
 
+    // Use Calendar Advanced Service so all events on the DWYP calendar are
+    // returned regardless of who created them — not just events where the
+    // script account is the organizer.
+    const matchingEvents = [];
+    let pageToken;
+    do {
+      const response = Calendar.Events.list(calendarId, {
+        timeMin:      now.toISOString(),
+        timeMax:      scanEnd.toISOString(),
+        singleEvents: true,
+        orderBy:      "startTime",
+        maxResults:   250,
+        pageToken:    pageToken || undefined
+      });
+      for (const apiEvent of (response.items || [])) {
+        if ((apiEvent.summary || "").startsWith(prefix)) {
+          matchingEvents.push(apiEvent);
+        }
+      }
+      pageToken = response.nextPageToken;
+    } while (pageToken);
 
-    const events = calendar.getEvents(now, scanEnd);
     let processed = 0;
 
-
-    events.forEach(event => {
-      if (!event.getTitle().startsWith(prefix)) return;
-      processInterviewEvent(event, agentName, prefix);
+    for (let i = 0; i < matchingEvents.length; i++) {
+      if (i > 0) Utilities.sleep(3000);  // rate-limit Drive API between episodes
+      processInterviewEvent(wrapCalendarApiEvent(matchingEvents[i]), agentName, prefix);
       processed++;
-    });
-
+    }
 
     logToAuditTrail(agentName, "state_change", "", "",
       `[INFO] Scan complete. ${processed} DWYP interview event(s) processed.`, "INFO");
-
 
   } catch (err) {
     logToAuditTrail(agentName, "error", "", "",
       `[ERROR] Calendar scan threw an error: ${err.message}`, "ERROR");
   }
+}
+
+
+// Wraps a Calendar API v3 event object (from Calendar.Events.list) into the
+// CalendarApp-style interface expected by processInterviewEvent and downstream
+// functions. Keeps the rest of the code unchanged.
+function wrapCalendarApiEvent(apiEvent) {
+  return {
+    getId:        ()  => apiEvent.id,
+    getTitle:     ()  => apiEvent.summary || "",
+    getStartTime: ()  => new Date(apiEvent.start.dateTime || apiEvent.start.date),
+    getGuestList: ()  => (apiEvent.attendees || []).map(a => ({ getEmail: () => a.email || "" }))
+  };
 }
 
 
@@ -926,38 +950,6 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
 
   logToAuditTrail(agentName, "state_change", episodeUid, contactId,
     `[INFO] Episode record created for "${guestName}". Episode_UID: ${episodeUid}.`, "INFO");
-
-  // --- Task #1: Recording Date Reminder ---
-  // spawnTask() supports single assignee — two tasks spawned (HOST + PRODUCER).
-  // Daily Pulse Loop 1 updates Due_Date if Recording_Date changes and
-  // auto-completes both tasks at EOD on the recording date.
-  spawnTask({
-    actionTitle:      "Recording is today — you've got this!",
-    assignee:         getGovernance("ASSIGNEE_HOST"),
-    assignedBy:       "The Fairy Team",
-    status:           "open",
-    priority:         "normal",
-    dueDate:          recordingDate,
-    contactId:        contactId,
-    episodeUid:       episodeUid,
-    workflowStep:     "Recording_Reminder",
-    executiveSummary: `Recording reminder: the interview with ${guestName} is scheduled for ${recordingDate.toDateString()}.`
-  });
-  spawnTask({
-    actionTitle:      "Recording is today — you've got this!",
-    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-    assignedBy:       "The Fairy Team",
-    status:           "open",
-    priority:         "normal",
-    dueDate:          recordingDate,
-    contactId:        contactId,
-    episodeUid:       episodeUid,
-    workflowStep:     "Recording_Reminder",
-    executiveSummary: `Recording reminder: the interview with ${guestName} is scheduled for ${recordingDate.toDateString()}.`
-  });
-
-  logToAuditTrail(agentName, "state_change", episodeUid, contactId,
-    `[INFO] Recording Date Reminder tasks spawned for ${guestName}.`, "INFO");
 
   // --- Herald handoff ---
   // Check manifest for herald_form_data: true before firing Herald.

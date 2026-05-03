@@ -1796,24 +1796,30 @@ function dailyPulse() {
     const taskDueDateCol  = tasksHeaders.indexOf("Due_Date");
 
     // =========================================================================
-    // LOOP 1: Recording Date Reminder — date-sync and self-complete
-    // For each active episode with open Recording_Reminder tasks:
-    //   - If Recording_Date changed: update task Due_Date.
-    //   - If Due_Date <= today: mark task complete.
-    // Two tasks per episode (HOST + PRODUCER) — both processed in one pass.
+    // LOOP 1: Recording Date Reminder — D-1 spawn, date-sync, and self-complete
+    // Spawn condition: Recording_Date - 1 = today (D-1) or Recording_Date = today
+    //   (day-of fallback). Two tasks per episode (HOST + PRODUCER).
+    // Idempotency: open Workflow_Step = "Recording_Reminder" is sole dedup.
+    // Date-sync: if existing task Due_Date != Recording_Date, update it.
+    // Self-complete: if Due_Date <= today, mark task complete.
     // =========================================================================
     let recReminderProcessed = 0;
+    let recRemindersSpawned  = 0;
 
     if (recordingDateCol === -1) {
       logToAuditTrail(agentName, "error", "", "", "[WARNING] Recording_Date column not found in Episodes tab. Skipping Recording Reminder sync.", "WARNING");
     } else {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const tomorrowRec = new Date(today);
+      tomorrowRec.setDate(tomorrowRec.getDate() + 1);
 
       for (let i = 1; i < data.length; i++) {
         const epUid         = data[i][uidCol];
         const status        = String(data[i][statusCol]);
         const recordingDate = data[i][recordingDateCol];
+        const guestName     = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
+        const contactId     = contactIdCol !== -1 ? data[i][contactIdCol] : "";
 
         if (!epUid)                  continue;
         if (status === "complete")   continue;
@@ -1825,12 +1831,15 @@ function dailyPulse() {
         if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1 ||
             taskIdCol === -1 || taskDueDateCol === -1) continue;
 
+        let existingTaskCount = 0;
+
         for (let t = 1; t < tasksData.length; t++) {
           if (tasksData[t][taskEpUidCol]    !== epUid)             continue;
           if (String(tasksData[t][taskWorkflowCol]) !== "Recording_Reminder") continue;
           const tStatus = String(tasksData[t][taskStatusCol]);
           if (tStatus !== "open" && tStatus !== "in_progress")     continue;
 
+          existingTaskCount++;
           recReminderProcessed++;
 
           const rawDue    = tasksData[t][taskDueDateCol];
@@ -1864,10 +1873,50 @@ function dailyPulse() {
             }
           }
         }
+
+        if (existingTaskCount > 0) continue;  // existing tasks found — skip spawn
+
+        // Determine spawn title based on date proximity
+        let spawnTitle = null;
+        if (recDate.getTime() === tomorrowRec.getTime()) {
+          spawnTitle = `Recording tomorrow — ${guestName}, you've got this!`;
+        } else if (recDate.getTime() === today.getTime()) {
+          spawnTitle = `Recording is today — ${guestName}, you've got this!`;
+        }
+
+        if (!spawnTitle) continue;
+
+        spawnTask({
+          actionTitle:      spawnTitle,
+          assignee:         getGovernance("ASSIGNEE_HOST"),
+          assignedBy:       "The Fairy Team",
+          status:           "open",
+          priority:         "normal",
+          dueDate:          recDate,
+          contactId:        contactId,
+          episodeUid:       epUid,
+          workflowStep:     "Recording_Reminder",
+          executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
+        });
+        spawnTask({
+          actionTitle:      spawnTitle,
+          assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+          assignedBy:       "The Fairy Team",
+          status:           "open",
+          priority:         "normal",
+          dueDate:          recDate,
+          contactId:        contactId,
+          episodeUid:       epUid,
+          workflowStep:     "Recording_Reminder",
+          executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
+        });
+        recRemindersSpawned += 2;
+        logToAuditTrail(agentName, "state_change", epUid, contactId,
+          `[INFO] Recording_Reminder tasks spawned for ${guestName} (${recDate.toDateString()}).`, "INFO");
       }
 
       logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Recording Reminder sync complete. Tasks processed: ${recReminderProcessed}.`, "INFO");
+        `[INFO] Recording Reminder sync complete. Tasks processed: ${recReminderProcessed}. Tasks spawned: ${recRemindersSpawned}.`, "INFO");
     }
 
     // =========================================================================

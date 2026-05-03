@@ -829,6 +829,32 @@ function triggerFilingFromTask(episodeUid) {
 }
 
 /**
+ * Returns active (non-complete) episodes for the Image Workshop export picker.
+ * Sorted by Episode_Sequence ascending.
+ * @returns {{ guestName: string, episodeUid: string }[]}
+ */
+function getActiveEpisodes() {
+  var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var sheet   = ss.getSheetByName("Episodes");
+  var data    = sheet.getDataRange().getValues();
+
+  var result = [];
+  for (var i = 1; i < data.length; i++) {
+    var row    = data[i];
+    var status = row[EPISODES_COLS.Status - 1];
+    if (status === "complete") continue;
+    var uid  = row[EPISODES_COLS.Episode_UID      - 1];
+    var name = row[EPISODES_COLS.Guest_Name       - 1];
+    var seq  = row[EPISODES_COLS.Episode_Sequence - 1];
+    if (!uid) continue;
+    result.push({ episodeUid: String(uid), guestName: String(name || uid), _seq: seq || 999 });
+  }
+  result.sort(function(a, b) { return a._seq - b._seq; });
+  return result.map(function(e) { return { episodeUid: e.episodeUid, guestName: e.guestName }; });
+}
+
+/**
  * Decodes a base64 PNG and writes it to the episode's Production folder.
  * Filename: image_[episodeUid]_[timestamp].png
  * base64Data may include a data-URL prefix — stripped automatically.
@@ -838,20 +864,29 @@ function triggerFilingFromTask(episodeUid) {
  */
 function saveImageToStaging(episodeUid, base64Data) {
   try {
-    var folderId = getStagingFolderIdByUid(episodeUid);
-    if (!folderId) return { success: false, error: "Production folder not found for episode: " + episodeUid };
+    var imagesFolder;
+    var filePrefix;
 
-    var stagingFolder  = DriveApp.getFolderById(folderId);
-    var imagesFolderIt = stagingFolder.getFoldersByName("Images");
-    if (!imagesFolderIt.hasNext()) return { success: false, error: "Images folder not found in staging for episode: " + episodeUid };
-    var imagesFolder   = imagesFolderIt.next();
+    if (episodeUid) {
+      var folderId = getStagingFolderIdByUid(episodeUid);
+      if (!folderId) return { success: false, error: "Production folder not found for episode: " + episodeUid };
+      var stagingFolder  = DriveApp.getFolderById(folderId);
+      var imagesFolderIt = stagingFolder.getFoldersByName("Images");
+      if (!imagesFolderIt.hasNext()) return { success: false, error: "Images folder not found in staging for episode: " + episodeUid };
+      imagesFolder = imagesFolderIt.next();
+      filePrefix   = "image_" + episodeUid;
+    } else {
+      var fallbackId = getGovernanceValue("IW_EXPORT_FALLBACK_FOLDER_ID") || "1-j74fbb3FdWRY2smdzUjsCgcdfdeljbr";
+      imagesFolder   = DriveApp.getFolderById(fallbackId);
+      filePrefix     = "image";
+    }
 
     var now      = new Date();
     var pad      = function(n) { return String(n).padStart(2, "0"); };
     var ts       = String(now.getFullYear()).slice(2) +
                    pad(now.getMonth() + 1) + pad(now.getDate()) + "-" +
                    pad(now.getHours())     + pad(now.getMinutes());
-    var filename = "image_" + episodeUid + "_" + ts + ".png";
+    var filename = filePrefix + "_" + ts + ".png";
     var raw      = base64Data.replace(/^data:[^;]+;base64,/, "");
     var blob     = Utilities.newBlob(Utilities.base64Decode(raw), "image/png", filename);
     imagesFolder.createFile(blob);
@@ -962,6 +997,44 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
 }
 
 /**
+ * Spawns a Revise_Images task for Audra from JT's image comment.
+ * @param {string} episodeUid
+ * @param {string} fileName   — image filename, used in task title
+ * @param {string} comment    — JT's note, written to Executive_Summary
+ */
+function submitImageRevision(episodeUid, fileName, comment) {
+  spawnTask({
+    actionTitle:      "Revise Image — " + fileName,
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    episodeUid:       episodeUid,
+    workflowStep:     "Revise_Images",
+    executiveSummary: comment
+  });
+}
+
+/**
+ * Spawns a Revise_Reels task for Audra from JT's reel comment.
+ * @param {string} episodeUid
+ * @param {string} fileName   — reel filename, used in task title
+ * @param {string} comment    — JT's note, written to Executive_Summary
+ */
+function submitReelRevision(episodeUid, fileName, comment) {
+  spawnTask({
+    actionTitle:      "Revise Reel — " + fileName,
+    assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:       "The Fairy Team",
+    status:           "open",
+    priority:         "normal",
+    episodeUid:       episodeUid,
+    workflowStep:     "Revise_Reels",
+    executiveSummary: comment
+  });
+}
+
+/**
  * Submits timestamped episode comments from JT's review session.
  * If an open Review_Episode task exists for the episode, appends to its Revision_Notes.
  * If none exists, spawns a new task for Audra with the comments as the body.
@@ -1052,95 +1125,90 @@ function checkReadyForRelease(episodeUid) {
 // ── SOCIAL VERT ──────────────────────────────────────────────────────────────
 
 var SOCIAL_VERT_SYSTEM =
-  "You are Social Vert, the creative collaborator for the podcast \"Don't Waste Your Pain,\" " +
-  "hosted by Jennifer Trepanier. The podcast explores grief, loss, pain, and human resilience. " +
-  "You have access to episode transcripts as context. " +
-  "Help develop compelling social media content grounded in specific episode moments. " +
-  "When relevant, embed structured chips inline with conversational prose:\n" +
-  "  [[HOOK: text]] -- a compelling social hook drawn from the content\n" +
-  "  [[QUOTE: text]] -- a verbatim guest quote worth sharing\n" +
-  "  [[PROMPT: text]] -- a background image generation prompt for episode graphics\n" +
-  "Chips must be specific and content-grounded, not generic. " +
-  "Plain prose is fine for everything else. Mix chips and prose freely.\n\n" +
-  "QUOTE RULES (non-negotiable):\n" +
-  "- Quotes must be verbatim from the transcript. No paraphrasing, no reconstruction, no inference.\n" +
-  "- Maximum 15 words. If a quote cannot stand alone under 15 words, do not use it.\n" +
-  "- Ellipsis (...) is only permitted if the omitted words do not change meaning or intent, and never to compress two separate ideas into one quote.\n" +
-  "- Quotes must be stand-alone — they must make complete sense without episode context.\n" +
-  "- Quotes must be declarations or revelations. Never use a question as a quote chip.\n\n" +
-  "HOOK RULES (non-negotiable):\n" +
-  "- A hook is a single declarative sentence sourced directly from episode content.\n" +
-  "- Written from an omniscient point of view — a truth that lands as a statement, not a summary, teaser, or introduction.\n" +
-  "- Do not write hooks as questions, teasers (\"Find out...\"), or episode summaries.\n\n" +
-  "NO HALLUCINATION:\n" +
-  "- Every claim, quote, and hook must come from the source material provided. " +
-  "Do not infer, assume, or reconstruct anything not explicitly in the transcripts.";
+  "You are Social Vert — the quote and hook engine for Don't Waste Your Pain. You work inside the Image Workshop. Your only job is to surface raw material from episode transcripts for use on graphic assets.\n\n" +
+  "You do not write copy. You do not summarize. You do not explain. You find what is already there and return it in a format JT can use immediately on the canvas.\n\n" +
+  "WHAT YOU RETURN\n\n" +
+  "Default: conversational prose. Answer questions, discuss themes, surface ideas — respond naturally.\n\n" +
+  "Chips only when JT explicitly asks for hooks, quotes, or image prompts. Each chip uses exactly this format:\n\n" +
+  "[[HOOK: text]]\n" +
+  "[[QUOTE: text — Guest Name]]\n" +
+  "[[PROMPT: text]]\n\n" +
+  "HOOK — A single declarative sentence synthesized from the episode. Not invented — sourced from what was actually said. Maximum 15 words. Creates tension or contradiction. Does not summarize. Stands alone in a feed with no context. Omniscient POV.\n\n" +
+  "QUOTE — Verbatim from the transcript. Wrapped in quotation marks. Attribution always included with em-dash and full guest name — never first name only. Example: [[QUOTE: \"text\" — Kyla Mitsunaga]]. Filler words (um, ah, like, you know) may be removed. Ellipsis may bridge two sentences only when original meaning is fully intact and no ideas are compressed. Maximum 15 words.\n\n" +
+  "Standalone test — mandatory before returning any quote: Read the quote with no surrounding context. Does a stranger understand what is being declared? If it requires the conversation to make sense, it fails. Do not return it. Find a different quote or report that none exists.\n\n" +
+  "PROMPT — A background image direction for the canvas. No text in the image. No logos. Mood and composition only. One sentence.\n\n" +
+  "OUTPUT FORMATTING\n\n" +
+  "When returning chips, group by type with a blank line between each chip and a blank line between groups. Label each group:\n\n" +
+  "Hooks\n" +
+  "[[HOOK: text]]\n\n" +
+  "[[HOOK: text]]\n\n" +
+  "Quotes\n" +
+  "[[QUOTE: \"text\" — Full Name]]\n\n" +
+  "[[QUOTE: \"text\" — Full Name]]\n\n" +
+  "Image Prompts\n" +
+  "[[PROMPT: text]]\n\n" +
+  "[[PROMPT: text]]\n\n" +
+  "Do not run chips together in a block. Each chip gets its own line with breathing room.\n\n" +
+  "DEFAULT CHIP COUNT (when chips are requested)\n" +
+  "Unless JT specifies otherwise:\n" +
+  "— 3 HOOK chips\n" +
+  "— 3 QUOTE chips\n" +
+  "— 2 PROMPT chips\n\n" +
+  "Chips and prose may appear together in the same response. If JT asks \"what themes does this episode explore and can you give me some hooks?\" — answer the question in prose, then return the chips below.\n\n" +
+  "HOW TO SPEAK\n\n" +
+  "You are part of the Don't Waste Your Pain team. You are direct and do not perform enthusiasm. No preamble. No \"Here are your hooks!\" No \"Great question!\" No \"I found some powerful quotes for you.\"\n\n" +
+  "When returning chips, lead with the group label and deliver. If you need to say something, say it in one sentence — plain, specific, no flourish.\n\n" +
+  "Wrong: \"Here are some hooks, quotes, and image prompts for David Bedrick's episode!\"\n" +
+  "Right: \"David Bedrick\"\n\n" +
+  "Wrong: \"I've found some really powerful quotes from this transcript.\"\n" +
+  "Right: \"Three quotes. One is borderline — flagged below.\"\n\n" +
+  "If something is missing or a quote fails the standalone test, say so plainly and move on.\n\n" +
+  "HARD RULES — NEVER VIOLATE\n\n" +
+  "Quote integrity. Never present synthesized, paraphrased, or reconstructed text as a quote. If you cannot find a real verbatim quote that serves the task, say so. Do not invent one. Do not reconstruct from memory or general knowledge.\n\n" +
+  "No hallucination. If it is not in the transcript, it does not exist. Do not infer from the guest's reputation, other appearances, or general knowledge about their work.\n\n" +
+  "Logo — zero tolerance. Never reference, describe, or suggest the DWYP logo in any PROMPT chip.\n\n" +
+  "If you cannot find a verbatim quote for a request, respond: \"I cannot find a verbatim quote for that. Want me to surface 3 passages you can review instead?\"\n\n" +
+  "VOICE STANDARDS\n\n" +
+  "Hooks must be precise and unflinching. No motivational poster language. No wellness retreat aesthetics. Darkness and humor are both allowed.\n\n" +
+  "Forbidden phrases — if any appear in a hook, rewrite before returning:\n" +
+  "heart-centered · transformative journey · profound exploration · safe space · deeply moving · inspires us to · in a world where · holds space · unpacks · dives deep · game-changer · paradigm shift · on this journey · resonates · impactful · raw and vulnerable · bravely shares · courageously · shows up · leaning in · the work · healing journey · sacred space · high vibe · aligned · authentic self · showing up fully · invite you to · I see you · witness your pain\n\n" +
+  "Catchphrase rule. Never generate \"don't waste your pain,\" \"what is your superpower,\" or \"superpower\" as a hook or quote fragment.\n\n" +
+  "PROMPT CHIP VISUAL STANDARD\n\n" +
+  "The test: would this image fit in a film festival program, a literary journal, or a documentary title card? If yes, it works. If it looks like a wellness retreat, a motivational poster, a church bulletin, or a cult recruitment graphic — rewrite it.\n\n" +
+  "Avoid in PROMPT chips: phoenix imagery, silhouettes with open arms, glowing objects, warm beige or cream palettes, stock photo aesthetics, bright even lighting, arranged smiles, wellness retreat aesthetics.";
 
 /**
- * Queries Social Vert via Gemini API using GCS transcript files as inline context.
- * Lists all files in SOCIAL_VERT_BUCKET (Governance_Config) at query time via
- * the GCS JSON API, downloads each file's content using the script OAuth token,
- * and passes them as inline text parts in the first user turn. Vertex AI
- * generateContent, no RAG retrieval. Supports multi-turn history.
+ * Queries Social Vert via Vertex AI RAG Engine. Retrieval + generation happen
+ * in one call — the corpus returns grounded chunks and Gemini generates from them.
+ * Supports multi-turn history.
  *
  * Governance keys used:
- *   SOCIAL_VERT_BUCKET — GCS bucket name (e.g. dwyp-social-vert-transcripts)
- *   GEMINI_API_KEY     — Gemini API key (same pool as all other Gemini callers)
- *   MODEL_NAME         — Gemini model (fallback: gemini-2.5-flash)
+ *   STUDIO_CORPUS_ID — full Vertex RAG corpus resource name
+ *                      (projects/dwyp-rag/locations/us-central1/ragCorpora/...)
+ *   MODEL_NAME       — Gemini model (fallback: gemini-2.0-flash)
  *
  * @param {string}   userMessage
  * @param {object[]} history  — array of { role, content }
  * @returns {string} model response text
  */
 function querySocialVert(userMessage, history) {
-  var bucketName = getGovernance("SOCIAL_VERT_BUCKET");
-  if (!bucketName) throw new Error("SOCIAL_VERT_BUCKET not configured in Governance_Config.");
+  var corpusName = getGovernance("STUDIO_CORPUS_ID");
+  if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
 
-  var apiKey = getGovernance("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured in Governance_Config.");
+  // Derive project from the corpus resource name.
+  // NOTE: do NOT use the corpus location (us-south1) for the generation endpoint —
+  // Gemini models on Vertex AI are not available in us-south1. The corpus resource
+  // name in vertexRagStore is fully-qualified, so retrieval works cross-region.
+  var project        = corpusName.split("/")[1];  // e.g. "dwyp-rag"
+  var endpointRegion = "us-central1";
 
-  var model = getGovernance("MODEL_NAME") || "gemini-2.5-flash";
-  var url   = "https://generativelanguage.googleapis.com/v1beta/models/" + model +
-              ":generateContent?key=" + apiKey;
+  var model = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
+  var token = ScriptApp.getOAuthToken();
+  var url   = "https://" + endpointRegion + "-aiplatform.googleapis.com/v1beta1/projects/" +
+              project + "/locations/" + endpointRegion +
+              "/publishers/google/models/" + model + ":generateContent";
 
-  var token = ScriptApp.getOAuthToken(); // used for GCS listing + download only
-
-  // List all files in the GCS bucket
-  var gcsListUrl = "https://storage.googleapis.com/storage/v1/b/" + bucketName + "/o";
-  var gcsResp    = UrlFetchApp.fetch(gcsListUrl, {
-    method:             "get",
-    headers:            { Authorization: "Bearer " + token },
-    muteHttpExceptions: true
-  });
-  var gcsCode = gcsResp.getResponseCode();
-  var gcsBody = gcsResp.getContentText();
-  if (gcsCode !== 200) {
-    logToAuditTrail("SocialVert", "error", "", "",
-      "[ERROR] GCS bucket listing failed (" + gcsCode + "): " + gcsBody, "ERROR");
-    throw new Error("Social Vert GCS bucket listing failed (" + gcsCode + "): " + gcsBody);
-  }
-
-  var gcsItems  = JSON.parse(gcsBody).items || [];
-  var textParts = [];
-  for (var f = 0; f < gcsItems.length; f++) {
-    var mediaUrl  = "https://storage.googleapis.com/storage/v1/b/" + bucketName +
-                    "/o/" + encodeURIComponent(gcsItems[f].name) + "?alt=media";
-    var mediaResp = UrlFetchApp.fetch(mediaUrl, {
-      method:             "get",
-      headers:            { Authorization: "Bearer " + token },
-      muteHttpExceptions: true
-    });
-    if (mediaResp.getResponseCode() === 200) {
-      textParts.push({ text: "=== " + gcsItems[f].name + " ===\n" + mediaResp.getContentText() });
-    }
-  }
-
-  // Build contents: optional file context exchange, then history, then current message
   var contents = [];
-  if (textParts.length > 0) {
-    contents.push({ role: "user",  parts: textParts });
-    contents.push({ role: "model", parts: [{ text: "I have reviewed the episode transcripts and I'm ready to help." }] });
-  }
   if (Array.isArray(history)) {
     for (var i = 0; i < history.length; i++) {
       var turn = history[i];
@@ -1155,12 +1223,21 @@ function querySocialVert(userMessage, history) {
   var payload = {
     systemInstruction: { parts: [{ text: SOCIAL_VERT_SYSTEM }] },
     contents:          contents,
-    generationConfig:  { maxOutputTokens: 32768 }
+    tools: [{
+      retrieval: {
+        vertexRagStore: {
+          ragResources:   [{ ragCorpus: corpusName }],
+          similarityTopK: 10
+        }
+      }
+    }],
+    generationConfig: { maxOutputTokens: 32768 }
   };
 
   var response = UrlFetchApp.fetch(url, {
     method:             "post",
     contentType:        "application/json",
+    headers:            { Authorization: "Bearer " + token },
     payload:            JSON.stringify(payload),
     muteHttpExceptions: true
   });
@@ -1168,16 +1245,22 @@ function querySocialVert(userMessage, history) {
   var body = response.getContentText();
   if (code !== 200) {
     logToAuditTrail("SocialVert", "error", "", "",
-      "[ERROR] Social Vert Gemini call returned " + code + ": " + body, "ERROR");
-    throw new Error("Social Vert Gemini call returned " + code + ": " + body);
+      "[ERROR] Social Vert RAG call returned " + code + ": " + body, "ERROR");
+    throw new Error("Social Vert RAG call returned " + code + ": " + body);
   }
 
   var json       = JSON.parse(body);
   var candidates = json.candidates;
   if (!candidates || !candidates[0]) throw new Error("No candidates in Social Vert response.");
   var respParts  = candidates[0].content && candidates[0].content.parts;
-  if (!respParts || !respParts[0]) throw new Error("No parts in Social Vert candidate.");
-  return respParts[0].text || "";
+  if (!respParts) throw new Error("No parts in Social Vert candidate.");
+  // RAG responses may include grounding metadata parts alongside text — collect text only
+  var text = respParts
+    .filter(function(p) { return p.text; })
+    .map(function(p)    { return p.text; })
+    .join("");
+  if (!text) throw new Error("Empty text in Social Vert response.");
+  return text;
 }
 
 /**
@@ -1189,14 +1272,7 @@ function querySocialVert(userMessage, history) {
  * @returns {string}
  */
 function querySocialVertDirect(userMessage, history) {
-  var systemInstruction =
-    "You are Social Vert, the creative collaborator for the DWYP podcast ('Did We Yell at People'). " +
-    "You help the host (JT) and producer (Audra) ideate compelling social media content: hooks, quotes, " +
-    "and image generation prompts for podcast episode graphics. " +
-    "Respond conversationally. Use these chip formats when relevant: " +
-    "[[HOOK: text]] for hook copy, [[QUOTE: text]] for quote suggestions, " +
-    "[[PROMPT: text]] for background image generation prompts. " +
-    "Plain prose is fine for everything else. Keep responses focused and useful.";
+  var systemInstruction = SOCIAL_VERT_SYSTEM;
 
   var lines = [];
   if (Array.isArray(history)) {
@@ -1209,6 +1285,217 @@ function querySocialVertDirect(userMessage, history) {
   var prompt = lines.length ? lines.join("\n") + "\nJT: " + userMessage : userMessage;
 
   return callGeminiAPINoSearch(prompt, systemInstruction, "SocialVert");
+}
+
+
+// ── STUDIO / LIBRARIAN VERT ──────────────────────────────────────────────────
+
+var STUDIO_SYSTEM_BASE =
+  "You are Librarian Vert — the content intelligence engine inside the Studio for Don't Waste Your Pain (DWYP). " +
+  "You have deep knowledge of all DWYP episodes through the corpus you can retrieve from. " +
+  "DWYP is a faith-based podcast hosted by JT. The show features guests who have experienced profound pain " +
+  "and turned it into purpose. The brand voice is warm, honest, direct, and redemptive. " +
+  "Never be clinical or corporate. Write like a trusted collaborator who knows the show deeply.\n\n" +
+  "If episode context is provided below, prioritize it. When citing episode content, be specific — name the guest, " +
+  "reference the story. Return responses that are immediately usable, not rough drafts.\n\n";
+
+var STUDIO_MODE_INSTRUCTIONS = {
+  "images":
+    "MODE: Image Direction. Surface raw material from episode content for use on graphic assets. " +
+    "When returning hook ideas, format as: [[HOOK: the hook text]]\n" +
+    "When returning quotes, format as: [[QUOTE: \"the quote text\" — Full Guest Name]]\n\n" +
+    "HOOK — Based on a strong theme in the episode, synthesized from source material. " +
+    "No more than 15 words. No heavy punctuation. Must stand alone and have meaning in a social media feed.\n\n" +
+    "QUOTE — Verbatim from the transcript. No more than 20 words. Filler words may be removed. " +
+    "Ellipsis may bridge two sentences only when the original meaning is fully intact. " +
+    "Always include attribution with em-dash and full guest name. Wrapped in quotation marks.\n\n" +
+    "Keep responses tight — 3–5 options maximum unless asked for more. No preamble. " +
+    "No 'Here are your hooks!' Lead with the chips. One sentence of context maximum if something needs flagging.\n\n" +
+    "Forbidden phrases — if any appear in a hook, rewrite before returning: " +
+    "heart-centered · transformative journey · profound exploration · safe space · deeply moving · inspires us to · " +
+    "in a world where · holds space · unpacks · dives deep · game-changer · resonates · impactful · raw and vulnerable · " +
+    "bravely shares · courageously · showing up · healing journey · don't waste your pain · superpower",
+
+  "episode-copy":
+    "MODE: Writer. Draft episode copy, social posts, newsletter sections, or any written content for DWYP. " +
+    "Match the show's voice: warm, honest, direct, redemptive. " +
+    "Label each deliverable clearly. Lead with the strongest version. " +
+    "Ask one clarifying question if the brief is too vague to write from.",
+
+  "interview-prep":
+    "MODE: Interview Prep. Help prepare for a guest interview. " +
+    "Suggest research angles, opening questions, follow-up probes, and story hooks. " +
+    "Draw from corpus knowledge of the guest if available. " +
+    "Organize your response: Opening, Story Arc, Key Topics, Closing.",
+
+  "social":
+    "MODE: Social Media. Write captions, hooks, and post copy for social platforms. " +
+    "Instagram: punchy, visual-first, 1–3 sentences max, strong opener. " +
+    "Twitter/X: under 280 chars, no filler. LinkedIn: slightly longer, professional warmth. " +
+    "Label each variation by platform. No hashtag suggestions unless asked.",
+
+  "newsletter":
+    "MODE: Newsletter. Write newsletter sections, story leads, and subscriber content. " +
+    "Tone: like a letter from a trusted friend — personal, substantive, never promotional. " +
+    "Standard sections: opener, episode spotlight, quote or story pull, call to action. " +
+    "Keep total length under 400 words unless specified.",
+
+  "outreach":
+    "MODE: Outreach. Draft messages for guests, sponsors, or collaborators. " +
+    "Be specific about what makes this person right for DWYP. " +
+    "Do not be sycophantic. Lead with shared mission, not flattery. " +
+    "Keep the ask clear and the message under 200 words.",
+
+  "brainstorm":
+    "MODE: Brainstorm. Serve as a creative thought partner. " +
+    "Be generative — volume and variety over polish. " +
+    "Organize ideas in short labeled groups. Challenge assumptions if it serves the work. " +
+    "Ask a clarifying question if the brief is too open to be useful.",
+
+  "writer":
+    "MODE: Writer. Draft episode copy, social posts, newsletter sections, or any written content for DWYP. " +
+    "Match the show's voice: warm, honest, direct, redemptive. " +
+    "Label each deliverable clearly. Lead with the strongest version. " +
+    "Ask one clarifying question if the brief is too vague to write from.",
+
+  "show-notes":
+    "MODE: Show Notes. Draft structured show notes for a DWYP episode. " +
+    "Standard format: Episode Overview (2–3 sentences), Guest Bio (3–5 sentences), " +
+    "Key Topics (bulleted), Notable Quotes (2–3), Resources section placeholder. " +
+    "Match DWYP warmth and directness. Keep bio factual — no embellishment."
+};
+
+/**
+ * Returns the Drive folder URL for a given episode, or the fallback social media folder.
+ * Called by stOpenDrive() in the Studio UI.
+ * @param {string} episodeUid
+ * @returns {string} URL
+ */
+function getStudioDriveLink(episodeUid) {
+  var fallback = "https://drive.google.com/drive/folders/1-j74fbb3FdWRY2smdzUjsCgcdfdeljbr";
+  if (!episodeUid) return fallback;
+  try {
+    var folderId = getStagingFolderIdByUid(episodeUid);
+    return folderId ? "https://drive.google.com/drive/folders/" + folderId : fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+/**
+ * Studio — Librarian Vert. Vertex AI RAG + Gemini, mode-aware system prompts.
+ * Episode manifest is injected into the system prompt when episodeUid is supplied.
+ *
+ * Governance keys used:
+ *   STUDIO_CORPUS_ID — full Vertex RAG corpus resource name
+ *   MODEL_NAME       — Gemini model (fallback: gemini-2.0-flash)
+ *
+ * @param {string}   prompt
+ * @param {string}   episodeUid — may be null/empty for general queries
+ * @param {string}   mode       — images|writer|outreach|interview-prep|brainstorm|show-notes
+ * @param {object[]} history    — array of { role, content }
+ * @returns {{ success: boolean, text?: string, error?: string }}
+ */
+function callStudioLLM(prompt, episodeUid, mode, history) {
+  try {
+    var corpusName = getGovernance("STUDIO_CORPUS_ID");
+    if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
+
+    var project        = corpusName.split("/")[1];
+    var endpointRegion = "us-central1";
+    var model          = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
+    var token          = ScriptApp.getOAuthToken();
+    var url            = "https://" + endpointRegion + "-aiplatform.googleapis.com/v1beta1/projects/" +
+                         project + "/locations/" + endpointRegion +
+                         "/publishers/google/models/" + model + ":generateContent";
+
+    // Build system instruction: base + mode + optional episode context
+    var modeKey   = mode || "images";
+    var modeInstr = STUDIO_MODE_INSTRUCTIONS[modeKey] || STUDIO_MODE_INSTRUCTIONS["brainstorm"];
+    var systemText = STUDIO_SYSTEM_BASE + modeInstr;
+
+    var guestName = null;
+    if (episodeUid) {
+      try {
+        var manifest  = getEpisodeManifest(episodeUid);
+        guestName     = manifest.guest_name || null;
+        var ctxLines  = [];
+        if (guestName)            ctxLines.push("Guest: " + guestName);
+        if (manifest.episode_uid) ctxLines.push("Episode UID: " + manifest.episode_uid);
+        if (manifest.raw_hooks  && manifest.raw_hooks.length) {
+          ctxLines.push("Hooks from this episode:\n" + manifest.raw_hooks.slice(0, 10).join("\n"));
+        }
+        if (manifest.raw_quotes && manifest.raw_quotes.length) {
+          ctxLines.push("Quotes from this episode:\n" + manifest.raw_quotes.slice(0, 10).join("\n"));
+        }
+        if (ctxLines.length) systemText += "\n\nEPISODE CONTEXT:\n" + ctxLines.join("\n");
+      } catch (ctxErr) {
+        // Episode context is supplemental — proceed without it
+      }
+    }
+
+    // Prefix the retrieval query with the guest name so Vertex RAG targets the right episode.
+    // The history is stored with the original prompt; only the final turn sent to Vertex is augmented.
+    var retrievalQuery = guestName ? guestName + " — " + prompt : prompt;
+
+    var contents = [];
+    if (Array.isArray(history)) {
+      for (var i = 0; i < history.length; i++) {
+        var turn = history[i];
+        contents.push({
+          role:  (turn.role === "model" || turn.role === "assistant") ? "model" : "user",
+          parts: [{ text: turn.content }]
+        });
+      }
+    }
+    contents.push({ role: "user", parts: [{ text: retrievalQuery }] });
+
+    var payload = {
+      systemInstruction: { parts: [{ text: systemText }] },
+      contents:          contents,
+      tools: [{
+        retrieval: {
+          vertexRagStore: {
+            ragResources:   [{ ragCorpus: corpusName }],
+            similarityTopK: 10
+          }
+        }
+      }],
+      generationConfig: { maxOutputTokens: 32768 }
+    };
+
+    var response = UrlFetchApp.fetch(url, {
+      method:             "post",
+      contentType:        "application/json",
+      headers:            { Authorization: "Bearer " + token },
+      payload:            JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    var body = response.getContentText();
+    if (code !== 200) {
+      logToAuditTrail("StudioLLM", "error", episodeUid || "", "",
+        "[ERROR] callStudioLLM returned " + code + ": " + body, "ERROR");
+      return { success: false, error: "Vert returned " + code + ". Check the audit log." };
+    }
+
+    var json       = JSON.parse(body);
+    var candidates = json.candidates;
+    if (!candidates || !candidates[0]) return { success: false, error: "No candidates in response." };
+    var respParts  = candidates[0].content && candidates[0].content.parts;
+    if (!respParts) return { success: false, error: "No parts in response candidate." };
+    var text = respParts
+      .filter(function(p) { return p.text; })
+      .map(function(p)    { return p.text; })
+      .join("");
+    if (!text) return { success: false, error: "Empty response from Vert." };
+
+    return { success: true, text: text };
+  } catch (err) {
+    logToAuditTrail("StudioLLM", "error", episodeUid || "", "",
+      "[ERROR] callStudioLLM threw: " + err.message, "ERROR");
+    return { success: false, error: err.message };
+  }
 }
 
 
@@ -1255,3 +1542,257 @@ function triggerReadyForRelease(episodeUid) {
     throw new Error("triggerReadyForRelease failed for " + episodeUid + ": " + err.message);
   }
 }
+
+
+// ── CONTACTS ─────────────────────────────────────────────────────────────────
+
+// Fields the front end is allowed to write. Everything else is schema-protected.
+var CONTACTS_WRITABLE = { Tags: true, Personal_Note: true, Influence_Tier: true };
+
+function getContacts() {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Contacts");
+    var data    = sheet.getDataRange().getValues();
+    if (data.length < 2) return [];
+
+    var headers  = data[0];
+    var idIdx    = headers.indexOf("Contact_ID");
+    var contacts = [];
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (!row[idIdx]) continue;
+      var contact = {};
+      headers.forEach(function(h, idx) {
+        var v = row[idx];
+        contact[h] = (v !== null && v !== undefined) ? String(v) : "";
+      });
+      contact._rowIndex = i + 1;
+      contacts.push(contact);
+    }
+
+    contacts.sort(function(a, b) {
+      var da = a.Last_Activity ? new Date(a.Last_Activity) : new Date(0);
+      var db = b.Last_Activity ? new Date(b.Last_Activity) : new Date(0);
+      return db - da;
+    });
+
+    return contacts;
+  } catch(e) {
+    throw new Error("getContacts failed: " + e.message);
+  }
+}
+
+function updateContactField(rowIndex, field, value) {
+  if (!CONTACTS_WRITABLE[field]) throw new Error("Field not writable from front end: " + field);
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Contacts");
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var col     = headers.indexOf(field);
+    if (col === -1) throw new Error("Column not found in Contacts sheet: " + field);
+    sheet.getRange(rowIndex, col + 1).setValue(value);
+    return { success: true };
+  } catch(e) {
+    throw new Error("updateContactField failed: " + e.message);
+  }
+}
+
+// ── QUICK CAPTION ─────────────────────────────────────────────
+
+var QUICK_CAPTION_SYSTEM =
+  'You are a social media caption writer for a podcast called "Don\'t Waste Your Pain," hosted by JT. ' +
+  'You watch short video clips or look at images, then write Instagram captions that match the show\'s voice: ' +
+  'honest, hopeful, emotionally intelligent — never performative.\n\n' +
+  'FIRST CALL — always return exactly three options using these exact headers (with the brackets):\n\n' +
+  '[SHORT · HOOK]\n' +
+  'One punchy hook. 1–3 lines max. Up to 3 hashtags. One emoji is fine, none is fine.\n\n' +
+  '[MEDIUM · PERSONAL]\n' +
+  '3–5 lines. Personal voice. Up to 4 hashtags.\n\n' +
+  '[LONGER · STORY]\n' +
+  '5–8 lines. Narrative arc that earns its ending. Up to 5 hashtags.\n\n' +
+  'REVISION CALLS — return exactly one option using this exact header:\n\n' +
+  '[REVISED]\n' +
+  'The revised caption.\n\n' +
+  'VOICE RULES:\n' +
+  '- Never open with "I"\n' +
+  '- Never use: journey, pouring my heart out, this one is special, honored, humbled, blessed, spaces, show up\n' +
+  '- No promotional language, no throat-clearing, no preamble before the caption\n' +
+  '- Don\'t narrate what you\'re doing — just write the caption';
+
+/**
+ * Analyzes an uploaded image or video and returns three Instagram caption options.
+ * Images sent as inline base64. Videos uploaded to Gemini File API via qcUploadToFileApi.
+ * @param {string} fileBase64 — base64 file content (no data-URI prefix)
+ * @param {string} mimeType  — e.g. "image/jpeg", "video/mp4"
+ * @returns {string} Gemini response with [SHORT · HOOK], [MEDIUM · PERSONAL], [LONGER · STORY] blocks
+ */
+function getQuickCaptions(fileBase64, mimeType) {
+  try {
+    return _getQuickCaptionsImpl(fileBase64, mimeType);
+  } catch (e) {
+    logToAuditTrail("QuickCaption", "error", "", "", "[THROW] " + e.name + ": " + e.message + "\n" + (e.stack || ""), "ERROR");
+    throw e;
+  }
+}
+
+function _getQuickCaptionsImpl(fileBase64, mimeType) {
+  var apiKey = getGovernance("GEMINI_API_KEY");
+  var model  = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
+  var url    = "https://generativelanguage.googleapis.com/v1beta/models/" +
+               model + ":generateContent?key=" + apiKey;
+
+  var isVideo = mimeType.indexOf("video/") === 0;
+  var filePart;
+  if (isVideo) {
+    var fileUri = qcUploadToFileApi(fileBase64, mimeType, apiKey);
+    filePart = { fileData: { mimeType: mimeType, fileUri: fileUri } };
+  } else {
+    filePart = { inlineData: { mimeType: mimeType, data: fileBase64 } };
+  }
+
+  var payload = {
+    systemInstruction: { parts: [{ text: QUICK_CAPTION_SYSTEM }] },
+    contents: [{
+      role:  "user",
+      parts: [filePart, { text: "Write three Instagram caption options for this." }]
+    }],
+    generationConfig: { maxOutputTokens: 4096 }
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code !== 200) {
+    logToAuditTrail("QuickCaption", "error", "", "", "[ERROR] getQuickCaptions returned " + code + ": " + body, "ERROR");
+    throw new Error("Caption generation failed (" + code + ").");
+  }
+  var json       = JSON.parse(body);
+  var candidates = json.candidates;
+  if (!candidates || !candidates[0]) throw new Error("No candidates in response.");
+  var parts = candidates[0].content && candidates[0].content.parts;
+  if (!parts) throw new Error("No content parts in response.");
+  return parts.filter(function(p) { return p.text; }).map(function(p) { return p.text; }).join("");
+}
+
+/**
+ * Uploads a video to the Gemini File API via resumable upload (GAS-side).
+ * Polls until state = ACTIVE before returning the fileUri.
+ */
+function qcUploadToFileApi(fileBase64, mimeType, apiKey) {
+  var bytes      = Utilities.base64Decode(fileBase64);
+  var blob       = Utilities.newBlob(bytes, mimeType, "reel_caption");
+  var byteLength = bytes.length;
+
+  var initUrl  = "https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable&key=" + apiKey;
+  var initResp = UrlFetchApp.fetch(initUrl, {
+    method:  "post",
+    headers: {
+      "X-Goog-Upload-Protocol":              "resumable",
+      "X-Goog-Upload-Command":               "start",
+      "X-Goog-Upload-Header-Content-Length": byteLength,
+      "X-Goog-Upload-Header-Content-Type":   mimeType,
+      "Content-Type":                        "application/json"
+    },
+    payload:            JSON.stringify({ file: { display_name: "reel_caption" } }),
+    muteHttpExceptions: true
+  });
+  if (initResp.getResponseCode() !== 200) {
+    throw new Error("File API init failed (" + initResp.getResponseCode() + "): " + initResp.getContentText());
+  }
+
+  var uploadUrl = initResp.getHeaders()["X-Goog-Upload-URL"];
+  if (!uploadUrl) throw new Error("File API response missing upload URL.");
+
+  var uploadResp = UrlFetchApp.fetch(uploadUrl, {
+    method:  "post",
+    headers: {
+      "X-Goog-Upload-Offset":  "0",
+      "X-Goog-Upload-Command": "upload, finalize"
+    },
+    payload:            blob,
+    muteHttpExceptions: true
+  });
+  if (uploadResp.getResponseCode() !== 200) {
+    throw new Error("File API upload failed (" + uploadResp.getResponseCode() + "): " + uploadResp.getContentText());
+  }
+
+  var uploadJson = JSON.parse(uploadResp.getContentText());
+  var fileName   = uploadJson.file && uploadJson.file.name;
+  var fileUri    = uploadJson.file && uploadJson.file.uri;
+  if (!fileUri) throw new Error("File API response missing uri: " + uploadResp.getContentText());
+
+  var maxWait = 30000;
+  var waited  = 0;
+  while (waited < maxWait) {
+    Utilities.sleep(3000);
+    waited += 3000;
+    var checkUrl  = "https://generativelanguage.googleapis.com/v1beta/" + fileName + "?key=" + apiKey;
+    var checkResp = UrlFetchApp.fetch(checkUrl, { muteHttpExceptions: true });
+    if (checkResp.getResponseCode() === 200) {
+      var fileState = JSON.parse(checkResp.getContentText()).state;
+      if (fileState === "ACTIVE") return fileUri;
+      if (fileState === "FAILED") throw new Error("Gemini File API processing failed.");
+    }
+  }
+  throw new Error("File did not become ACTIVE within 30s — try a shorter clip.");
+}
+
+/**
+ * Sends a follow-up message for caption tweaks. No file re-upload — history carries context.
+ * @param {string}   userMessage
+ * @param {object[]} history — [{role:"user"|"model", content:string}, ...]
+ * @returns {string} Gemini response with [REVISED] block
+ */
+function continueQuickCaption(userMessage, history) {
+  var apiKey = getGovernance("GEMINI_API_KEY");
+  var model  = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
+  var url    = "https://generativelanguage.googleapis.com/v1beta/models/" +
+               model + ":generateContent?key=" + apiKey;
+
+  var contents = [];
+  if (Array.isArray(history)) {
+    for (var i = 0; i < history.length; i++) {
+      var t = history[i];
+      contents.push({
+        role:  (t.role === "model") ? "model" : "user",
+        parts: [{ text: t.content }]
+      });
+    }
+  }
+  contents.push({ role: "user", parts: [{ text: userMessage }] });
+
+  var payload = {
+    systemInstruction: { parts: [{ text: QUICK_CAPTION_SYSTEM }] },
+    contents:          contents,
+    generationConfig:  { maxOutputTokens: 2048 }
+  };
+
+  var response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  var code = response.getResponseCode();
+  var body = response.getContentText();
+  if (code !== 200) {
+    logToAuditTrail("QuickCaption", "error", "", "", "[ERROR] continueQuickCaption returned " + code + ": " + body, "ERROR");
+    throw new Error("Caption revision failed (" + code + ").");
+  }
+  var json       = JSON.parse(body);
+  var candidates = json.candidates;
+  if (!candidates || !candidates[0]) throw new Error("No candidates in response.");
+  var parts = candidates[0].content && candidates[0].content.parts;
+  if (!parts) throw new Error("No content parts in response.");
+  return parts.filter(function(p) { return p.text; }).map(function(p) { return p.text; }).join("");
+}
+

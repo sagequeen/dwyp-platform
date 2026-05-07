@@ -3901,7 +3901,7 @@ body.studio-open .app-header { display: none; }
                   <button class="pb-canvas-tool-btn" onclick="pbCanvasRedo()">Redo</button>
                   <button class="pb-canvas-tool-btn" onclick="pbCenterText()">Center</button>
                   <button class="pb-canvas-tool-btn" id="pbShadowBtn" onclick="pbToggleShadow()" title="Drop shadow" style="font-weight:900;text-shadow:1px 2px 4px rgba(0,0,0,.55);">T</button>
-                  <button class="pb-canvas-tool-btn" id="pbBrightnessBtn" onclick="pbToggleBgBrightness()" title="Brightness overlay">Brightness</button>
+                  <button class="pb-canvas-tool-btn" id="pbBrightnessBtn" onclick="pbToggleBgBrightness()" title="Adjust background brightness">Overlay</button>
                   <button class="pb-canvas-tool-btn" id="pbLogoBtn" onclick="pbToggleLogo()">Logo: Off</button>
                   <div class="iw-color-dots" id="pbColorDots">
                     <button class="iw-color-dot"        data-color="#FEBE18" style="background:#FEBE18" onclick="pbApplyTextColor('#FEBE18')" title="Gold"></button>
@@ -3919,20 +3919,6 @@ body.studio-open .app-header { display: none; }
                     <span>Light</span>
                     <button class="pb-canvas-tool-btn" style="padding:2px 6px;font-size:10px;" onclick="pbResetBgBrightness()">Reset</button>
                   </div>
-                </div>
-                <!-- Overlay row -->
-                <div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap;">
-                  <span style="font-size:10px;color:var(--text-muted);font-weight:600;">Overlay:</span>
-                  <button class="st-ov-none-btn" onclick="pbClearOverlay()">None</button>
-                  <button class="st-ov-swatch" data-pb-ov="#000000" style="background:#000000" onclick="pbSetOverlayColor('#000000')" title="Black"></button>
-                  <button class="st-ov-swatch" data-pb-ov="#1a1714" style="background:#1a1714;border-color:#555" onclick="pbSetOverlayColor('#1a1714')" title="Dark brown"></button>
-                  <button class="st-ov-swatch" data-pb-ov="#ffffff" style="background:#ffffff" onclick="pbSetOverlayColor('#ffffff')" title="White"></button>
-                  <button class="st-ov-swatch" data-pb-ov="#FEBE18" style="background:#FEBE18" onclick="pbSetOverlayColor('#FEBE18')" title="Gold"></button>
-                  <button class="st-ov-swatch" data-pb-ov="#D12225" style="background:#D12225" onclick="pbSetOverlayColor('#D12225')" title="Crimson"></button>
-                  <select id="pbOverlayType" style="font-size:10px;background:var(--bg-elevated,#252220);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;" onchange="pbSetOverlayType(this.value)">
-                    <option value="solid">Solid</option>
-                    <option value="gradient">Gradient</option>
-                  </select>
                 </div>
               </div>
             </div>
@@ -5814,65 +5800,12 @@ function pbResetBgBrightness() {
   pbSaveCanvasState();
 }
 
-function pbSetOverlayColor(color) {
-  pb._overlayColor = color;
-  document.querySelectorAll('[data-pb-ov]').forEach(function(s) {
-    s.classList.toggle('active', s.getAttribute('data-pb-ov') === color);
-  });
-  pbApplyOverlay();
-}
-
-function pbClearOverlay() {
-  pb._overlayColor = null;
-  document.querySelectorAll('[data-pb-ov]').forEach(function(s) { s.classList.remove('active'); });
-  if (!pb.canvas) return;
-  pb.canvas.getObjects().filter(function(o) { return o._isOverlay; }).forEach(function(o) { pb.canvas.remove(o); });
-  pb.canvas.renderAll();
-  pbSaveCanvasState();
-}
-
-function pbSetOverlayType(type) {
-  pb._overlayType = type || 'solid';
-  if (pb._overlayColor) pbApplyOverlay();
-}
-
-function pbApplyOverlay() {
-  if (!pb.canvas || !pb._overlayColor) return;
-  var cw  = pb.canvas.getWidth(), ch = pb.canvas.getHeight();
-  pb.canvas.getObjects().filter(function(o) { return o._isOverlay; }).forEach(function(o) { pb.canvas.remove(o); });
-  var hex = pb._overlayColor.replace('#', '');
-  var r   = parseInt(hex.substring(0,2),16), g = parseInt(hex.substring(2,4),16), b = parseInt(hex.substring(4,6),16);
-  var fill;
-  if (pb._overlayType === 'gradient') {
-    fill = new fabric.Gradient({
-      type: 'linear', gradientUnits: 'pixels',
-      coords: { x1:0, y1:0, x2:0, y2:ch },
-      colorStops: [
-        { offset: 0,    color: 'rgba('+r+','+g+','+b+',0)' },
-        { offset: 0.45, color: 'rgba('+r+','+g+','+b+',0.28)' },
-        { offset: 1,    color: 'rgba('+r+','+g+','+b+',0.78)' }
-      ]
-    });
-  } else {
-    fill = 'rgba('+r+','+g+','+b+',0.45)';
-  }
-  var rect = new fabric.Rect({ left:0, top:0, width:cw, height:ch, fill:fill, selectable:false, evented:false, _isOverlay:true });
-  pb.canvas.add(rect);
-  pbUpdateOverlayLayer();
-  pb.canvas.renderAll();
-  pbSaveCanvasState();
-}
-
 function pbUpdateOverlayLayer() {
   if (!pb.canvas) return;
-  // Move brightness overlay just above BG, color overlay above that
   var bgIdx = -1;
   pb.canvas.getObjects().forEach(function(o, i) { if (o._isBackground) bgIdx = i; });
   var brightOverlay = pb.canvas.getObjects().find(function(o) { return o._isBrightnessOverlay; });
-  var colorOverlay  = pb.canvas.getObjects().find(function(o) { return o._isOverlay; });
   if (brightOverlay) pb.canvas.moveTo(brightOverlay, bgIdx >= 0 ? bgIdx + 1 : 0);
-  var bIdx = bgIdx + (brightOverlay ? 2 : 1);
-  if (colorOverlay)  pb.canvas.moveTo(colorOverlay,  Math.max(0, bIdx));
 }
 
 function pbSetTextColor(hex) {
@@ -6135,41 +6068,16 @@ function pbApplyBackground(fileId) {
   document.querySelectorAll('.pb-bg-thumb').forEach(function(t) {
     t.classList.toggle('active', t.dataset.fileId === fileId);
   });
-
-  // Full-res cached — use immediately
   if (pbBgCache[fileId]) { pbSetBackground(pbBgCache[fileId]); return; }
-
-  // Load thumbnail first (fast), then swap in full res
   google.script.run
-    .withSuccessHandler(function(thumbRes) {
-      if (thumbRes && thumbRes.success && thumbRes.dataUrl) {
-        pbSetBackground(thumbRes.dataUrl);
-      }
-      // Full-res load regardless of thumbnail outcome
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.dataUrl) {
-            pbBgCache[fileId] = res.dataUrl;
-            pbSetBackground(res.dataUrl);
-          } else if (!thumbRes || !thumbRes.success) {
-            showToast('Could not load background.');
-          }
-        })
-        .withFailureHandler(function() {
-          if (!thumbRes || !thumbRes.success) showToast('Background load failed.');
-        })
-        .getBackgroundImageData(fileId);
+    .withSuccessHandler(function(res) {
+      if (res && res.success && res.dataUrl) {
+        pbBgCache[fileId] = res.dataUrl;
+        pbSetBackground(res.dataUrl);
+      } else { showToast('Could not load background.'); }
     })
-    .withFailureHandler(function() {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.dataUrl) { pbBgCache[fileId] = res.dataUrl; pbSetBackground(res.dataUrl); }
-          else showToast('Could not load background.');
-        })
-        .withFailureHandler(function() { showToast('Background load failed.'); })
-        .getBackgroundImageData(fileId);
-    })
-    .getBackgroundThumbnailData(fileId);
+    .withFailureHandler(function() { showToast('Background load failed.'); })
+    .getBackgroundImageData(fileId);
 }
 
 function pbGenerateBackground() {

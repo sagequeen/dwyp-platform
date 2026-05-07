@@ -1031,18 +1031,6 @@ function getBackgroundImageData(fileId) {
  * Used by Publish canvas for progressive background loading (thumbnail shows instantly,
  * full res swaps in after).
  */
-function getBackgroundThumbnailData(fileId) {
-  try {
-    var thumbUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w600";
-    var resp     = UrlFetchApp.fetch(thumbUrl, { muteHttpExceptions: true });
-    if (resp.getResponseCode() !== 200) return { success: false };
-    var blob    = resp.getBlob();
-    var dataUrl = "data:" + (blob.getContentType() || "image/jpeg") + ";base64," + Utilities.base64Encode(blob.getBytes());
-    return { success: true, dataUrl: dataUrl };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
 
 /**
  * Decodes a base64 image string and saves it to the background library folder.

@@ -6052,8 +6052,8 @@ function pbSetBackground(dataUrl) {
       lockUniScaling:  true,
       _isBackground:   true
     });
-    pbAttachBgControls(img);
     pbClampBackground(img);
+    pbAttachBgControls(img);
     pb.canvas.getObjects().forEach(function(o) { if (o._isBackground) pb.canvas.remove(o); });
     pb.canvas.add(img);
     pb.canvas.sendToBack(img);

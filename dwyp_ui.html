@@ -5599,8 +5599,7 @@ function pbInitCanvas(savedJson, savedHistory, savedHistoryIdx) {
     width:                  canvasW,
     height:                 canvasH,
     selection:              true,
-    preserveObjectStacking: true,
-    enableRetinaScaling:    true
+    preserveObjectStacking: true
   });
 
   var wrap = document.getElementById('pbCanvasWrap');
@@ -5909,37 +5908,41 @@ function pbCenterText() {
 
 function pbPlaceLogo(variant) {
   if (!pb.canvas) return;
-  pbSaveCanvasState();
-  var eyeFill = (variant === 'dark') ? '#1a1714' : '#ffffff';
-  var gradId  = 'pbLogoGrad_' + Date.now();
-  var svgStr  =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 155">' +
-    '<defs><radialGradient id="' + gradId + '" cx="45.76" cy="45.59" r="301.84" gradientUnits="userSpaceOnUse">' +
+  var canvas   = pb.canvas;
+  var eyeFill  = (variant === 'dark') ? '#1a1714' : '#ffffff';
+  var isThumbnail = pb.activeSlotIsThumbnail || false;
+  var cw = isThumbnail ? PB_THUMB_W : PB_CANVAS_W;
+  var ch = isThumbnail ? PB_THUMB_H : PB_CANVAS_H;
+  var vbW = 346.09, vbH = 159.16;
+  var logoW = Math.round(cw * 0.52), scale = logoW / vbW, logoH = Math.round(vbH * scale);
+  var snakeSVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 346.09 159.16">' +
+    '<defs><radialGradient id="pbLogoGrad" cx="39.45" cy="28.77" fx="39.45" fy="28.77" r="231.31" gradientUnits="userSpaceOnUse">' +
     '<stop offset=".34" stop-color="#d12026"/><stop offset="1" stop-color="#faae17"/>' +
     '</radialGradient></defs>' +
-    '<path fill="url(#' + gradId + ')" d="' + _IW_P1 + '"/>' +
-    '<path fill="' + eyeFill + '" d="' + _IW_P2 + '"/>' +
-    '</svg>';
-  var isThumbnail = pb.activeSlotIsThumbnail || false;
-  var canvasW = isThumbnail ? PB_THUMB_W : PB_CANVAS_W;
-  var canvasH = isThumbnail ? PB_THUMB_H : PB_CANVAS_H;
-  fabric.loadSVGFromString(svgStr, function(objects, options) {
-    var group = fabric.util.groupSVGElements(objects, options);
-    group.scaleToWidth(canvasW * 0.45);
-    group.set({
-      left:    canvasW / 2,
-      top:     canvasH * 0.84,
-      originX: 'center',
-      originY: 'center',
-      _isLogo: true
+    '<path fill="url(#pbLogoGrad)" d="' + _ST_P1 + '"/></svg>';
+  var makePathSVG = function(d, fill) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 346.09 159.16"><path d="' + d + '" fill="' + fill + '"/></svg>';
+  };
+  pbSaveCanvasState();
+  fabric.loadSVGFromString(snakeSVG, function(objs1) {
+    fabric.loadSVGFromString(makePathSVG(_ST_P2, eyeFill), function(objs2) {
+      canvas.getObjects().filter(function(o) { return o._isLogo; }).forEach(function(o) { canvas.remove(o); });
+      var group = new fabric.Group([objs1[0], objs2[0]], {
+        left:    cw / 2,
+        top:     ch - logoH - Math.round(ch * 0.06),
+        originX: 'center',
+        scaleX:  scale,
+        scaleY:  scale,
+        selectable: true,
+        _isLogo: true
+      });
+      canvas.add(group);
+      canvas.bringToFront(group);
+      canvas.renderAll();
+      pb.logoPlaced = true;
+      pbSaveCanvasState();
+      pbUpdateLogoBtn();
     });
-    pb.canvas.getObjects().forEach(function(o) { if (o._isLogo) pb.canvas.remove(o); });
-    pb.canvas.add(group);
-    pb.canvas.setActiveObject(group);
-    pb.canvas.renderAll();
-    pb.logoPlaced = true;
-    pbSaveCanvasState();
-    pbUpdateLogoBtn();
   });
 }
 

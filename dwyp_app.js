@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DWYP Operations Platform — Web App
  * File: dwyp_app.gs
  * Version: 1.1 | April 2026
@@ -105,25 +105,53 @@ var EPISODE_LOG_COLS = {
   Visible_To:  9
 };
 
-// Social_Assets tab column map (17 columns)
+// Social_Assets tab column map (13 columns — scheduling + Make integration only)
 var SOCIAL_ASSETS_COLS = {
-  Post_ID:           1,
-  Episode_UID:       2,
-  Asset_Type:        3,
-  Placeholder_Key:   4,
-  Platform:          5,
-  Release_Week:      6,
-  Slot:              7,
-  Status:            8,
-  Caption:           9,
-  Caption_Secondary: 10,
-  Drive_File_ID:     11,
-  Attribution_Label: 12,
-  Scheduled_At:      13,
-  Scheduler_Status:  14,
-  Posted_At:         15,
-  Created_At:        16,
-  Created_By:        17
+  Post_ID:          1,
+  Asset_Library_ID: 2,  // FK → Asset_Library
+  Episode_UID:      3,
+  Slot:             4,
+  Asset_Type:       5,
+  Platform:         6,
+  Caption:          7,
+  Drive_File_ID:    8,
+  Scheduled_At:     9,
+  Scheduler_Status: 10,
+  Posted_At:        11,
+  Created_At:       12,
+  Created_By:       13
+};
+
+// Asset_Library tab column map (18 columns — single source of truth for content assets)
+var ASSET_LIBRARY_COLS = {
+  Asset_ID:      1,
+  Episode_UID:   2,
+  Asset_Type:    3,
+  Drive_File_ID: 4,
+  Display_Name:  5,
+  Slide_Index:   6,
+  Quote_Text:    7,
+  Reel_Summary:  8,
+  Image_Prompt:  9,
+  Caption_Draft: 10,
+  Caption_Final: 11,
+  Notes:         12,
+  Background_ID: 13,
+  Canvas_State:  14,
+  Status:        15,  // candidate | scheduled | bank | rejected
+  Availability:  16,  // available | placed | paired
+  Created_At:    17,
+  Created_By:    18
+};
+
+// Posting_Schedule tab column map (6 columns)
+var POSTING_SCHEDULE_COLS = {
+  Slot_ID:    1,
+  Day:        2,
+  Asset_Type: 3,
+  Platform:   4,
+  Why:        5,
+  Sort_Order: 6
 };
 
 // Tasks tab column map (1-based, matches v1.5 schema column order)
@@ -417,19 +445,24 @@ function getSocialAssetCandidateCounts(episodeUid) {
   try {
     var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
     var ss      = SpreadsheetApp.openById(sheetId);
-    var sheet   = ss.getSheetByName("Social_Assets");
-    var data    = sheet.getDataRange().getValues();
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return { reels: 0, images: 0 };
+    var data = sheet.getDataRange().getValues();
 
-    var IMAGE_TYPES = ["hook_graphic", "quote_graphic_host", "quote_graphic_guest", "thumbnail"];
+    function normType(t) { return String(t).toLowerCase().replace(/[_ ]/g,''); }
+    var IMAGE_TYPES = ["quotegraphic", "thumbnail", "bankclip"];
     var reels = 0, images = 0;
 
     for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (String(row[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      if (row[SOCIAL_ASSETS_COLS.Status     - 1] !== "candidate") continue;
-      var assetType = row[SOCIAL_ASSETS_COLS.Asset_Type - 1];
-      if (assetType === "reel")                         reels++;
-      if (IMAGE_TYPES.indexOf(assetType) !== -1)        images++;
+      var row   = data[i];
+      if (String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]) !== String(episodeUid)) continue;
+      if (String(row[ASSET_LIBRARY_COLS.Status       - 1]).toLowerCase() !== "candidate") continue;
+      var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
+      if (avail === "placed" || avail === "paired") continue;
+      var assetType = normType(row[ASSET_LIBRARY_COLS.Asset_Type - 1]);
+      if (assetType === "reel")                    reels++;
+      if (IMAGE_TYPES.indexOf(assetType) !== -1)   images++;
     }
 
     return { reels: reels, images: images };
@@ -520,27 +553,46 @@ function getSocialAssets(episodeUid, assetType) {
   try {
     var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
     var ss      = SpreadsheetApp.openById(sheetId);
-    var sheet   = ss.getSheetByName("Social_Assets");
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return [];
     var data    = sheet.getDataRange().getValues();
 
-    var types  = Array.isArray(assetType) ? assetType : [assetType];
-    var assets = [];
+    function normalizeType(t) { return String(t).toLowerCase().replace(/[_ ]/g,''); }
+    var rawTypes = Array.isArray(assetType) ? assetType : [assetType];
+    var types    = rawTypes.map(normalizeType);
+    var assets   = [];
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
-      if (String(row[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      if (row[SOCIAL_ASSETS_COLS.Status     - 1] !== "candidate")                 continue;
-      if (types.indexOf(row[SOCIAL_ASSETS_COLS.Asset_Type - 1]) === -1)           continue;
+      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      if (String(row[ASSET_LIBRARY_COLS.Status      - 1]).toLowerCase() !== "candidate") continue;
+      if (types.indexOf(normalizeType(row[ASSET_LIBRARY_COLS.Asset_Type - 1])) === -1) continue;
+      var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
+      if (avail === "placed" || avail === "paired") continue;
 
+      var fileId = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
+      var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID - 1]);
       assets.push({
-        _rowIndex:       i + 1,
-        Post_ID:         row[SOCIAL_ASSETS_COLS.Post_ID         - 1],
-        Episode_UID:     row[SOCIAL_ASSETS_COLS.Episode_UID     - 1],
-        Asset_Type:      row[SOCIAL_ASSETS_COLS.Asset_Type      - 1],
-        Placeholder_Key: row[SOCIAL_ASSETS_COLS.Placeholder_Key - 1],
-        Drive_File_ID:   row[SOCIAL_ASSETS_COLS.Drive_File_ID   - 1],
-        Status:          row[SOCIAL_ASSETS_COLS.Status          - 1]
+        _rowIndex:    i + 1,
+        Post_ID:      assetId,  // UI compat — Asset_ID is the identifier
+        Asset_ID:     assetId,
+        Episode_UID:  String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]),
+        Asset_Type:   String(row[ASSET_LIBRARY_COLS.Asset_Type   - 1]),
+        Drive_File_ID: fileId,
+        Caption:      String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
+        Status:       String(row[ASSET_LIBRARY_COLS.Status        - 1]),
+        Slide_Index:  String(row[ASSET_LIBRARY_COLS.Slide_Index   - 1]),
+        Availability: String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
+        Display_Name: String(row[ASSET_LIBRARY_COLS.Display_Name  - 1]),
+        Summary:      String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
+        thumbnailUrl: fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w160' : ''
       });
+    }
+
+    // Drive fallback: if no sheet rows exist, scan Staging subfolder
+    if (assets.length === 0) {
+      assets = getStagingCandidates_(episodeUid, rawTypes[0]);
     }
 
     return assets;
@@ -550,17 +602,326 @@ function getSocialAssets(episodeUid, assetType) {
 }
 
 /**
- * Writes Status on a Social_Assets row by row index.
- * @param {number} rowIndex - 1-based sheet row number (_rowIndex from asset object)
- * @param {string} status   - 'scheduled' | 'bank' | 'rejected'
+ * Scans the episode's Staging Drive folder for candidates when Social_Assets has no rows.
+ * Quote_Graphic / Bank_Clip → Images/  |  Reel → Reels/  |  Thumbnail → Thumbnails/
+ * Prefers Approved/ subfolder when present; falls back to folder root.
+ */
+function getStagingCandidates_(episodeUid, assetType) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return [];
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+
+    var norm = String(assetType).toLowerCase().replace(/[_ ]/g,'');
+    var folderName = (norm === 'reel') ? 'Reels' : (norm === 'thumbnail') ? 'Thumbnails' : 'Images';
+
+    var typeFolderIt = stagingFolder.getFoldersByName(folderName);
+    if (!typeFolderIt.hasNext()) return [];
+    var typeFolder = typeFolderIt.next();
+
+    var fileObjs = [];
+    var approvedIt = typeFolder.getFoldersByName('Approved');
+    if (approvedIt.hasNext()) {
+      var approvedIt2 = approvedIt.next().getFiles();
+      while (approvedIt2.hasNext()) fileObjs.push(approvedIt2.next());
+    }
+    if (!fileObjs.length) {
+      var rootIt = typeFolder.getFiles();
+      while (rootIt.hasNext()) fileObjs.push(rootIt.next());
+    }
+
+    var normCheck = String(assetType).toLowerCase().replace(/[_ ]/g,'');
+    var isReel    = (normCheck === 'reel' || normCheck === 'bankclip');
+    if (isReel) {
+      fileObjs = fileObjs.filter(function(f) { return f.getMimeType() === 'video/mp4'; });
+    }
+    return fileObjs.map(function(f, idx) {
+      var id          = f.getId();
+      var displayName = isReel ? ('Reel ' + (idx + 1)) : '';
+      return {
+        _rowIndex:    -1,
+        Post_ID:      id,   // Drive file ID as fallback identifier
+        Asset_ID:     null, // No AL row yet
+        Episode_UID:  episodeUid,
+        Asset_Type:   assetType,
+        Drive_File_ID: id,
+        Caption:      '',
+        Status:       'candidate',
+        Slide_Index:  '',
+        Availability: 'available',
+        Display_Name: displayName,
+        Summary:      '',
+        thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w160',
+        _fromDrive:   true
+      };
+    });
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Updates Display_Name on an Asset_Library row and renames the Drive file.
+ * Called when JT edits a reel tile's display name in the Publish left panel.
+ * assetId null means Drive-fallback asset with no AL row — Drive rename only.
+ */
+function updateReelDisplayName(assetId, newName, fileId) {
+  try {
+    if (assetId) {
+      var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+      var ss      = SpreadsheetApp.openById(sheetId);
+      var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+      var sheet   = ss.getSheetByName(alName);
+      if (sheet) {
+        var data = sheet.getDataRange().getValues();
+        for (var i = 1; i < data.length; i++) {
+          if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(assetId)) {
+            sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Display_Name).setValue(newName);
+            break;
+          }
+        }
+      }
+    }
+    if (fileId) {
+      DriveApp.getFileById(fileId).setName(newName);
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Writes Status on an Asset_Library row by Asset_ID.
+ * @param {string} assetId - Asset_Library Asset_ID (_rowIndex no longer used)
+ * @param {string} status  - 'candidate' | 'scheduled' | 'bank' | 'rejected'
  * @returns {{ success: boolean, error?: string }}
  */
-function writeSocialAssetStatus(rowIndex, status) {
+function writeSocialAssetStatus(assetId, status) {
   try {
     var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
     var ss      = SpreadsheetApp.openById(sheetId);
-    var sheet   = ss.getSheetByName("Social_Assets");
-    sheet.getRange(rowIndex, SOCIAL_ASSETS_COLS.Status).setValue(status);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return { success: false, error: "Asset_Library tab not found" };
+    var data    = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status).setValue(status);
+      return { success: true };
+    }
+    return { success: false, error: "Asset not found: " + assetId };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Returns the Posting_Schedule template + placed Social_Assets for an episode.
+ * Used by the Publish tab to render the week accordion.
+ * @param {string} episodeUid
+ * @returns {{ days: Array, error?: string }}
+ */
+function getPublishSchedule(episodeUid) {
+  try {
+    var sheetId   = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var schedSheet = ss.getSheetByName("Posting_Schedule");
+    if (!schedSheet) return { days: [], error: "Posting_Schedule tab not found" };
+    var schedData  = schedSheet.getDataRange().getValues();
+
+    var saSheet = ss.getSheetByName("Social_Assets");
+    var saData  = saSheet ? saSheet.getDataRange().getValues() : [[]];
+
+    var placedBySlot = {};
+    for (var i = 1; i < saData.length; i++) {
+      var row    = saData[i];
+      var epUid  = String(row[SOCIAL_ASSETS_COLS.Episode_UID - 1]);
+      if (epUid !== String(episodeUid)) continue;
+      var slotId = String(row[SOCIAL_ASSETS_COLS.Slot - 1]);
+      if (!slotId) continue;  // any SA row with a Slot value is placed
+      var fid = String(row[SOCIAL_ASSETS_COLS.Drive_File_ID - 1]);
+      placedBySlot[slotId] = {
+        postId:         String(row[SOCIAL_ASSETS_COLS.Post_ID          - 1]),
+        assetLibraryId: String(row[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]),
+        driveFileId:    fid,
+        caption:        String(row[SOCIAL_ASSETS_COLS.Caption          - 1]),
+        schedulerStatus: String(row[SOCIAL_ASSETS_COLS.Scheduler_Status - 1]),
+        assetType:      String(row[SOCIAL_ASSETS_COLS.Asset_Type       - 1]),
+        thumbnailUrl:   fid ? "https://drive.google.com/thumbnail?id=" + fid + "&sz=w160" : ""
+      };
+    }
+
+    var DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var dayMap    = {};
+    DAY_ORDER.forEach(function(d) { dayMap[d] = []; });
+
+    for (var j = 1; j < schedData.length; j++) {
+      var s      = schedData[j];
+      var sid    = String(s[POSTING_SCHEDULE_COLS.Slot_ID - 1]);
+      var day    = String(s[POSTING_SCHEDULE_COLS.Day    - 1]);
+      if (!sid || !day || !dayMap[day]) continue;
+      dayMap[day].push({
+        slotId:    sid,
+        assetType: String(s[POSTING_SCHEDULE_COLS.Asset_Type - 1]),
+        platform:  String(s[POSTING_SCHEDULE_COLS.Platform   - 1]),
+        why:       String(s[POSTING_SCHEDULE_COLS.Why        - 1]),
+        sortOrder: Number(s[POSTING_SCHEDULE_COLS.Sort_Order - 1]) || 0,
+        isPlaybook: true,
+        filled:    placedBySlot[sid] || null
+      });
+    }
+
+    var days = DAY_ORDER.map(function(day) {
+      var slots = dayMap[day];
+      slots.sort(function(a, b) { return a.sortOrder - b.sortOrder; });
+      return { day: day, slots: slots };
+    });
+    return { days: days };
+  } catch (err) {
+    return { days: [], error: err.message };
+  }
+}
+
+/**
+ * Places an asset into a Publish schedule slot.
+ * Asset_Library: Availability → placed, siblings → paired.
+ * Social_Assets: creates new row linking AL row to the slot.
+ * @param {string} episodeUid
+ * @param {string} slotId
+ * @param {string} assetId    - Asset_Library Asset_ID (null for Drive-fallback)
+ * @param {string} caption
+ * @param {string} driveFileId
+ * @param {string} assetType
+ * @returns {{ success: boolean, error?: string }}
+ */
+function placeAssetInSlot(episodeUid, slotId, assetId, caption, driveFileId, assetType) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+    var saSheet = ss.getSheetByName("Social_Assets");
+
+    var alData         = alSheet ? alSheet.getDataRange().getValues() : [];
+    var placedSlideIdx = null;
+    var resolvedAlId   = assetId;
+    var resolvedFileId = driveFileId;
+    var resolvedType   = assetType;
+
+    if (assetId && alSheet) {
+      // Update existing AL row
+      for (var i = 1; i < alData.length; i++) {
+        if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
+        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status).setValue("scheduled");
+        placedSlideIdx = String(alData[i][ASSET_LIBRARY_COLS.Slide_Index - 1]);
+        resolvedFileId = resolvedFileId || String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
+        resolvedType   = resolvedType   || String(alData[i][ASSET_LIBRARY_COLS.Asset_Type   - 1]);
+        break;
+      }
+      // Mark sibling slides (same Slide_Index) as paired in AL
+      if (placedSlideIdx && placedSlideIdx !== "") {
+        for (var j = 1; j < alData.length; j++) {
+          if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === String(assetId))     continue;
+          if (String(alData[j][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid))  continue;
+          if (String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== placedSlideIdx)      continue;
+          alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("paired");
+        }
+      }
+    } else if (driveFileId && assetType && alSheet) {
+      // Drive-fallback: create an AL stub row first
+      var newAlId = "AL-DRV-" + Date.now();
+      var alRow   = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill("");
+      alRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = newAlId;
+      alRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
+      alRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = assetType;
+      alRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = driveFileId;
+      alRow[ASSET_LIBRARY_COLS.Status       - 1] = "scheduled";
+      alRow[ASSET_LIBRARY_COLS.Availability - 1] = "placed";
+      alRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
+      alRow[ASSET_LIBRARY_COLS.Created_By   - 1] = "drive_fallback";
+      alSheet.appendRow(alRow);
+      resolvedAlId = newAlId;
+    }
+
+    // Create Social_Assets row
+    var postId  = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
+    var saRow   = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
+    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
+    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = resolvedAlId || "";
+    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
+    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
+    saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = resolvedType  || assetType || "";
+    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
+    saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = resolvedFileId || "";
+    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
+    saSheet.appendRow(saRow);
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Reverses placeAssetInSlot: deletes the Social_Assets row, resets the
+ * Asset_Library row to Status=candidate / Availability=available,
+ * and un-pairs any siblings in Asset_Library.
+ */
+function unscheduleAsset(episodeUid, slotId) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var saSheet = ss.getSheetByName("Social_Assets");
+    var saData  = saSheet ? saSheet.getDataRange().getValues() : [];
+
+    var foundAlId      = null;
+    var saRowToDelete  = -1;
+
+    for (var i = 1; i < saData.length; i++) {
+      if (String(saData[i][SOCIAL_ASSETS_COLS.Slot       - 1]) !== String(slotId))     continue;
+      if (String(saData[i][SOCIAL_ASSETS_COLS.Episode_UID- 1]) !== String(episodeUid)) continue;
+      foundAlId     = String(saData[i][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]);
+      saRowToDelete = i + 1;
+      break;
+    }
+
+    if (saRowToDelete === -1) return { success: false, error: "Slot not found: " + slotId };
+
+    // Delete the SA row (deleteRow shifts subsequent rows — do after reading)
+    saSheet.deleteRow(saRowToDelete);
+
+    // Reset the AL row + un-pair siblings
+    if (foundAlId) {
+      var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+      var alSheet = ss.getSheetByName(alName);
+      if (alSheet) {
+        var alData       = alSheet.getDataRange().getValues();
+        var slideIdx     = null;
+        for (var j = 1; j < alData.length; j++) {
+          if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== foundAlId) continue;
+          alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Status      ).setValue("candidate");
+          alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+          slideIdx = String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]);
+          break;
+        }
+        // Un-pair image siblings
+        if (slideIdx && slideIdx !== "" && slideIdx !== "null") {
+          for (var k = 1; k < alData.length; k++) {
+            if (String(alData[k][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === foundAlId)    continue;
+            if (String(alData[k][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== episodeUid)   continue;
+            if (String(alData[k][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== slideIdx)     continue;
+            if (String(alData[k][ASSET_LIBRARY_COLS.Availability- 1]) === "paired") {
+              alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+            }
+          }
+        }
+      }
+    }
+
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -590,6 +951,25 @@ function runMarcomForEpisode(episodeUid) {
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Manual trigger for Vert Fairy from Fairy Remote Control.
+ * Replaces the dead runMarcomForEpisode() path with a live call to runVertFairy().
+ * runVertFairy() generates Show Notes via Vertex RAG, writes the Show Notes doc,
+ * patches manifest.show_notes, and hands off to Artist Fairy.
+ */
+function runVertFairyForEpisode(episodeUid) {
+  try {
+    logToAuditTrail("DWYP_App", "human_action", episodeUid, "",
+      "[INFO] Manual Vert Fairy trigger from Fairy Remote Control.");
+    runVertFairy(episodeUid);
+    return { success: true };
+  } catch (e) {
+    logToAuditTrail("DWYP_App", "error", episodeUid, "",
+      "[ERROR] runVertFairyForEpisode: " + e.message);
+    return { success: false, error: e.message };
   }
 }
 
@@ -680,7 +1060,7 @@ function deleteBackgroundFromLibrary(fileId) {
 }
 
 /**
- * Calls callGeminiImageAPI() with the prompt and optional canvas image,
+ * Calls callGeminiImageConversational() with the prompt and optional canvas image,
  * saves the returned image to IMAGE_BACKGROUND_LIBRARY_ID, and returns
  * the base64 data + Drive file ID to the client.
  * Filename convention: bg_gen_YYMMDD-HHMM.png — picked up by isAiGenerated
@@ -706,12 +1086,11 @@ function generateBackground(prompt, imageBase64, mimeType, aspectRatio) {
     var aspectNote   = aspectRatio && aspectLabels[aspectRatio]
       ? "\n\nCanvas format: " + aspectLabels[aspectRatio] + " — compose and fill the frame completely for this orientation."
       : "";
-    var result    = callGeminiImageAPI(
+    var result    = callGeminiImageConversational(
       BG_GEN_SYSTEM + aspectNote + "\n\nUser request: " + prompt,
-      imageBase64  || null,
-      mimeType     || null,
-      "ImageWorkshop",
-      null
+      [],
+      imageBase64 || null,
+      mimeType    || null
     );
     var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
     if (!libraryId) return { success: false, error: "IMAGE_BACKGROUND_LIBRARY_ID not configured" };
@@ -726,13 +1105,13 @@ function generateBackground(prompt, imageBase64, mimeType, aspectRatio) {
                      .join("-").toLowerCase().replace(/-+$/, "");
     var filename = slug ? "bg_" + slug + "_" + ts + "." + ext : "bg_gen_" + ts + "." + ext;
 
-    var blob   = Utilities.newBlob(Utilities.base64Decode(result.data), result.mimeType, filename);
+    var blob   = Utilities.newBlob(Utilities.base64Decode(result.base64), result.mimeType, filename);
     var folder = DriveApp.getFolderById(libraryId);
     var file   = folder.createFile(blob);
 
     return {
       success:  true,
-      data:     result.data,
+      data:     result.base64,
       mimeType: result.mimeType,
       fileId:   file.getId(),
       name:     filename
@@ -829,7 +1208,7 @@ function triggerFilingFromTask(episodeUid) {
 }
 
 /**
- * Returns active (non-complete) episodes for the Image Workshop export picker.
+ * Returns active (non-complete) episodes for the episode picker.
  * Sorted by Episode_Sequence ascending.
  * @returns {{ guestName: string, episodeUid: string }[]}
  */
@@ -997,6 +1376,79 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
 }
 
 /**
+ * Returns proxy file ID, Video_Status, hasReviewTask flag, and any existing
+ * Revise_Episode revision notes — one call for the Publish Episode accordion.
+ * @param {string} episodeUid
+ * @returns {{ proxyFileId, videoStatus, hasReviewTask, revisionNotes }}
+ */
+function getEpisodeReviewContext(episodeUid) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Video_Status from Episodes tab
+    var epSheet  = ss.getSheetByName("Episodes");
+    var epData   = epSheet.getDataRange().getValues();
+    var videoStatus = '';
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
+        videoStatus = String(epData[i][EPISODES_COLS.Video_Status - 1] || '');
+        break;
+      }
+    }
+
+    // Check Tasks: Review_Episode (open) + Revise_Episode notes
+    var tSheet = ss.getSheetByName("Tasks");
+    var tData  = tSheet.getDataRange().getValues();
+    var hasReviewTask = false;
+    var revisionNotes = '';
+    for (var j = 1; j < tData.length; j++) {
+      var row = tData[j];
+      if (String(row[TASKS_COLS.Episode_UID  - 1]) !== String(episodeUid)) continue;
+      var step   = String(row[TASKS_COLS.Workflow_Step - 1]);
+      var status = String(row[TASKS_COLS.Status        - 1]);
+      if (step === 'Review_Episode' && status !== 'complete') hasReviewTask = true;
+      if (step === 'Revise_Episode' && status !== 'complete') {
+        var notes = String(row[TASKS_COLS.Revision_Notes - 1] || '');
+        if (notes) revisionNotes = notes;
+      }
+    }
+
+    var proxyFileId = getProxyFileId(episodeUid);
+
+    return {
+      proxyFileId:   proxyFileId,
+      videoStatus:   videoStatus,
+      hasReviewTask: hasReviewTask,
+      revisionNotes: revisionNotes
+    };
+  } catch (err) {
+    return { proxyFileId: null, videoStatus: '', hasReviewTask: false, revisionNotes: '' };
+  }
+}
+
+/**
+ * Full episode revision request: sets Video_Status, logs to Episode_Log, and spawns
+ * a Revise_Episode task for Audra. Replaces the two-step client chain (F-4).
+ * @param {string} episodeUid
+ * @param {string} notes       — JT's revision description
+ * @param {string} authorEmail — passed from client (APP_CONFIG.userEmail)
+ * @returns {{ success: boolean, error?: string }}
+ */
+function submitEpisodeRevisionRequest(episodeUid, notes, authorEmail) {
+  try {
+    writeVideoStatus(episodeUid, "revision_requested");
+    appendEpisodeLogEntry(episodeUid, "feedback", "video", notes, "both", authorEmail);
+    // Spawn or append to existing Revise_Episode task for producer
+    var today = new Date().toISOString().split("T")[0];
+    submitEpisodeComments(episodeUid, [{ timestamp: "—", note: notes }], today);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Spawns a Revise_Images task for Audra from JT's image comment.
  * @param {string} episodeUid
  * @param {string} fileName   — image filename, used in task title
@@ -1114,207 +1566,48 @@ function checkReadyForRelease(episodeUid) {
       return n;
     }
 
+    function countApprovedFiles(subfolderName) {
+      var subs = stagingFolder.getFoldersByName(subfolderName);
+      if (!subs.hasNext()) return 0;
+      var approvedIt = subs.next().getFoldersByName("Approved");
+      if (!approvedIt.hasNext()) return 0;
+      var files = approvedIt.next().getFiles();
+      var n = 0;
+      while (files.hasNext()) { files.next(); n++; }
+      return n;
+    }
+
     var imagesEmpty = countRootFiles("Images") === 0;
     var reelsEmpty  = countRootFiles("Reels")  === 0;
-    return { ready: imagesEmpty && reelsEmpty, imagesEmpty: imagesEmpty, reelsEmpty: reelsEmpty };
+    var hasApproved = countApprovedFiles("Images") > 0 || countApprovedFiles("Reels") > 0;
+    return { ready: imagesEmpty && reelsEmpty && hasApproved, imagesEmpty: imagesEmpty, reelsEmpty: reelsEmpty };
   } catch (err) {
     throw new Error("checkReadyForRelease failed for " + episodeUid + ": " + err.message);
   }
 }
 
-// ── SOCIAL VERT ──────────────────────────────────────────────────────────────
 
-var SOCIAL_VERT_SYSTEM =
-  "You are Social Vert — the quote and hook engine for Don't Waste Your Pain. You work inside the Image Workshop. Your only job is to surface raw material from episode transcripts for use on graphic assets.\n\n" +
-  "You do not write copy. You do not summarize. You do not explain. You find what is already there and return it in a format JT can use immediately on the canvas.\n\n" +
-  "WHAT YOU RETURN\n\n" +
-  "Default: conversational prose. Answer questions, discuss themes, surface ideas — respond naturally.\n\n" +
-  "Chips only when JT explicitly asks for hooks, quotes, or image prompts. Each chip uses exactly this format:\n\n" +
-  "[[HOOK: text]]\n" +
-  "[[QUOTE: text — Guest Name]]\n" +
-  "[[PROMPT: text]]\n\n" +
-  "HOOK — A single declarative sentence synthesized from the episode. Not invented — sourced from what was actually said. Maximum 15 words. Creates tension or contradiction. Does not summarize. Stands alone in a feed with no context. Omniscient POV.\n\n" +
-  "QUOTE — Verbatim from the transcript. Wrapped in quotation marks. Attribution always included with em-dash and full guest name — never first name only. Example: [[QUOTE: \"text\" — Kyla Mitsunaga]]. Filler words (um, ah, like, you know) may be removed. Ellipsis may bridge two sentences only when original meaning is fully intact and no ideas are compressed. Maximum 15 words.\n\n" +
-  "Standalone test — mandatory before returning any quote: Read the quote with no surrounding context. Does a stranger understand what is being declared? If it requires the conversation to make sense, it fails. Do not return it. Find a different quote or report that none exists.\n\n" +
-  "PROMPT — A background image direction for the canvas. No text in the image. No logos. Mood and composition only. One sentence.\n\n" +
-  "OUTPUT FORMATTING\n\n" +
-  "When returning chips, group by type with a blank line between each chip and a blank line between groups. Label each group:\n\n" +
-  "Hooks\n" +
-  "[[HOOK: text]]\n\n" +
-  "[[HOOK: text]]\n\n" +
-  "Quotes\n" +
-  "[[QUOTE: \"text\" — Full Name]]\n\n" +
-  "[[QUOTE: \"text\" — Full Name]]\n\n" +
-  "Image Prompts\n" +
-  "[[PROMPT: text]]\n\n" +
-  "[[PROMPT: text]]\n\n" +
-  "Do not run chips together in a block. Each chip gets its own line with breathing room.\n\n" +
-  "DEFAULT CHIP COUNT (when chips are requested)\n" +
-  "Unless JT specifies otherwise:\n" +
-  "— 3 HOOK chips\n" +
-  "— 3 QUOTE chips\n" +
-  "— 2 PROMPT chips\n\n" +
-  "Chips and prose may appear together in the same response. If JT asks \"what themes does this episode explore and can you give me some hooks?\" — answer the question in prose, then return the chips below.\n\n" +
-  "HOW TO SPEAK\n\n" +
-  "You are part of the Don't Waste Your Pain team. You are direct and do not perform enthusiasm. No preamble. No \"Here are your hooks!\" No \"Great question!\" No \"I found some powerful quotes for you.\"\n\n" +
-  "When returning chips, lead with the group label and deliver. If you need to say something, say it in one sentence — plain, specific, no flourish.\n\n" +
-  "Wrong: \"Here are some hooks, quotes, and image prompts for David Bedrick's episode!\"\n" +
-  "Right: \"David Bedrick\"\n\n" +
-  "Wrong: \"I've found some really powerful quotes from this transcript.\"\n" +
-  "Right: \"Three quotes. One is borderline — flagged below.\"\n\n" +
-  "If something is missing or a quote fails the standalone test, say so plainly and move on.\n\n" +
-  "HARD RULES — NEVER VIOLATE\n\n" +
-  "Quote integrity. Never present synthesized, paraphrased, or reconstructed text as a quote. If you cannot find a real verbatim quote that serves the task, say so. Do not invent one. Do not reconstruct from memory or general knowledge.\n\n" +
-  "No hallucination. If it is not in the transcript, it does not exist. Do not infer from the guest's reputation, other appearances, or general knowledge about their work.\n\n" +
-  "Logo — zero tolerance. Never reference, describe, or suggest the DWYP logo in any PROMPT chip.\n\n" +
-  "If you cannot find a verbatim quote for a request, respond: \"I cannot find a verbatim quote for that. Want me to surface 3 passages you can review instead?\"\n\n" +
-  "VOICE STANDARDS\n\n" +
-  "Hooks must be precise and unflinching. No motivational poster language. No wellness retreat aesthetics. Darkness and humor are both allowed.\n\n" +
-  "Forbidden phrases — if any appear in a hook, rewrite before returning:\n" +
-  "heart-centered · transformative journey · profound exploration · safe space · deeply moving · inspires us to · in a world where · holds space · unpacks · dives deep · game-changer · paradigm shift · on this journey · resonates · impactful · raw and vulnerable · bravely shares · courageously · shows up · leaning in · the work · healing journey · sacred space · high vibe · aligned · authentic self · showing up fully · invite you to · I see you · witness your pain\n\n" +
-  "Catchphrase rule. Never generate \"don't waste your pain,\" \"what is your superpower,\" or \"superpower\" as a hook or quote fragment.\n\n" +
-  "PROMPT CHIP VISUAL STANDARD\n\n" +
-  "The test: would this image fit in a film festival program, a literary journal, or a documentary title card? If yes, it works. If it looks like a wellness retreat, a motivational poster, a church bulletin, or a cult recruitment graphic — rewrite it.\n\n" +
-  "Avoid in PROMPT chips: phoenix imagery, silhouettes with open arms, glowing objects, warm beige or cream palettes, stock photo aesthetics, bright even lighting, arranged smiles, wellness retreat aesthetics.";
+// ── STUDIO ───────────────────────────────────────────────────────────────────
 
-/**
- * Queries Social Vert via Vertex AI RAG Engine. Retrieval + generation happen
- * in one call — the corpus returns grounded chunks and Gemini generates from them.
- * Supports multi-turn history.
- *
- * Governance keys used:
- *   STUDIO_CORPUS_ID — full Vertex RAG corpus resource name
- *                      (projects/dwyp-rag/locations/us-central1/ragCorpora/...)
- *   MODEL_NAME       — Gemini model (fallback: gemini-2.0-flash)
- *
- * @param {string}   userMessage
- * @param {object[]} history  — array of { role, content }
- * @returns {string} model response text
- */
-function querySocialVert(userMessage, history) {
-  var corpusName = getGovernance("STUDIO_CORPUS_ID");
-  if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
-
-  // Derive project from the corpus resource name.
-  // NOTE: do NOT use the corpus location (us-south1) for the generation endpoint —
-  // Gemini models on Vertex AI are not available in us-south1. The corpus resource
-  // name in vertexRagStore is fully-qualified, so retrieval works cross-region.
-  var project        = corpusName.split("/")[1];  // e.g. "dwyp-rag"
-  var endpointRegion = "us-central1";
-
-  var model = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
-  var token = ScriptApp.getOAuthToken();
-  var url   = "https://" + endpointRegion + "-aiplatform.googleapis.com/v1beta1/projects/" +
-              project + "/locations/" + endpointRegion +
-              "/publishers/google/models/" + model + ":generateContent";
-
-  var contents = [];
-  if (Array.isArray(history)) {
-    for (var i = 0; i < history.length; i++) {
-      var turn = history[i];
-      contents.push({
-        role:  (turn.role === "model" || turn.role === "assistant") ? "model" : "user",
-        parts: [{ text: turn.content }]
-      });
-    }
-  }
-  contents.push({ role: "user", parts: [{ text: userMessage }] });
-
-  var payload = {
-    systemInstruction: { parts: [{ text: SOCIAL_VERT_SYSTEM }] },
-    contents:          contents,
-    tools: [{
-      retrieval: {
-        vertexRagStore: {
-          ragResources:   [{ ragCorpus: corpusName }],
-          similarityTopK: 10
-        }
-      }
-    }],
-    generationConfig: { maxOutputTokens: 32768 }
-  };
-
-  var response = UrlFetchApp.fetch(url, {
-    method:             "post",
-    contentType:        "application/json",
-    headers:            { Authorization: "Bearer " + token },
-    payload:            JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-  var code = response.getResponseCode();
-  var body = response.getContentText();
-  if (code !== 200) {
-    logToAuditTrail("SocialVert", "error", "", "",
-      "[ERROR] Social Vert RAG call returned " + code + ": " + body, "ERROR");
-    throw new Error("Social Vert RAG call returned " + code + ": " + body);
-  }
-
-  var json       = JSON.parse(body);
-  var candidates = json.candidates;
-  if (!candidates || !candidates[0]) throw new Error("No candidates in Social Vert response.");
-  var respParts  = candidates[0].content && candidates[0].content.parts;
-  if (!respParts) throw new Error("No parts in Social Vert candidate.");
-  // RAG responses may include grounding metadata parts alongside text — collect text only
-  var text = respParts
-    .filter(function(p) { return p.text; })
-    .map(function(p)    { return p.text; })
-    .join("");
-  if (!text) throw new Error("Empty text in Social Vert response.");
-  return text;
-}
-
-/**
- * Fallback for querySocialVert when the RAG corpus is unavailable (quota, provisioning).
- * Uses Gemini API directly with Social Vert persona. Multi-turn history is flattened
- * into the prompt. Chips format is preserved via system instruction.
- * @param {string}   userMessage
- * @param {object[]} history  — array of { role, content }
- * @returns {string}
- */
-function querySocialVertDirect(userMessage, history) {
-  var systemInstruction = SOCIAL_VERT_SYSTEM;
-
-  var lines = [];
-  if (Array.isArray(history)) {
-    for (var i = 0; i < history.length; i++) {
-      var turn   = history[i];
-      var prefix = (turn.role === "model" || turn.role === "assistant") ? "Social Vert" : "JT";
-      lines.push(prefix + ": " + turn.content);
-    }
-  }
-  var prompt = lines.length ? lines.join("\n") + "\nJT: " + userMessage : userMessage;
-
-  return callGeminiAPINoSearch(prompt, systemInstruction, "SocialVert");
-}
-
-
-// ── STUDIO / LIBRARIAN VERT ──────────────────────────────────────────────────
-
-var STUDIO_SYSTEM_BASE =
-  "You are Librarian Vert — the content intelligence engine inside the Studio for Don't Waste Your Pain (DWYP). " +
+var CLAUDE_STUDIO_SYSTEM =
+  "You are Claude — the content intelligence engine inside the Studio for Don't Waste Your Pain (DWYP). " +
   "You have deep knowledge of all DWYP episodes through the corpus you can retrieve from. " +
-  "DWYP is a faith-based podcast hosted by JT. The show features guests who have experienced profound pain " +
-  "and turned it into purpose. The brand voice is warm, honest, direct, and redemptive. " +
+  "DWYP is a podcast hosted by JT about what lives on the other side of pain, grief, and the moments that break and remake a person. " +
+  "The show features guests who have experienced profound pain and turned it into purpose. " +
+  "The brand voice is honest, direct, specific, and unsentimental — darkness and humor coexist. " +
   "Never be clinical or corporate. Write like a trusted collaborator who knows the show deeply.\n\n" +
   "If episode context is provided below, prioritize it. When citing episode content, be specific — name the guest, " +
   "reference the story. Return responses that are immediately usable, not rough drafts.\n\n";
 
 var STUDIO_MODE_INSTRUCTIONS = {
   "images":
-    "MODE: Image Direction. Surface raw material from episode content for use on graphic assets. " +
-    "When returning hook ideas, format as: [[HOOK: the hook text]]\n" +
-    "When returning quotes, format as: [[QUOTE: \"the quote text\" — Full Guest Name]]\n\n" +
-    "HOOK — Based on a strong theme in the episode, synthesized from source material. " +
-    "No more than 15 words. No heavy punctuation. Must stand alone and have meaning in a social media feed.\n\n" +
-    "QUOTE — Verbatim from the transcript. No more than 20 words. Filler words may be removed. " +
-    "Ellipsis may bridge two sentences only when the original meaning is fully intact. " +
-    "Always include attribution with em-dash and full guest name. Wrapped in quotation marks.\n\n" +
-    "Keep responses tight — 3–5 options maximum unless asked for more. No preamble. " +
-    "No 'Here are your hooks!' Lead with the chips. One sentence of context maximum if something needs flagging.\n\n" +
-    "Forbidden phrases — if any appear in a hook, rewrite before returning: " +
-    "heart-centered · transformative journey · profound exploration · safe space · deeply moving · inspires us to · " +
-    "in a world where · holds space · unpacks · dives deep · game-changer · resonates · impactful · raw and vulnerable · " +
-    "bravely shares · courageously · showing up · healing journey · don't waste your pain · superpower",
+    "You are a social media expert going through transcripts of podcast episodes to create striking and interesting feed graphics.\n\n" +
+    "Return hooks as: [[HOOK: the hook text]]\n" +
+    "Return quotes as: [[QUOTE: \"the quote text\" — Full Guest Name]]\n" +
+    "Return image prompts as: [[PROMPT: the prompt text]]\n\n" +
+    "HOOK — Synthesized from the main themes in the source material. Talk about the concept or insight, not what happened — never describe a person or event. No names, pronouns, or generic stand-ins like \"individual\" or \"person.\" Simple but significant, at home in a social media feed. Maximum 25 words.\n\n" +
+    "QUOTE — Verbatim from the source material. You may remove filler words and repeated words, and use ellipsis to bridge sentences as long as context is preserved. Always include attribution with em-dash and full guest name. Wrapped in quotation marks. Maximum 20 words.\n\n" +
+    "PROMPT — Cinematic, realistic direction for a background image. Must not look like it comes from a wellness retreat, church bulletin, or fantasy setting.",
 
   "episode-copy":
     "MODE: Writer. Draft episode copy, social posts, newsletter sections, or any written content for DWYP. " +
@@ -1383,121 +1676,147 @@ function getStudioDriveLink(episodeUid) {
 }
 
 /**
- * Studio — Librarian Vert. Vertex AI RAG + Gemini, mode-aware system prompts.
- * Episode manifest is injected into the system prompt when episodeUid is supplied.
- *
- * Governance keys used:
- *   STUDIO_CORPUS_ID — full Vertex RAG corpus resource name
- *   MODEL_NAME       — Gemini model (fallback: gemini-2.0-flash)
- *
- * @param {string}   prompt
- * @param {string}   episodeUid — may be null/empty for general queries
- * @param {string}   mode       — images|writer|outreach|interview-prep|brainstorm|show-notes
- * @param {object[]} history    — array of { role, content }
- * @returns {{ success: boolean, text?: string, error?: string }}
+ * Lightweight keyword heuristic for image generation intent.
+ * Intentionally broad — false positives are acceptable; the image path handles them gracefully.
  */
-function callStudioLLM(prompt, episodeUid, mode, history) {
-  try {
-    var corpusName = getGovernance("STUDIO_CORPUS_ID");
-    if (!corpusName) throw new Error("STUDIO_CORPUS_ID not configured in Governance_Config.");
-
-    var project        = corpusName.split("/")[1];
-    var endpointRegion = "us-central1";
-    var model          = getGovernance("MODEL_NAME") || "gemini-2.0-flash";
-    var token          = ScriptApp.getOAuthToken();
-    var url            = "https://" + endpointRegion + "-aiplatform.googleapis.com/v1beta1/projects/" +
-                         project + "/locations/" + endpointRegion +
-                         "/publishers/google/models/" + model + ":generateContent";
-
-    // Build system instruction: base + mode + optional episode context
-    var modeKey   = mode || "images";
-    var modeInstr = STUDIO_MODE_INSTRUCTIONS[modeKey] || STUDIO_MODE_INSTRUCTIONS["brainstorm"];
-    var systemText = STUDIO_SYSTEM_BASE + modeInstr;
-
-    var guestName = null;
-    if (episodeUid) {
-      try {
-        var manifest  = getEpisodeManifest(episodeUid);
-        guestName     = manifest.guest_name || null;
-        var ctxLines  = [];
-        if (guestName)            ctxLines.push("Guest: " + guestName);
-        if (manifest.episode_uid) ctxLines.push("Episode UID: " + manifest.episode_uid);
-        if (manifest.raw_hooks  && manifest.raw_hooks.length) {
-          ctxLines.push("Hooks from this episode:\n" + manifest.raw_hooks.slice(0, 10).join("\n"));
-        }
-        if (manifest.raw_quotes && manifest.raw_quotes.length) {
-          ctxLines.push("Quotes from this episode:\n" + manifest.raw_quotes.slice(0, 10).join("\n"));
-        }
-        if (ctxLines.length) systemText += "\n\nEPISODE CONTEXT:\n" + ctxLines.join("\n");
-      } catch (ctxErr) {
-        // Episode context is supplemental — proceed without it
-      }
-    }
-
-    // Prefix the retrieval query with the guest name so Vertex RAG targets the right episode.
-    // The history is stored with the original prompt; only the final turn sent to Vertex is augmented.
-    var retrievalQuery = guestName ? guestName + " — " + prompt : prompt;
-
-    var contents = [];
-    if (Array.isArray(history)) {
-      for (var i = 0; i < history.length; i++) {
-        var turn = history[i];
-        contents.push({
-          role:  (turn.role === "model" || turn.role === "assistant") ? "model" : "user",
-          parts: [{ text: turn.content }]
-        });
-      }
-    }
-    contents.push({ role: "user", parts: [{ text: retrievalQuery }] });
-
-    var payload = {
-      systemInstruction: { parts: [{ text: systemText }] },
-      contents:          contents,
-      tools: [{
-        retrieval: {
-          vertexRagStore: {
-            ragResources:   [{ ragCorpus: corpusName }],
-            similarityTopK: 10
-          }
-        }
-      }],
-      generationConfig: { maxOutputTokens: 32768 }
-    };
-
-    var response = UrlFetchApp.fetch(url, {
-      method:             "post",
-      contentType:        "application/json",
-      headers:            { Authorization: "Bearer " + token },
-      payload:            JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-    var code = response.getResponseCode();
-    var body = response.getContentText();
-    if (code !== 200) {
-      logToAuditTrail("StudioLLM", "error", episodeUid || "", "",
-        "[ERROR] callStudioLLM returned " + code + ": " + body, "ERROR");
-      return { success: false, error: "Vert returned " + code + ". Check the audit log." };
-    }
-
-    var json       = JSON.parse(body);
-    var candidates = json.candidates;
-    if (!candidates || !candidates[0]) return { success: false, error: "No candidates in response." };
-    var respParts  = candidates[0].content && candidates[0].content.parts;
-    if (!respParts) return { success: false, error: "No parts in response candidate." };
-    var text = respParts
-      .filter(function(p) { return p.text; })
-      .map(function(p)    { return p.text; })
-      .join("");
-    if (!text) return { success: false, error: "Empty response from Vert." };
-
-    return { success: true, text: text };
-  } catch (err) {
-    logToAuditTrail("StudioLLM", "error", episodeUid || "", "",
-      "[ERROR] callStudioLLM threw: " + err.message, "ERROR");
-    return { success: false, error: err.message };
-  }
+function isImageRequest(userMessage) {
+  var msg = (userMessage || '').toLowerCase();
+  return ['background', 'image', 'generate', 'create', 'visualize', 'picture',
+          'photo', 'make me', 'show me', 'try something', 'different one',
+          'change it', 'new version', 'darker', 'lighter', 'more', 'less',
+          'option', 'instead'
+  ].some(function(term) { return msg.indexOf(term) !== -1; });
 }
 
+/**
+ * Studio routing function. Detects image vs text intent and routes accordingly.
+ * Image path: callGeminiImageConversational() — imageHistory only, never touches conversationHistory.
+ * Text path:  callClaudeAPI() with ragContext injected into system prompt.
+ * Two separate history arrays — image iterations never pollute the main text thread.
+ *
+ * @param {string}   prompt
+ * @param {string}   ragContext            — retrieved corpus context (may be empty string)
+ * @param {object[]} conversationHistory   — [{role, parts:[{text}]}] for main text thread
+ * @param {object[]} imageHistory          — [{role, parts}] raw turns for image thread
+ * @param {object}   options               — { mode: string, episodeUid: string|null }
+ * @returns {{ type: 'text'|'image', text?, base64?, mimeType?, updatedConversationHistory?, updatedImageHistory?, tokenCount }}
+ */
+function generateWithClaude(prompt, ragContext, conversationHistory, imageHistory, options) {
+  var mode       = (options && options.mode)       || 'images';
+  var episodeUid = (options && options.episodeUid) || '';
+
+  // ── Image path ──────────────────────────────────────────────────────────────
+  if (isImageRequest(prompt)) {
+    var imgResult = callGeminiImageConversational(prompt, imageHistory || []);
+    return {
+      type:                'image',
+      base64:              imgResult.base64,
+      mimeType:            imgResult.mimeType,
+      text:                imgResult.text,
+      updatedImageHistory: imgResult.updatedHistory,
+      tokenCount:          imgResult.tokenCount
+    };
+  }
+
+  // ── Text path ───────────────────────────────────────────────────────────────
+  var modeInstr  = STUDIO_MODE_INSTRUCTIONS[mode] || STUDIO_MODE_INSTRUCTIONS['brainstorm'];
+  var systemText = CLAUDE_STUDIO_SYSTEM + modeInstr;
+  if (ragContext) {
+    systemText += "\n\nCORPUS CONTEXT (retrieved):\n" + ragContext;
+  }
+
+  // Convert GAS-style history [{role, parts:[{text}]}] to Claude messages [{role, content}]
+  var history  = Array.isArray(conversationHistory) ? conversationHistory : [];
+  var messages = [];
+  for (var i = 0; i < history.length; i++) {
+    var turn    = history[i];
+    var role    = (turn.role === 'model' || turn.role === 'assistant') ? 'assistant' : 'user';
+    var content = turn.parts ? turn.parts.map(function(p) { return p.text || ''; }).join('') : (turn.content || '');
+    messages.push({ role: role, content: content });
+  }
+
+  var responseText = callClaudeAPI(prompt, systemText, 'Studio', messages, { maxTokens: 8192 });
+
+  var updatedHistory = history.concat([
+    { role: 'user',  parts: [{ text: prompt }] },
+    { role: 'model', parts: [{ text: responseText }] }
+  ]);
+
+  var tokenCount = Math.round((systemText.length + prompt.length + responseText.length) / 4);
+
+  return {
+    type:                       'text',
+    text:                       responseText,
+    updatedConversationHistory: updatedHistory,
+    tokenCount:                 tokenCount
+  };
+}
+
+/**
+ * Saves a generated Studio background image to the background library folder.
+ * Called by the UI when JT explicitly saves an image from the Studio canvas.
+ * @param {string} base64Data
+ * @param {string} mimeType
+ * @param {string} guestSlug
+ * @returns {{ fileId, url, filename }}
+ */
+function saveBackgroundToLibrary(base64Data, mimeType, guestSlug) {
+  var libraryId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
+  if (!libraryId) throw new Error("IMAGE_BACKGROUND_LIBRARY_ID not configured.");
+
+  var ext      = (mimeType === "image/jpeg") ? "jpg" : "png";
+  var ts       = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyMMdd-HHmm");
+  var filename = "bg_" + (guestSlug || "studio") + "_" + ts + "." + ext;
+
+  var blob   = Utilities.newBlob(Utilities.base64Decode(base64Data), mimeType, filename);
+  var folder = DriveApp.getFolderById(libraryId);
+  var file   = folder.createFile(blob);
+
+  logToAuditTrail("Studio", "state_change", guestSlug || "", "", "BG_SAVED: " + filename, "info");
+
+  return {
+    fileId:   file.getId(),
+    url:      "https://drive.google.com/file/d/" + file.getId() + "/view",
+    filename: filename
+  };
+}
+
+
+/**
+ * Loads the Episode Index doc for Studio context.
+ * Primary: searches EPISODE_SEARCH_INDEX_KEY folder for a file whose name contains the epUid.
+ * Fallback: reads manifest.episode_index doc ID.
+ * Returns doc text, or empty string if not found.
+ * @param {string} episodeUid
+ * @returns {string}
+ */
+function stLoadEpisodeIndex(episodeUid) {
+  if (!episodeUid) return '';
+  try {
+    var indexFolderId = getGovernance("EPISODE_SEARCH_INDEX_KEY");
+    if (indexFolderId) {
+      var folder = DriveApp.getFolderById(indexFolderId);
+      var files  = folder.getFiles();
+      while (files.hasNext()) {
+        var file = files.next();
+        if (file.getName().indexOf(episodeUid) !== -1) {
+          return DocumentApp.openById(file.getId()).getBody().getText();
+        }
+      }
+    }
+    // Fallback: manifest.episode_index
+    var stagingFolderId = getStagingFolderIdByUid(episodeUid);
+    if (stagingFolderId) {
+      var manifest = getManifest(stagingFolderId);
+      if (manifest && manifest.episode_index) {
+        return DocumentApp.openById(manifest.episode_index).getBody().getText();
+      }
+    }
+  } catch (e) {
+    logToAuditTrail("Studio", "state_change", episodeUid, "", "stLoadEpisodeIndex: " + e.message, "warning");
+  }
+  return '';
+}
 
 /**
  * Closes all open review tasks for the episode, then spawns an Audra filing task.
@@ -1648,6 +1967,11 @@ function _getQuickCaptionsImpl(fileBase64, mimeType) {
   var isVideo = mimeType.indexOf("video/") === 0;
   var filePart;
   if (isVideo) {
+    // base64Decode produces a JS integer array — ~8 bytes per raw byte in V8 heap
+    var estimatedRawMB = Math.round(fileBase64.length * 0.75 / 1024 / 1024);
+    if (estimatedRawMB > 15) {
+      throw new Error("Video too large (" + estimatedRawMB + "MB) — trim to under 15MB and try again.");
+    }
     var fileUri = qcUploadToFileApi(fileBase64, mimeType, apiKey);
     filePart = { fileData: { mimeType: mimeType, fileUri: fileUri } };
   } else {
@@ -1709,8 +2033,9 @@ function qcUploadToFileApi(fileBase64, mimeType, apiKey) {
     throw new Error("File API init failed (" + initResp.getResponseCode() + "): " + initResp.getContentText());
   }
 
-  var uploadUrl = initResp.getHeaders()["X-Goog-Upload-URL"];
-  if (!uploadUrl) throw new Error("File API response missing upload URL.");
+  var initHeaders = initResp.getHeaders();
+  var uploadUrl   = initHeaders["X-Goog-Upload-URL"] || initHeaders["x-goog-upload-url"];
+  if (!uploadUrl) throw new Error("File API response missing upload URL. Headers: " + JSON.stringify(Object.keys(initHeaders)));
 
   var uploadResp = UrlFetchApp.fetch(uploadUrl, {
     method:  "post",
@@ -1794,5 +2119,413 @@ function continueQuickCaption(userMessage, history) {
   var parts = candidates[0].content && candidates[0].content.parts;
   if (!parts) throw new Error("No content parts in response.");
   return parts.filter(function(p) { return p.text; }).map(function(p) { return p.text; }).join("");
+}
+
+// ── PUBLISH V3 ───────────────────────────────────────────────────────────────
+
+/**
+ * Returns hooks, quotes, and image prompts from the episode manifest.
+ * Falls back to empty arrays when manifest fields are absent.
+ */
+function getEpisodeHooksAndQuotes(episodeUid) {
+  try {
+    // Primary: read Quote_Graphic rows from Asset_Library — each row is an extractable asset
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+
+    if (alSheet) {
+      var alData = alSheet.getDataRange().getValues();
+      var hooks  = [];
+      var quotes = [];
+      for (var i = 1; i < alData.length; i++) {
+        var row = alData[i];
+        if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g,'');
+        if (normType !== 'quotegraphic') continue;
+        var text    = String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || '').trim();
+        var name    = String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
+        var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]);
+        if (!text) continue;
+        var entry = { assetId: assetId, text: text };
+        // Display_Name prefix "Hook" → hooks, "Quote" → quotes; default quotes
+        if (name.toLowerCase().indexOf('hook') === 0) {
+          hooks.push(entry);
+        } else {
+          quotes.push(entry);
+        }
+      }
+      if (hooks.length || quotes.length) {
+        var manifest = getEpisodeManifest(episodeUid);
+        return { hooks: hooks, quotes: quotes, imagePrompts: (manifest && manifest.image_prompts) || [] };
+      }
+    }
+
+    // Fallback: doc/manifest — no Asset_IDs available yet
+    var manifest = getEpisodeManifest(episodeUid);
+    if (manifest && manifest.raw_hooks && manifest.raw_hooks.length) {
+      var toEntry = function(t) { return { assetId: null, text: t }; };
+      return {
+        hooks:        manifest.raw_hooks.map(toEntry),
+        quotes:       (manifest.raw_quotes || []).map(toEntry),
+        imagePrompts: manifest.image_prompts || []
+      };
+    }
+
+    if (manifest && manifest.show_notes) {
+      try {
+        var docText = DocumentApp.openById(manifest.show_notes).getBody().getText();
+        var toEntryNull = function(l) { return { assetId: null, text: l.trim().replace(/^\d+\.\s*/, '') }; };
+
+        var hooksBlock  = extractSectionFromProse(docText, "HOOKS");
+        var fallHooks   = hooksBlock
+          ? hooksBlock.split("\n").map(toEntryNull).filter(function(e) { return e.text.length > 0; })
+          : [];
+
+        var quotesBlock = extractSectionFromProse(docText, "QUOTES");
+        var fallQuotes  = quotesBlock
+          ? quotesBlock.split("\n").map(toEntryNull).filter(function(e) { return e.text.length > 0; })
+          : [];
+
+        return { hooks: fallHooks, quotes: fallQuotes, imagePrompts: manifest.image_prompts || [] };
+      } catch (docErr) { /* Doc read failed */ }
+    }
+
+    return { hooks: [], quotes: [], imagePrompts: [] };
+  } catch (e) {
+    return { hooks: [], quotes: [], imagePrompts: [], error: e.message };
+  }
+}
+
+/**
+ * Generates a social media caption using Claude for a Publish graphic or reel.
+ * @param {string} episodeUid
+ * @param {string} platform   — e.g. 'Instagram Story', 'Instagram Feed', 'Reel'
+ * @param {string} contentText — text on graphic or reel display name
+ * @returns {{ success: boolean, text?: string, error?: string }}
+ */
+function generatePublishCaption(episodeUid, platform, contentText) {
+  try {
+    var plat = (platform || 'Instagram').toUpperCase();
+    var promptText =
+      "PLATFORM: " + plat + "\n\n" +
+      "Write a social media caption for the above platform for the Don't Waste Your Pain podcast.\n\n" +
+      "Content on the graphic or in the clip:\n" + (contentText || "(no content provided)") + "\n\n" +
+      "Platform-specific instructions:\n" +
+      "- INSTAGRAM STORY or INSTAGRAM FEED: punchy opener, under 125 characters, no hashtags\n" +
+      "- REEL: 1-2 sentences, hook-first, can go up to 200 characters\n" +
+      "Match the DWYP voice: honest, direct, specific, unsentimental. " +
+      "Return only the caption text.";
+
+    var text = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 512 });
+    return { success: true, text: text };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Returns the stored summary for a reel, or generates + stores one if missing.
+ * Called on-demand when a reel is selected and has no summary.
+ * @param {string} postId
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, summary: string }}
+ */
+function getOrGenerateReelSummary(assetId, episodeUid) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return { success: false, summary: '', error: "Asset_Library tab not found" };
+    var data    = sheet.getDataRange().getValues();
+
+    var rowIndex    = -1;
+    var existing    = '';
+    var displayName = '';
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      rowIndex    = i + 1;
+      existing    = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
+      displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
+      break;
+    }
+    if (existing) return { success: true, summary: existing };
+
+    var manifest  = getEpisodeManifest(episodeUid);
+    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
+    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
+
+    var promptText =
+      "In 1-2 sentences, describe what this social media video clip is likely about.\n\n" +
+      "Clip name: " + (displayName || 'Reel clip') + "\n" +
+      (epTitle   ? "Episode: " + epTitle + "\n"   : "") +
+      (guestName ? "Guest: "   + guestName + "\n" : "") +
+      "\nWrite as a factual note for internal use — no filler, no hype. " +
+      "This will be used as context when generating captions.";
+
+    var summaryText = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 256 });
+    if (summaryText) {
+      var summary = summaryText.trim();
+      if (rowIndex > 0) sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
+      return { success: true, summary: summary };
+    }
+    return { success: false, summary: '' };
+  } catch (e) {
+    return { success: false, summary: '', error: e.message };
+  }
+}
+
+/**
+ * Background: pre-generates summaries for all reels in this episode that lack one.
+ * Client fires this fire-and-forget after setting the episode.
+ * @param {string} episodeUid
+ */
+function ensureReelSummaries(episodeUid) {
+  try {
+    var sheetId  = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss       = SpreadsheetApp.openById(sheetId);
+    var alName   = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet    = ss.getSheetByName(alName);
+    if (!sheet) return { done: false, error: "Asset_Library tab not found" };
+    var data     = sheet.getDataRange().getValues();
+    var manifest = getEpisodeManifest(episodeUid);
+    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
+    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
+
+    for (var i = 1; i < data.length; i++) {
+      var row    = data[i];
+      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      var normAt = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g,'');
+      if (normAt !== 'reel' && normAt !== 'bankclip') continue;
+      var existing = String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
+      if (existing) continue;
+
+      var displayName = String(row[ASSET_LIBRARY_COLS.Display_Name - 1] || 'Reel clip').trim();
+      var promptText =
+        "In 1-2 sentences, describe what this social media video clip is likely about.\n\n" +
+        "Clip name: " + displayName + "\n" +
+        (epTitle   ? "Episode: " + epTitle   + "\n" : "") +
+        (guestName ? "Guest: "   + guestName + "\n" : "") +
+        "\nFactual note for internal use — no filler. Used for caption generation context.";
+
+      try {
+        var reelSummary = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 256 });
+        if (reelSummary) sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Reel_Summary).setValue(reelSummary.trim());
+      } catch (genErr) { /* non-fatal — skip this reel */ }
+    }
+    return { done: true };
+  } catch (e) {
+    return { done: false, error: e.message };
+  }
+}
+
+/**
+ * Saves a canvas-exported PNG to Staging/Images/, updates Asset_Library row (if assetId provided),
+ * and creates a Social_Assets row linking the AL asset to the slot.
+ * @param {string} episodeUid
+ * @param {string} slotId
+ * @param {string|null} assetId     - Asset_Library Asset_ID; null for drive-fallback
+ * @param {string} imageDataB64     - base64-encoded PNG (no data: prefix)
+ * @param {string} mimeType         - 'image/png'
+ * @param {string} caption
+ * @param {string} quoteText        - text placed on the graphic (written back to AL Quote_Text)
+ * @param {string} canvasJson       - Fabric.js canvas JSON (written back to AL Canvas_State)
+ * @returns {{ success: true, postId: string, fileId: string } | { success: false, error: string }}
+ */
+function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, caption, quoteText, canvasJson) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { success: false, error: "Staging folder not found for: " + episodeUid };
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var imgFolderIt   = stagingFolder.getFoldersByName("Images");
+    var imgFolder     = imgFolderIt.hasNext() ? imgFolderIt.next() : stagingFolder.createFolder("Images");
+
+    var filename = "quote_graphic_" + slotId + "_" + Date.now() + ".png";
+    var blob     = Utilities.newBlob(Utilities.base64Decode(imageDataB64), mimeType || "image/png", filename);
+    var file     = imgFolder.createFile(blob);
+    var fileId   = file.getId();
+
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Update Asset_Library row with the rendered PNG and canvas state
+    var resolvedAlId = assetId;
+    if (assetId) {
+      var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+      var alSheet = ss.getSheetByName(alName);
+      if (alSheet) {
+        var alData = alSheet.getDataRange().getValues();
+        for (var i = 1; i < alData.length; i++) {
+          if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
+          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability ).setValue("placed");
+          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status       ).setValue("scheduled");
+          if (quoteText)  alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Quote_Text   ).setValue(quoteText);
+          if (canvasJson) alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Canvas_State ).setValue(canvasJson);
+          break;
+        }
+      }
+    } else {
+      // Drive-fallback: create a minimal AL row so the SA FK is not null
+      var alName2  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+      var alSheet2 = ss.getSheetByName(alName2);
+      if (alSheet2) {
+        resolvedAlId = "AL-PB-" + Date.now();
+        var alRow    = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill("");
+        alRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = resolvedAlId;
+        alRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
+        alRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = "quote_graphic";
+        alRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = fileId;
+        alRow[ASSET_LIBRARY_COLS.Status       - 1] = "scheduled";
+        alRow[ASSET_LIBRARY_COLS.Availability - 1] = "placed";
+        if (quoteText)  alRow[ASSET_LIBRARY_COLS.Quote_Text   - 1] = quoteText;
+        if (canvasJson) alRow[ASSET_LIBRARY_COLS.Canvas_State - 1] = canvasJson;
+        alRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
+        alRow[ASSET_LIBRARY_COLS.Created_By   - 1] = "publish_canvas";
+        alSheet2.appendRow(alRow);
+      }
+    }
+
+    // Create Social_Assets row
+    var postId  = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
+    var saSheet = ss.getSheetByName("Social_Assets");
+    var saRow   = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
+    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
+    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = resolvedAlId || "";
+    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
+    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
+    saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "quote_graphic";
+    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
+    saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = fileId;
+    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = "publish_canvas";
+    saSheet.appendRow(saRow);
+
+    return { success: true, postId: postId, fileId: fileId, assetLibraryId: resolvedAlId };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Updates an already-scheduled asset with a new canvas render.
+ * Overwrites the Drive file, updates Asset_Library (Drive_File_ID, Canvas_State, Quote_Text),
+ * and updates the Social_Assets row (Drive_File_ID, Caption, Scheduled_At).
+ * @param {string} assetId      - Asset_Library Asset_ID
+ * @param {string} postId       - Social_Assets Post_ID
+ * @param {string} imageDataB64 - base64-encoded PNG (no data: prefix)
+ * @param {string} mimeType     - 'image/png'
+ * @param {string} caption
+ * @param {string} quoteText
+ * @param {string} canvasJson   - Fabric.js canvas JSON
+ * @returns {{ success: boolean, fileId?: string, error?: string }}
+ */
+function rescheduleAsset(assetId, postId, imageDataB64, mimeType, caption, quoteText, canvasJson) {
+  try {
+    var sheetId = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Read the existing AL row to get the episode folder
+    var alName   = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet  = ss.getSheetByName(alName);
+    if (!alSheet) return { success: false, error: "Asset_Library tab not found" };
+    var alData   = alSheet.getDataRange().getValues();
+
+    var episodeUid = null;
+    var alRowNum   = -1;
+    for (var i = 1; i < alData.length; i++) {
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      alRowNum   = i + 1;
+      episodeUid = String(alData[i][ASSET_LIBRARY_COLS.Episode_UID - 1]);
+      break;
+    }
+    if (alRowNum === -1) return { success: false, error: "Asset not found: " + assetId };
+
+    // Save new PNG to Staging/Images/
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { success: false, error: "Staging folder not found for: " + episodeUid };
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var imgFolderIt   = stagingFolder.getFoldersByName("Images");
+    var imgFolder     = imgFolderIt.hasNext() ? imgFolderIt.next() : stagingFolder.createFolder("Images");
+    var filename = "quote_graphic_reschedule_" + assetId + "_" + Date.now() + ".png";
+    var blob     = Utilities.newBlob(Utilities.base64Decode(imageDataB64), mimeType || "image/png", filename);
+    var file     = imgFolder.createFile(blob);
+    var fileId   = file.getId();
+
+    // Update Asset_Library row
+    alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
+    if (quoteText)  alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Quote_Text  ).setValue(quoteText);
+    if (canvasJson) alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
+
+    // Update Social_Assets row
+    var saSheet = ss.getSheetByName("Social_Assets");
+    if (saSheet && postId) {
+      var saData = saSheet.getDataRange().getValues();
+      for (var j = 1; j < saData.length; j++) {
+        if (String(saData[j][SOCIAL_ASSETS_COLS.Post_ID - 1]) !== String(postId)) continue;
+        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Drive_File_ID).setValue(fileId);
+        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Caption      ).setValue(caption || "");
+        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Scheduled_At ).setValue(new Date());
+        break;
+      }
+    }
+
+    return { success: true, fileId: fileId };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Appends a new slot to Posting_Schedule and returns the slot object.
+ * Called when JT adds a custom slot via the platform picker popup.
+ * @param {string} day       - 'Monday' | 'Tuesday' | ...
+ * @param {string} platform  - 'Instagram Story' | 'Instagram Feed' | 'Reel' | etc.
+ * @param {string} assetType - 'quote_graphic' | 'reel' | etc.
+ * @returns {{ success: boolean, slot?: object, error?: string }}
+ */
+function addPostingSlot(day, platform, assetType) {
+  try {
+    var sheetId   = PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID");
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var schedSheet = ss.getSheetByName("Posting_Schedule");
+    if (!schedSheet) return { success: false, error: "Posting_Schedule tab not found" };
+
+    var existingData = schedSheet.getDataRange().getValues();
+    var maxSort = 0;
+    for (var i = 1; i < existingData.length; i++) {
+      var s = Number(existingData[i][POSTING_SCHEDULE_COLS.Sort_Order - 1]) || 0;
+      if (s > maxSort) maxSort = s;
+    }
+
+    var slotId   = "CUSTOM-" + day.toUpperCase().slice(0, 3) + "-" + Date.now();
+    var sortOrder = maxSort + 10;
+    var newRow   = new Array(Object.keys(POSTING_SCHEDULE_COLS).length).fill("");
+    newRow[POSTING_SCHEDULE_COLS.Slot_ID    - 1] = slotId;
+    newRow[POSTING_SCHEDULE_COLS.Day        - 1] = day;
+    newRow[POSTING_SCHEDULE_COLS.Asset_Type - 1] = assetType || "quote_graphic";
+    newRow[POSTING_SCHEDULE_COLS.Platform   - 1] = platform  || "";
+    newRow[POSTING_SCHEDULE_COLS.Why        - 1] = "Custom slot";
+    newRow[POSTING_SCHEDULE_COLS.Sort_Order - 1] = sortOrder;
+    schedSheet.appendRow(newRow);
+
+    return {
+      success: true,
+      slot: {
+        slotId:    slotId,
+        assetType: assetType || "quote_graphic",
+        platform:  platform  || "",
+        why:       "Custom slot",
+        sortOrder: sortOrder,
+        isPlaybook: false,
+        filled:    null
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 

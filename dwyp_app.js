@@ -223,6 +223,7 @@ function doGet(e) {
   function cleanUrl(v) { return String(v || "").trim().replace(/^["']+|["']+$/g, "").trim(); }
 
   var hostEmail     = cleanUrl(govMap["HOST_EMAIL"]);
+  var hostName      = String(govMap["HOST_NAME"] || "").trim();
   var gemsUrl       = cleanUrl(govMap["IMAGE_WORKSHOP_GEM"]);
   var notebooklmUrl = cleanUrl(govMap["NOTEBOOKLM_LINK"]);
   var ownerEmail    = Session.getEffectiveUser().getEmail();
@@ -231,6 +232,7 @@ function doGet(e) {
   template.sheetId       = sheetId;
   template.deployedUrl   = deployedUrl;
   template.hostEmail     = hostEmail;
+  template.hostName      = hostName;
   template.gemsUrl       = gemsUrl;
   template.notebooklmUrl = notebooklmUrl;
   template.ownerEmail    = ownerEmail;
@@ -1020,6 +1022,25 @@ function getBackgroundImageData(fileId) {
     return { success: true, dataUrl: "data:" + mimeType + ";base64," + base64 };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Returns a low-res thumbnail of a Drive image as a base64 data URL.
+ * Fetches via Drive thumbnail API (sz=w600) — much faster than getBackgroundImageData.
+ * Used by Publish canvas for progressive background loading (thumbnail shows instantly,
+ * full res swaps in after).
+ */
+function getBackgroundThumbnailData(fileId) {
+  try {
+    var thumbUrl = "https://drive.google.com/thumbnail?id=" + fileId + "&sz=w600";
+    var resp     = UrlFetchApp.fetch(thumbUrl, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return { success: false };
+    var blob    = resp.getBlob();
+    var dataUrl = "data:" + (blob.getContentType() || "image/jpeg") + ";base64," + Utilities.base64Encode(blob.getBytes());
+    return { success: true, dataUrl: dataUrl };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
 

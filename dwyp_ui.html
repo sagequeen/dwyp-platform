@@ -3897,12 +3897,12 @@ body.studio-open .app-header { display: none; }
               </div>
               <div class="pb-canvas-inner" id="pbCanvasInner">
                 <div class="pb-canvas-toolbar">
-                  <button class="pb-canvas-tool-btn" onclick="pbCanvasUndo()">Undo</button>
-                  <button class="pb-canvas-tool-btn" onclick="pbCanvasRedo()">Redo</button>
-                  <button class="pb-canvas-tool-btn" onclick="pbCenterText()">Center</button>
-                  <button class="pb-canvas-tool-btn" id="pbShadowBtn" onclick="pbToggleShadow()" title="Drop shadow" style="font-weight:900;text-shadow:1px 2px 4px rgba(0,0,0,.55);">T</button>
-                  <button class="pb-canvas-tool-btn" id="pbBrightnessBtn" onclick="pbToggleBgBrightness()" title="Adjust background brightness">Overlay</button>
-                  <button class="pb-canvas-tool-btn" id="pbLogoBtn" onclick="pbToggleLogo()">Logo: Off</button>
+                  <button class="pb-canvas-tool-btn" onmousedown="event.preventDefault()" onclick="pbCanvasUndo()">Undo</button>
+                  <button class="pb-canvas-tool-btn" onmousedown="event.preventDefault()" onclick="pbCanvasRedo()">Redo</button>
+                  <button class="pb-canvas-tool-btn" onmousedown="event.preventDefault()" onclick="pbCenterText()">Center</button>
+                  <button class="pb-canvas-tool-btn" id="pbShadowBtn" onmousedown="event.preventDefault()" onclick="pbToggleShadow()" title="Drop shadow" style="font-weight:900;text-shadow:1px 2px 4px rgba(0,0,0,.55);">T</button>
+                  <button class="pb-canvas-tool-btn" id="pbBrightnessBtn" onmousedown="event.preventDefault()" onclick="pbToggleBgBrightness()" title="Adjust background brightness">Overlay</button>
+                  <button class="pb-canvas-tool-btn" id="pbLogoBtn" onmousedown="event.preventDefault()" onclick="pbToggleLogo()">Logo: Off</button>
                   <div class="iw-color-dots" id="pbColorDots">
                     <button class="iw-color-dot"        data-color="#FEBE18" style="background:#FEBE18" onclick="pbApplyTextColor('#FEBE18')" title="Gold"></button>
                     <button class="iw-color-dot"        data-color="#D12225" style="background:#D12225" onclick="pbApplyTextColor('#D12225')" title="Crimson"></button>
@@ -3910,10 +3910,10 @@ body.studio-open .app-header { display: none; }
                     <button class="iw-color-dot active" data-color="#FFFFFF" style="background:#FFFFFF" onclick="pbApplyTextColor('#FFFFFF')" title="White"></button>
                   </div>
                 </div>
-                <div class="st-brightness-panel" id="pbBrightnessPanel" style="display:none;padding:6px 0;max-width:340px;margin:4px auto 0;">
+                <div id="pbBrightnessPanel" style="display:none;padding:6px 0;max-width:340px;margin:4px auto 0;">
                   <div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted);">
                     <span>Dark</span>
-                    <input type="range" id="pbBrightnessSlider" style="flex:1;" min="-1" max="1" step="0.01" value="0"
+                    <input type="range" id="pbBrightnessSlider" style="flex:1;min-width:120px;" min="-1" max="1" step="0.01" value="0"
                            oninput="pbSetBgBrightness(this.value)"
                            onchange="pbSaveCanvasState()">
                     <span>Light</span>

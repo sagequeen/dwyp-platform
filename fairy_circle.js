@@ -2,8 +2,7 @@
 // fairy_circle.gs — DWYP Operations Platform
 // Shared infrastructure. All fairies depend on this file.
 // Version: 1.0 | March 2026
-// Author: Claude (Anthropic) — per Preservation Mandate, all GAS code written
-//         by Claude only. Never edit directly in Apps Script or via Gemini.
+// Author: Claude (Anthropic). Never edit directly in Apps Script or via Gemini.
 //
 // BREAKING CHANGE — logToAuditTrail() signature:
 //   Old: logToAuditTrail(agent, action, target, level, message)
@@ -97,6 +96,55 @@ function getGovernance(key) {
     if (data[i][0] === key) return data[i][1];
   }
   return null;
+}
+
+/**
+ * Returns true if this script execution is serving the staging deployment.
+ * Compares ScriptApp.getService().getUrl() against STAGING_DEPLOYMENT_URL
+ * stored in production Governance_Config.
+ *
+ * Comparison is exact-string. The staging URL uses the workspace-scoped
+ * path (/a/macros/wiseonewithin.com/...) while production uses the generic
+ * path (/macros/...). Do not normalize.
+ *
+ * Returns false on any error (missing config, no service URL, etc.) — fail
+ * closed to production routing rather than risk staging bleed into production.
+ */
+function isStaging() {
+  try {
+    var serviceUrl = ScriptApp.getService().getUrl();
+    if (!serviceUrl) return false;
+    var stagingUrl = getGovernance('STAGING_DEPLOYMENT_URL');
+    if (!stagingUrl) return false;
+    return serviceUrl === stagingUrl;
+  } catch (err) {
+    // Fail closed: any error means we treat this as production
+    return false;
+  }
+}
+
+/**
+ * Returns the appropriate Master Sheet ID for the current deployment.
+ *
+ * Production deployment → returns Script Property MASTER_SHEET_ID
+ * Staging deployment    → returns Governance_Config STAGING_SHEET_ID
+ *
+ * Bootstrap note: this function may call getGovernance(), which reads from
+ * the production sheet (resolved via Script Property). That's intentional —
+ * the routing table lives in production Governance_Config. Only operational
+ * reads/writes that go through getMasterSheetId() are routed to staging.
+ *
+ * Fails closed to production if STAGING_SHEET_ID is missing or empty.
+ */
+function getMasterSheetId() {
+  var productionId = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID');
+  if (!isStaging()) return productionId;
+  var stagingId = getGovernance('STAGING_SHEET_ID');
+  if (!stagingId) {
+    // Staging deployment but no staging sheet configured — fail closed
+    return productionId;
+  }
+  return stagingId;
 }
 
 
@@ -258,10 +306,12 @@ function callGeminiAPINoSearch(prompt, systemInstruction, agentName) {
   const url    = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const payload = {
-    contents:          [{ parts: [{ text: prompt }] }],
-    systemInstruction: { parts: [{ text: systemInstruction }] },
-    generationConfig:  { maxOutputTokens: 32768 }
+    contents:         [{ parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 32768 }
   };
+  if (systemInstruction) {
+    payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
 
   let delay = 1000;
   for (let i = 0; i < CONFIG.RETRY_LIMIT; i++) {
@@ -303,84 +353,145 @@ function callGeminiAPINoSearch(prompt, systemInstruction, agentName) {
   }
 }
 
+// =============================================================================
+// GEMINI IMAGE API — CONVERSATIONAL
+// History-based image generation for Studio canvas.
+// Each call appends both turns to updatedHistory — caller stores and passes back
+// on iteration. thoughtSignature fields in model parts must be preserved exactly
+// or the next call returns 400.
+// sourceImageBase64/sourceMimeType: optional canvas image for first-turn edits.
+// =============================================================================
+
 /**
- * Gemini API call for image generation and editing (image-in / image-out).
- * Model: gemini-2.0-flash-preview-image-generation
- * Payload: optional base64 canvas image + text prompt → returns generated image base64.
- * Response parsing: scans parts array for inlineData — never assumes .text (text-call pattern).
- * imageBase64 and mimeType are nullable; when null, generates from text prompt only.
+ * Calls Gemini image generation model with conversation memory.
+ * Returns { text, base64, mimeType, updatedHistory, tokenCount }.
+ * imageHistory: prior {role, parts} turns (pass [] on first call).
+ * sourceImageBase64/sourceMimeType: canvas image for first-turn edit context (optional).
  */
-function callGeminiImageAPI(prompt, imageBase64, mimeType, agentName, aspectRatio) {
+function callGeminiImageConversational(prompt, imageHistory, sourceImageBase64, sourceMimeType) {
   const apiKey = getGovernance("GEMINI_API_KEY");
-  const model  = "gemini-2.5-flash-image";
+  const model  = getGovernance("STUDIO_IMAGE_MODEL") || "gemini-2.5-flash-image";
   const url    = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  const parts = [];
-  if (imageBase64 && mimeType) {
-    parts.push({ inlineData: { mimeType: mimeType, data: imageBase64 } });
+  // Current user turn — include canvas image only on first call (no prior history)
+  const currentParts = [];
+  if (sourceImageBase64 && sourceMimeType && (!imageHistory || !imageHistory.length)) {
+    currentParts.push({ inlineData: { mimeType: sourceMimeType, data: sourceImageBase64 } });
   }
-  parts.push({ text: prompt });
+  currentParts.push({ text: prompt });
 
-  const generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
+  const contents = (imageHistory || []).concat([{ role: "user", parts: currentParts }]);
 
   const payload = {
-    contents:         [{ parts: parts }],
-    generationConfig: generationConfig
+    contents:         contents,
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
   };
 
-  let delay = 1000;
-  const IMAGE_RETRY_LIMIT = 2;  // image gen quota windows don't recover within a standard backoff cycle
-  for (let i = 0; i < IMAGE_RETRY_LIMIT; i++) {
-    try {
-      const response     = UrlFetchApp.fetch(url, {
-        method:             "post",
-        contentType:        "application/json",
-        payload:            JSON.stringify(payload),
-        muteHttpExceptions: true
-      });
-      const responseCode = response.getResponseCode();
-      const responseText = response.getContentText();
+  const response = UrlFetchApp.fetch(url, {
+    method:             "post",
+    contentType:        "application/json",
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
 
-      if (responseCode === 200) {
-        const result     = JSON.parse(responseText);
-        const candidate  = result.candidates && result.candidates[0];
-        const content    = candidate && candidate.content;
-        if (!content || !content.parts) {
-          const reason = (candidate && candidate.finishReason) || "unknown";
-          throw new Error(`Gemini returned no content. Finish reason: ${reason}. Check input image or prompt.`);
-        }
-        for (let p = 0; p < content.parts.length; p++) {
-          if (content.parts[p].inlineData) {
-            return {
-              data:     content.parts[p].inlineData.data,
-              mimeType: content.parts[p].inlineData.mimeType
-            };
-          }
-        }
-        throw new Error("No image part found in Gemini image response.");
-      }
+  const responseCode = response.getResponseCode();
+  const responseText = response.getContentText();
 
-      if (responseCode === 429) {
-        const rateLimitDelay = i === 0 ? 30000 : delay;
-        logToAuditTrail(agentName, "state_change", "", "", `[WARNING] HTTP 429 — rate limited (quota window). Attempt ${i + 1}. Backing off ${rateLimitDelay / 1000}s.`, "WARNING");
-        sleepInChunks(rateLimitDelay);
-        delay = rateLimitDelay * 2;
-      } else if ([500, 503].includes(responseCode)) {
-        logToAuditTrail(agentName, "state_change", "", "", `[WARNING] HTTP ${responseCode} — transient server error. Attempt ${i + 1}. Backing off ${delay / 1000}s.`, "WARNING");
-        Utilities.sleep(delay);
-        delay *= 2;
-      } else {
-        throw new Error(`Critical API Error ${responseCode}: ${responseText}`);
-      }
-    } catch (e) {
-      if (i === IMAGE_RETRY_LIMIT - 1) {
-        logToAuditTrail(agentName, "error", "", "", `[ERROR] Image API failure after ${IMAGE_RETRY_LIMIT} attempts: ${e.message}`, "ERROR");
-        throw e;
-      }
-      Utilities.sleep(delay);
-      delay *= 2;
+  if (responseCode !== 200) {
+    logToAuditTrail("Studio_ImageGen", "error", "", "", `[ERROR] Image gen ${responseCode}: ${responseText.substring(0, 300)}`, "ERROR");
+    throw new Error(`Gemini image API Error ${responseCode}: ${responseText.substring(0, 300)}`);
+  }
+
+  const json      = JSON.parse(responseText);
+  const candidate = json.candidates && json.candidates[0];
+  if (!candidate || !candidate.content || !candidate.content.parts) {
+    const reason = (candidate && candidate.finishReason) || "unknown";
+    throw new Error(`Gemini image returned no content. Finish reason: ${reason}.`);
+  }
+
+  const responseParts = candidate.content.parts;
+  let text     = null;
+  let base64   = null;
+  let mimeType = null;
+
+  for (let i = 0; i < responseParts.length; i++) {
+    if (responseParts[i].inlineData) {
+      base64   = responseParts[i].inlineData.data;
+      mimeType = responseParts[i].inlineData.mimeType;
+    } else if (responseParts[i].text) {
+      text = responseParts[i].text;
     }
   }
+
+  if (!base64) throw new Error("No image part found in Gemini image response.");
+
+  // Preserve full parts array (including thoughtSignature) — required for next call
+  const updatedHistory = contents.concat([{ role: "model", parts: responseParts }]);
+  const tokenCount     = (json.usageMetadata && json.usageMetadata.totalTokenCount) || 0;
+
+  logToAuditTrail("Studio_ImageGen", "state_change", "", "", `Image generated (${base64.length} chars base64).`, "info");
+
+  return { text, base64, mimeType, updatedHistory, tokenCount };
+}
+
+// =============================================================================
+// CLAUDE API
+// Anthropic Messages API. Used for all human-facing copy generation.
+// Model and API key are governed by CLAUDE_MODEL and CLAUDE_API_KEY keys.
+// history: optional array of { role, content } prior turns for multi-turn context.
+// options: optional { maxTokens }
+// =============================================================================
+
+/**
+ * Calls the Anthropic Messages API (claude-sonnet-4-6 by default).
+ * Returns the response text string.
+ * history: prior turns as [{ role: "user"|"assistant", content: "..." }]
+ * options: { maxTokens }
+ */
+function callClaudeAPI(prompt, systemInstruction, callerName, history, options) {
+  const apiKey   = getGovernance("CLAUDE_API_KEY");
+  const model    = getGovernance("CLAUDE_MODEL") || "claude-sonnet-4-6";
+  const maxTokens = (options && options.maxTokens) || 8192;
+  const url      = "https://api.anthropic.com/v1/messages";
+
+  const messages = [];
+  if (history && history.length) {
+    for (let i = 0; i < history.length; i++) {
+      messages.push(history[i]);
+    }
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const body = {
+    model:      model,
+    max_tokens: maxTokens,
+    messages:   messages
+  };
+  if (systemInstruction) {
+    body.system = systemInstruction;
+  }
+
+  const response = UrlFetchApp.fetch(url, {
+    method:  "post",
+    headers: {
+      "x-api-key":         apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type":      "application/json"
+    },
+    payload:            JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+
+  const responseCode = response.getResponseCode();
+  const responseText = response.getContentText();
+
+  if (responseCode !== 200) {
+    logToAuditTrail(callerName, "error", "", "", `[ERROR] Claude API ${responseCode}: ${responseText}`, "ERROR");
+    throw new Error(`Claude API Error ${responseCode}: ${responseText}`);
+  }
+
+  const json = JSON.parse(responseText);
+  return json.content[0].text;
 }
 
 // =============================================================================
@@ -661,7 +772,7 @@ function getBodyTextSkippingHeadings(docId) {
 function logToAuditTrail(actor, eventCategory, episodeUid, contactId, detail, level) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) return;
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -742,7 +853,7 @@ function generateContactId() {
  */
 function spawnTask(taskConfig) {
   const scriptProps = PropertiesService.getScriptProperties();
-  const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+  const sheetId     = getMasterSheetId();
   if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
   const ss    = SpreadsheetApp.openById(sheetId);
@@ -802,7 +913,7 @@ function spawnTask(taskConfig) {
  */
 function updateTaskStatus(taskId, newStatus) {
   const scriptProps = PropertiesService.getScriptProperties();
-  const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+  const sheetId     = getMasterSheetId();
   if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
   const ss      = SpreadsheetApp.openById(sheetId);
@@ -861,7 +972,7 @@ function spawnReviseAssetTask(episodeUid, assetType) {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("MASTER_SHEET_ID not set.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1063,7 +1174,7 @@ function patchManifest(stagingFolderId, updates) {
 function getStagingFolderIdByUid(epUid) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1116,7 +1227,7 @@ function getStagingFolderIdByUid(epUid) {
 function getRawFolderIdByUid(epUid) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1166,7 +1277,7 @@ function getRawFolderIdByUid(epUid) {
 function getContactIdByEpisodeUid(epUid) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("MASTER_SHEET_ID not set in Script Properties.");
 
     const ss      = SpreadsheetApp.openById(sheetId);
@@ -1216,7 +1327,7 @@ function getContactIdByEpisodeUid(epUid) {
 function getContactLibraryFolderIdByContactId(contactId) {
   try {
     const scriptProps  = PropertiesService.getScriptProperties();
-    const sheetId      = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId      = getMasterSheetId();
     if (!sheetId) return null;
 
     const ss           = SpreadsheetApp.openById(sheetId);
@@ -1270,7 +1381,7 @@ function patchEpisodes(epUid, fields) {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1340,7 +1451,7 @@ function upsertEpisodes(episodeData) {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1411,7 +1522,7 @@ function appendEpisodeLog(logConfig) {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -1702,7 +1813,7 @@ function appendRevisionComment(epUid, stagingFolderId, comment, commenter, asset
 function getEpisodeRow(episodeUid) {
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("MASTER_SHEET_ID not set in Script Properties.");
 
     const ss      = SpreadsheetApp.openById(sheetId);
@@ -1750,7 +1861,7 @@ function dailyPulse() {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);
@@ -2340,6 +2451,78 @@ function dailyPulse() {
         `[INFO] Reels detection complete. Episodes scanned: ${reelsDetectScanned}. Tasks spawned: ${reelsDetectSpawned}.`, "INFO");
     }
 
+    // =========================================================================
+    // LOOP D: Transcript Detection — Vert Fairy (Show Notes)
+    // Scans Staging/Episode/ subfolder for a finished transcript file.
+    // If found and manifest.show_notes is not set: runs runVertFairy().
+    // Idempotency: manifest.show_notes is the dedup signal — set on success.
+    // Only reads manifest when a transcript is confirmed present (minimizes
+    // Drive API calls across the episode roster).
+    // =========================================================================
+    let vertScanned = 0;
+    let vertRun     = 0;
+
+    if (prodFolCol === -1) {
+      logToAuditTrail(agentName, "error", "", "",
+        "[WARNING] Production_Folder_ID column not found. Skipping Vert Fairy transcript scan.", "WARNING");
+    } else {
+      for (let i = 1; i < data.length; i++) {
+        const epUid        = data[i][uidCol];
+        const status       = String(data[i][statusCol]);
+        const prodFolderId = data[i][prodFolCol];
+        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
+
+        if (!epUid)                continue;
+        if (status === "complete") continue;
+        if (!prodFolderId)         continue;
+
+        vertScanned++;
+
+        try {
+          // Navigate to Episode/ subfolder — transcript lives there (same as proxy_)
+          const stagingFolder   = DriveApp.getFolderById(prodFolderId);
+          const episodeFolderIt = stagingFolder.getFoldersByName("Episode");
+          if (!episodeFolderIt.hasNext()) continue;
+          const episodeFolder = episodeFolderIt.next();
+
+          // Scan Episode/ for a finished transcript file (skip proxy_ files)
+          const files        = episodeFolder.getFiles();
+          let hasTranscript  = false;
+
+          while (files.hasNext()) {
+            const f    = files.next();
+            const name = f.getName().toLowerCase();
+            const mime = f.getMimeType();
+            if (name.startsWith("proxy_")) continue;
+            if (name.includes("transcript") &&
+                (mime === MimeType.PLAIN_TEXT || mime === MimeType.GOOGLE_DOCS || name.endsWith(".txt"))) {
+              hasTranscript = true;
+              break;
+            }
+          }
+
+          if (!hasTranscript) continue;
+
+          // Transcript found — check manifest before making the extra Drive read
+          const manifest = getManifest(prodFolderId);
+          if (manifest && manifest.show_notes) continue; // already generated
+
+          // Transcript present + show_notes not set → run Vert Fairy
+          logToAuditTrail(agentName, "state_change", epUid, "",
+            `[INFO] Transcript detected for ${guestName}. show_notes not set. Running Vert Fairy.`, "INFO");
+          runVertFairy(epUid);
+          vertRun++;
+
+        } catch (e) {
+          logToAuditTrail(agentName, "error", epUid, "",
+            `[ERROR] Vert Fairy transcript scan failed for ${epUid}: ${e.message}`, "ERROR");
+        }
+      }
+
+      logToAuditTrail(agentName, "state_change", "", "",
+        `[INFO] Vert Fairy scan complete. Episodes scanned: ${vertScanned}. Vert Fairy runs: ${vertRun}.`, "INFO");
+    }
+
     /* SUPERSEDED — Loop 3b replaced by Loop A (file-based proxy detection).
        Video_Status = "ready" was a placeholder trigger that was never properly implemented.
     // =========================================================================
@@ -2547,7 +2730,7 @@ function resolveEmailByContactId(contactId) {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) return null;
 
     const ss      = SpreadsheetApp.openById(sheetId);
@@ -2583,7 +2766,7 @@ function resolveDisplayNameByContactId(contactId) {
 
   try {
     const scriptProps  = PropertiesService.getScriptProperties();
-    const sheetId      = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId      = getMasterSheetId();
     if (!sheetId) return null;
 
     const ss      = SpreadsheetApp.openById(sheetId);

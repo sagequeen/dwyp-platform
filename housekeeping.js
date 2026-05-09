@@ -3,8 +3,7 @@
 // Maintenance runner. Called by fairy_circle.gs on a nightly schedule.
 // Does not self-trigger — all entry points are called by fairy_circle.gs.
 // Version: 1.0 | April 2026
-// Author: Claude (Anthropic) — per Preservation Mandate, all GAS code written
-//         by Claude only. Never edit directly in Apps Script or via Gemini.
+// Author: Claude (Anthropic). Never edit directly in Apps Script or via Gemini.
 //
 // CURRENT RESPONSIBILITIES:
 //   parsePipelineBlock() — reads the NotebookLM pipeline block from the raw
@@ -303,7 +302,7 @@ function runHousekeeping() {
 
   try {
     const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = scriptProps.getProperty("MASTER_SHEET_ID");
+    const sheetId     = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
     const ss    = SpreadsheetApp.openById(sheetId);

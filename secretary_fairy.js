@@ -198,7 +198,7 @@ function processFormSubmission(e) {
   // Read Contact Library folder ID from Contacts tab — Herald Bio should have
   // just written it. If missing, log and spawn task but continue.
   try {
-    const ss            = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+    const ss            = SpreadsheetApp.openById(getMasterSheetId());
     const contactSheet  = ss.getSheetByName("Contacts");
     const contactData   = contactSheet.getDataRange().getValues();
     const cHeaders      = contactData[0];
@@ -242,7 +242,7 @@ function processFormSubmission(e) {
   // or returning guest), fire full Herald so the brief is generated with form context.
   // Patch manifest with herald_form_data: true so calendar path skips Herald.
   try {
-    const ss              = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+    const ss              = SpreadsheetApp.openById(getMasterSheetId());
     const epSheet         = ss.getSheetByName("Episodes");
     const epData          = epSheet.getDataRange().getValues();
     const epHeaders       = epData[0];
@@ -550,7 +550,7 @@ function extractGuestNameFromTitle(title, prefix) {
 
 function lookupEpisodeByEventId(eventId) {
   const ss = SpreadsheetApp.openById(
-    PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID")
+    getMasterSheetId()
   );
   const sheet = ss.getSheetByName("Episodes");
   const data = sheet.getDataRange().getValues();
@@ -629,7 +629,7 @@ function resolveIdentity(signals) {
 
 function getContactsData() {
   const ss = SpreadsheetApp.openById(
-    PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID")
+    getMasterSheetId()
   );
   const sheet = ss.getSheetByName("Contacts");
   const data = sheet.getDataRange().getValues();
@@ -670,7 +670,7 @@ function findContactByName(name) {
 function updateLastActivity(contactId) {
   // #18 — Last_Modified removed from v1.5 schema. Writing Last_Activity only.
   const ss = SpreadsheetApp.openById(
-    PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID")
+    getMasterSheetId()
   );
   const sheet = ss.getSheetByName("Contacts");
   const data = sheet.getDataRange().getValues();
@@ -701,7 +701,7 @@ function updateLastActivity(contactId) {
 
 function createContactStub(signals) {
   const ss = SpreadsheetApp.openById(
-    PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID")
+    getMasterSheetId()
   );
   const contactSheet = ss.getSheetByName("Contacts");
   const headerRow = contactSheet.getRange(1, 1, 1, contactSheet.getLastColumn()).getValues()[0];

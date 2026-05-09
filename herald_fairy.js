@@ -873,7 +873,7 @@ function spawnGuestBriefReviewForJT(episodeUid, displayName) {
  * Returns a plain object keyed by column header, or null if not found.
  */
 function getContactById(contactId) {
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
 
@@ -897,7 +897,7 @@ function getContactById(contactId) {
  * Never touches any other column, including Personal_Note.
  */
 function writeBioSummary(contactId, bioText) {
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
 
@@ -922,7 +922,7 @@ function writeBioSummary(contactId, bioText) {
  * FIX 12 — Retargeted from Guest tab to Contacts tab.
  */
 function writeContactFolderId(contactId, folderId) {
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
 
@@ -959,7 +959,7 @@ function writeSocialFields(contactId, socialData) {
     "Social_LinkedIn",  "Social_X",       "Social_Other"
   ];
 
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
 
@@ -997,7 +997,7 @@ function writeSocialFields(contactId, socialData) {
  * @param {string} orgString   - Formatted organization string
  */
 function writeOrganization(contactId, orgString) {
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
 
@@ -1069,7 +1069,7 @@ function truncateTo75Words(bioText, displayName, actor) {
  * @returns {Array}               - Array of prior episode row objects
  */
 function getPriorCompletedEpisodes(contactId, currentEpUid) {
-  const ss    = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Episodes");
   if (!sheet) return [];
 

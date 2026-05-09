@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // FILE: filing_fairy.gs
 // Fairy: The Filing Fairy (Archive Bridge)
 // Trigger: Audra taps button on final approval task → AppSheet webhook → clerk_fairy.gs → runFilingFairy()
@@ -38,7 +38,6 @@
 //
 // Returns true if all clear. Returns false if blocked — caller must exit.
 //
-// Per the Preservation Mandate: do NOT simplify or thin this function.
 // ============================================================================
 
 function preflightCheck(epUid, agentName) {
@@ -116,7 +115,6 @@ function preflightCheck(epUid, agentName) {
 //  11. Scribe We're Live email draft.
 //  12. Spawn confirmation task for JT.
 //
-// Per the Preservation Mandate: do NOT simplify or thin this function.
 // ============================================================================
 
 function runFilingFairy(epUid) {
@@ -382,14 +380,14 @@ function runFilingFairy(epUid) {
     });
 
     // =========================================================================
-    // STEP 11a: SPAWN TASK #4 — Image Workshop Ready (JT)
+    // STEP 11a: SPAWN TASK #4 — Studio Assets Ready (JT)
     // STEP 11b: SPAWN TASK #5 — Produce Episode (Audra)
     // Trigger: post-archive, same point as JT confirmation. Both idempotent.
     // =========================================================================
-    let imageWorkshopTaskExists = false;
+    let studioAssetsTaskExists = false;
     let produceEpisodeTaskExists = false;
     try {
-      const ssCheck  = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty("MASTER_SHEET_ID"));
+      const ssCheck  = SpreadsheetApp.openById(getMasterSheetId());
       const tsCheck  = ssCheck.getSheetByName("Tasks");
       if (tsCheck) {
         const td = tsCheck.getDataRange().getValues();
@@ -402,7 +400,7 @@ function runFilingFairy(epUid) {
           const tSt = String(td[t][tStCol]);
           if (tSt !== "open" && tSt !== "in_progress") continue;
           const tWs = String(td[t][tWsCol]);
-          if (tWs === "Image_Workshop_Ready") imageWorkshopTaskExists  = true;
+          if (tWs === "Studio_Assets_Ready") studioAssetsTaskExists  = true;
           if (tWs === "Produce_Episode")       produceEpisodeTaskExists = true;
         }
       }
@@ -411,20 +409,20 @@ function runFilingFairy(epUid) {
         `[WARNING] Idempotency check for production cue tasks failed: ${e.message}`, "WARNING");
     }
 
-    if (!imageWorkshopTaskExists) {
+    if (!studioAssetsTaskExists) {
       spawnTask({
         episodeUid:       epUid,
         contactId:        contactId,
-        workflowStep:     "Image_Workshop_Ready",
-        actionTitle:      `Image Workshop is ready for ${guestName}`,
+        workflowStep:     "Studio_Assets_Ready",
+        actionTitle:      `Studio assets ready — ${guestName}`,
         assignee:         getGovernance("ASSIGNEE_HOST"),
         assignedBy:       "The Fairy Team",
         status:           "open",
         priority:         "normal",
-        executiveSummary: `The episode transcript has been deposited to the corpus. Image Workshop is now available for this episode.`
+        executiveSummary: `The episode transcript has been deposited to the corpus. Assets are ready in Studio.`
       });
       logToAuditTrail(agentName, "state_change", epUid, contactId,
-        `[INFO] Image Workshop Ready task spawned for ${guestName}.`, "INFO");
+        `[INFO] Studio Assets Ready task spawned for ${guestName}.`, "INFO");
     }
 
     if (!produceEpisodeTaskExists) {
@@ -471,7 +469,6 @@ function runFilingFairy(epUid) {
 // Sections: HOOKS, GUEST QUOTES, GUEST INSTAGRAM CAPTION, GUEST LINKEDIN AND FACEBOOK.
 // All prose is sourced from the Episode Card — no hardcoded copy here.
 //
-// Per the Preservation Mandate: do NOT thin this function.
 // ============================================================================
 
 function createGuestSwipeDoc(episodeCardId, swipeFolder, guestName, epUid, agentName) {

@@ -5,7 +5,8 @@
 Read in this order before doing any work in this codebase:
 
 **Always (every session):**
-1. Most recent `DWYP_Platform_State_v*` doc
+1. `DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.** Points to deeper sources when needed.
+2. Most recent `DWYP_Platform_State_v*` doc
 
 **Always for any code, UI, or design work:**
 3. `DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation)

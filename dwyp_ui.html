@@ -3114,6 +3114,17 @@ body.studio-open .app-header { display: none; }
 .pb-slot.filled:hover .pb-slot-x { opacity: 1; }
 .pb-slot-x:hover { color: var(--red) !important; }
 
+.pb-slot-del {
+  flex-shrink: 0; width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; padding: 0;
+  color: var(--text-3); line-height: 1;
+  cursor: pointer; border-radius: 3px;
+  opacity: 0; transition: opacity 0.15s, color 0.15s;
+}
+.pb-slot[data-custom]:hover .pb-slot-del { opacity: 1; }
+.pb-slot-del:hover { color: var(--red) !important; }
+
 .pb-day-add {
   width: 100%; padding: 5px 8px; margin-top: 4px;
   background: none; border: 1px dashed var(--border); border-radius: var(--radius-sm);
@@ -3295,8 +3306,7 @@ body.studio-open .app-header { display: none; }
   font-size: 9px; font-family: var(--font-body); outline: none; padding: 0;
 }
 
-/* Reel workspace (right side when reel selected) */
-.pb-reel-ws { display: flex; flex: 1; overflow: hidden; }
+/* Reel workspace */
 .pb-reel-area {
   flex: 1; display: flex; flex-wrap: wrap; gap: 20px;
   align-content: flex-start; justify-content: center;
@@ -3312,7 +3322,19 @@ body.studio-open .app-header { display: none; }
   color: var(--text-3); font-size: 12px;
 }
 .pb-reel-controls {
-  flex: 1; min-width: 220px; max-width: 380px; display: flex; flex-direction: column;
+  flex: 1; min-width: 220px; max-width: 380px; display: flex; flex-direction: column; gap: 10px;
+}
+.pb-titlecard-card {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px;
+}
+.pb-titlecard-label {
+  font-size: 10px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.pb-titlecard-hint { font-weight: 400; color: var(--text-3); text-transform: none; letter-spacing: 0; }
+.pb-titlecard-text {
+  font-size: 13px; color: var(--text-1); min-height: 28px; cursor: text;
+  border-radius: 3px; padding: 2px 4px;
 }
 
 /* Composed asset detail */
@@ -3364,6 +3386,17 @@ body.studio-open .app-header { display: none; }
   transition: background 0.12s, border-color 0.12s;
 }
 .pb-caption-regen:hover { background: var(--surface); border-color: var(--text-3); }
+.pb-caption-variants {
+  display: flex; gap: 5px; flex-wrap: wrap; padding: 6px 12px 2px;
+}
+.pb-variant-chip {
+  font-size: 10px; font-weight: 700; padding: 2px 10px;
+  border: 1px solid var(--gold); border-radius: 20px;
+  background: var(--gold-light); color: var(--gold);
+  cursor: pointer; font-family: var(--font-body);
+  transition: background 0.12s;
+}
+.pb-variant-chip:hover { background: var(--gold); color: #fff; }
 
 /* Schedule button — wide gold, full canvas width */
 .pb-schedule-btn {
@@ -3540,8 +3573,16 @@ body.studio-open .app-header { display: none; }
 .pb-bg-thumb {
   aspect-ratio: 4/5; border-radius: var(--radius-sm); overflow: hidden;
   background: var(--surface-2); cursor: pointer; border: 2px solid transparent;
-  transition: border-color 0.12s;
+  transition: border-color 0.12s; position: relative;
 }
+.pb-bg-delete {
+  position: absolute; bottom: 4px; right: 4px; z-index: 2;
+  background: none; border: none; cursor: pointer; padding: 3px; line-height: 1;
+  color: rgba(255,255,255,0.85); text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  opacity: 0; transition: opacity 0.15s, color 0.15s;
+}
+.pb-bg-thumb:hover .pb-bg-delete { opacity: 1; }
+.pb-bg-delete:hover { color: #ff5555; }
 .pb-bg-thumb:hover { border-color: var(--border); }
 .pb-bg-thumb.active { border-color: var(--gold); }
 .pb-bg-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -3549,8 +3590,369 @@ body.studio-open .app-header { display: none; }
 
 /* ── PUBLISH V3 — Reel workspace (Panel 4 when reel slot) ────── */
 .pb-reel-ws {
-  flex: 1; display: flex; flex-direction: column; overflow-y: auto;
-  padding: 12px 14px 16px; min-height: 0;
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  min-height: 0; position: relative;
+}
+
+/* ── REELS SURFACE — Card list ─────────────────────────────── */
+.pb-reel-list-wrap {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+}
+.pb-reel-slot-ctx {
+  padding: 8px 16px; font-size: 11px; color: var(--text-3); font-weight: 500;
+  border-bottom: 1px solid var(--border); flex-shrink: 0; letter-spacing: 0.03em;
+}
+.pb-reel-card-list {
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: 14px 16px; min-height: 0;
+}
+
+/* Card shell — flex row: media column left, info columns right */
+.pb-reel-card {
+  display: flex; flex-direction: row;
+  border: 1px solid var(--border); border-left: 3px solid transparent;
+  border-radius: var(--radius-sm); margin-bottom: 14px;
+  background: var(--surface); cursor: pointer; position: relative; overflow: hidden;
+  transition: border-left-color 0.15s, box-shadow 0.15s; min-width: 0;
+}
+.pb-reel-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+.pb-reel-card.active { border-left-color: var(--gold); }
+
+/* Media column — left, contains thumbnail or live player */
+.pb-reel-card-media {
+  flex-shrink: 0; width: 115px; min-height: 204px;
+  background: #0D0A0A; border-right: 1px solid var(--border);
+  position: relative; cursor: pointer; overflow: hidden;
+  transition: width 0.18s ease, min-height 0.18s ease;
+}
+.pb-reel-card-media.playing { width: 360px; min-height: 640px; }
+
+/* Card row — 3 info columns (thumb now lives in media column) */
+.pb-reel-card-row {
+  display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.5fr) 88px;
+  flex: 1; min-height: 204px;
+}
+
+/* Old below-row player slot — hidden, kept for DOM safety */
+.pb-reel-card-player { display: none; }
+
+/* Live player — fills media column when playing */
+.pb-reel-card-media-player { position: absolute; inset: 0; z-index: 2; }
+.pb-reel-card-media-player iframe { width: 100%; height: 100%; border: none; display: block; }
+
+/* Close button (shared by media player) */
+.pb-reel-card-player-close {
+  position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.65);
+  border: none; color: #fff; width: 24px; height: 24px; border-radius: 50%;
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 0;
+  display: flex; align-items: center; justify-content: center; z-index: 3;
+}
+
+/* Thumbnail — fills media column */
+.pb-reel-card-thumb {
+  position: absolute; inset: 0; overflow: hidden; background: #0D0A0A;
+}
+.pb-reel-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pb-reel-card-thumb-blank {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: #555; font-size: 28px;
+}
+.pb-reel-card-thumb-hover {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.35); opacity: 0; transition: opacity 0.15s; color: #fff; z-index: 1;
+}
+.pb-reel-card-media:hover .pb-reel-card-thumb-hover { opacity: 1; }
+
+/* Info column: name + summary */
+.pb-reel-card-info {
+  padding: 14px 14px; display: flex; flex-direction: column; gap: 10px;
+  border-right: 1px solid var(--border); min-width: 0;
+}
+.pb-reel-card-name-row { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.pb-reel-card-name {
+  font-family: var(--font-heading); font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0;
+}
+.pb-reel-card-name[contenteditable="true"] {
+  white-space: normal; overflow: visible; outline: none;
+  border-bottom: 1px solid var(--gold); text-overflow: clip;
+}
+.pb-reel-name-pencil {
+  opacity: 0; flex-shrink: 0; cursor: pointer; color: var(--text-3);
+  transition: opacity 0.15s; display: flex; align-items: center;
+}
+.pb-reel-card-name-row:hover .pb-reel-name-pencil { opacity: 1; }
+.pb-reel-card-summary-area { flex: 1; min-height: 0; display: flex; align-items: flex-start; gap: 6px; }
+.pb-reel-card-desc {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--text-3); line-height: 1.6;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pb-reel-copy-btn {
+  flex-shrink: 0; background: none; border: none; cursor: pointer; color: var(--text-3);
+  padding: 3px; line-height: 1; opacity: 0; transition: opacity 0.15s, color 0.15s;
+  align-self: flex-start;
+}
+.pb-reel-card-info:hover .pb-reel-copy-btn { opacity: 1; }
+.pb-reel-copy-btn:hover { color: var(--text); }
+
+/* Content column: Caption box + Title Card box */
+.pb-reel-card-content {
+  display: flex; flex-direction: column; background: var(--surface);
+  border-right: 1px solid var(--border); min-width: 0;
+}
+.pb-reel-content-box {
+  flex: 1; padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; min-height: 0;
+}
+.pb-reel-content-box:first-child { border-bottom: 1px solid var(--border); }
+.pb-reel-content-box:focus-within { background: var(--surface-2); }
+.pb-reel-content-hdr {
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.pb-reel-content-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.pb-reel-content-regen {
+  font-size: 9px; background: none; border: 1px solid var(--border); border-radius: 10px;
+  padding: 2px 8px; cursor: pointer; color: var(--text-3); font-family: var(--font-body);
+  transition: border-color 0.12s, color 0.12s;
+}
+.pb-reel-content-regen:hover { border-color: var(--text-3); color: var(--text); }
+.pb-reel-card-caption {
+  flex: 1; font-size: 11px; color: var(--text-2, #666); line-height: 1.6; cursor: text;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pb-reel-card-caption[contenteditable="true"] {
+  display: block; overflow: visible; -webkit-line-clamp: unset;
+  outline: none; background: var(--surface); border-radius: 3px; padding: 3px 5px;
+}
+.pb-reel-card-caption.has-final { color: var(--text); }
+.pb-reel-card-tc {
+  flex: 1; font-size: 11px; color: var(--text); line-height: 1.6; cursor: text;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pb-reel-card-tc[contenteditable="true"] {
+  white-space: normal; overflow: visible; outline: none; text-overflow: clip;
+  background: var(--surface); border-radius: 3px; padding: 3px 5px;
+}
+
+/* Actions column */
+.pb-reel-card-actions {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px 10px;
+  align-items: stretch; background: var(--surface);
+}
+.pb-reel-card-star {
+  background: none; border: none; cursor: pointer; padding: 2px 0;
+  line-height: 1; color: var(--text-3); font-size: 15px;
+  transition: color 0.15s; align-self: flex-end; margin-bottom: 2px;
+}
+.pb-reel-card-star:hover,
+.pb-reel-card-star.starred { color: var(--gold); }
+.pb-reel-card-btn {
+  font-size: 10px; padding: 7px 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer; text-align: center; font-family: var(--font-body);
+  transition: background 0.12s, border-color 0.12s; line-height: 1.3;
+}
+.pb-reel-card-btn:hover { background: var(--bg); border-color: var(--text-3); }
+.pb-reel-card-btn.primary {
+  background: var(--gold); border-color: var(--gold); color: #0D0A0A; font-weight: 700;
+}
+.pb-reel-card-btn.primary:hover { opacity: 0.85; }
+.pb-reel-card-btn.danger { border-color: #D12225; color: #D12225; }
+.pb-reel-card-btn.danger:hover { background: #D122250D; }
+.pb-reel-card-status {
+  font-size: 9px; text-align: center; padding: 3px 6px; border-radius: 20px;
+  font-weight: 600; letter-spacing: 0.04em;
+}
+.pb-reel-card-status.scheduled { background: #d4edda; color: #155724; }
+.pb-reel-card-status.candidate {
+  background: var(--surface); color: var(--text-3); border: 1px solid var(--border);
+}
+
+/* ── Revision request modal ──────────────────────────────────── */
+.pb-revision-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.pb-revision-modal {
+  background: var(--surface); border-radius: var(--radius);
+  width: 440px; max-width: calc(100vw - 32px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2); display: flex; flex-direction: column;
+}
+.pb-revision-hdr {
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--border);
+  font-family: var(--font-heading); font-size: 13px; font-weight: 700; color: var(--text);
+}
+.pb-revision-body { padding: 14px 16px; }
+.pb-revision-textarea {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  font-size: 12px; font-family: var(--font-body); color: var(--text);
+  background: var(--surface-2); resize: vertical; min-height: 96px;
+  outline: none; line-height: 1.55;
+}
+.pb-revision-textarea:focus { border-color: var(--gold); }
+.pb-revision-footer {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.pb-revision-submit {
+  padding: 8px 20px; border: none; border-radius: var(--radius-sm);
+  background: #D12225; color: #fff; font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: var(--font-body); transition: opacity 0.12s;
+}
+.pb-revision-submit:hover { opacity: 0.85; }
+
+/* Bg library star */
+.pb-bg-star {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  background: none; border: none; cursor: pointer; padding: 3px;
+  color: rgba(255,255,255,0.85); font-size: 13px; line-height: 1;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  opacity: 0; transition: opacity 0.15s, color 0.15s;
+}
+.pb-bg-thumb:hover .pb-bg-star,
+.pb-bg-star.starred { opacity: 1; }
+.pb-bg-star.starred { color: var(--gold); }
+
+/* ── REELS SURFACE — Chat panel ─────────────────────────────── */
+.pb-reel-chat {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 310px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 0.22s ease;
+  z-index: 10; box-shadow: -4px 0 16px rgba(0,0,0,0.08);
+}
+.pb-reel-chat.open { transform: translateX(0); }
+.pb-reel-chat-top {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.pb-reel-chat-close {
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: var(--text-3); font-size: 16px; line-height: 1; display: flex; align-items: center;
+}
+.pb-reel-chat-close:hover { color: var(--text); }
+.pb-reel-chat-title { font-size: 11px; font-weight: 600; color: var(--text); flex: 1; }
+.pb-reel-chat-summary {
+  padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border);
+  font-size: 10px; color: var(--text-3); line-height: 1.5; flex-shrink: 0;
+  max-height: 64px; overflow-y: auto;
+}
+.pb-reel-chat-thread {
+  flex: 1; overflow-y: auto; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.pb-reel-chat-msg { display: flex; flex-direction: column; }
+.pb-reel-chat-bubble {
+  padding: 8px 10px; font-size: 11px; line-height: 1.5; max-width: 90%;
+  border-radius: 10px;
+}
+.pb-reel-chat-msg.user .pb-reel-chat-bubble {
+  background: var(--gold); color: #0D0A0A; align-self: flex-end;
+  border-radius: 10px 10px 2px 10px;
+}
+.pb-reel-chat-msg.assistant .pb-reel-chat-bubble {
+  background: var(--surface-2); color: var(--text);
+  align-self: flex-start; border-radius: 10px 10px 10px 2px;
+}
+.pb-reel-cap-chips { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.pb-reel-cap-chip {
+  padding: 8px 10px; background: var(--surface); border: 1px solid var(--gold);
+  border-radius: 8px; font-size: 11px; color: var(--text); cursor: pointer; line-height: 1.4;
+  transition: background 0.15s;
+}
+.pb-reel-cap-chip:hover { background: #FEBE1815; }
+.pb-reel-chat-thinking {
+  font-size: 11px; color: var(--text-3); padding: 8px 0; font-style: italic;
+}
+.pb-reel-chat-footer {
+  padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0;
+  display: flex; gap: 8px; align-items: center;
+}
+.pb-reel-chat-input {
+  flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 18px;
+  font-size: 11px; font-family: var(--font-body); outline: none;
+  background: var(--surface-2); color: var(--text);
+}
+.pb-reel-chat-input:focus { border-color: var(--gold); }
+.pb-reel-chat-send {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--gold); border: none;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: #0D0A0A; font-size: 14px; flex-shrink: 0;
+}
+.pb-reel-chat-send:hover { opacity: 0.85; }
+
+/* ── REELS SURFACE — Schedule popover ───────────────────────── */
+.pb-sched-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.pb-sched-modal {
+  background: var(--surface); border-radius: var(--radius);
+  width: 500px; max-width: calc(100vw - 32px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); display: flex; flex-direction: column;
+}
+.pb-sched-modal-hdr {
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 700; color: var(--text);
+}
+.pb-sched-week-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 14px 16px;
+}
+.pb-sched-day-col { display: flex; flex-direction: column; gap: 4px; }
+.pb-sched-day-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-3); text-align: center; margin-bottom: 2px;
+}
+.pb-sched-pill {
+  padding: 4px 6px; border-radius: 20px; font-size: 9px; text-align: center;
+  border: 1px solid var(--border); cursor: pointer; background: var(--surface-2);
+  color: var(--text-3); transition: all 0.15s; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.pb-sched-pill.occupied {
+  cursor: default; background: #d4edda; border-color: #b8dbc4; color: #155724;
+  display: flex; align-items: center; gap: 4px; justify-content: space-between; padding-right: 4px;
+}
+.pb-sched-unschedule-btn {
+  background: none; border: none; cursor: pointer; color: inherit; font-size: 13px;
+  line-height: 1; padding: 0 2px; opacity: 0.5; font-weight: 700; flex-shrink: 0;
+}
+.pb-sched-unschedule-btn:hover { opacity: 1; color: #D12225; }
+.pb-sched-pill.available:hover { border-color: var(--gold); color: var(--text); }
+.pb-sched-pill.selected { background: var(--gold); border-color: var(--gold); color: #0D0A0A; font-weight: 600; }
+.pb-sched-add-row { padding: 2px 16px 12px; }
+.pb-sched-add-btn {
+  font-size: 10px; background: none; border: 1px dashed var(--border); border-radius: 20px;
+  padding: 4px 12px; cursor: pointer; color: var(--text-3); font-family: var(--font-body);
+}
+.pb-sched-add-btn:hover { border-color: var(--text-3); color: var(--text); }
+.pb-sched-modal-footer {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.pb-sched-cancel {
+  padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text-3); font-size: 12px; cursor: pointer;
+  font-family: var(--font-body);
+}
+.pb-sched-cancel:hover { color: var(--text); border-color: var(--text-3); }
+.pb-sched-confirm {
+  padding: 8px 20px; border: none; border-radius: var(--radius-sm);
+  background: var(--gold); color: #0D0A0A; font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: var(--font-body);
+}
+.pb-sched-confirm:disabled { opacity: 0.4; cursor: default; }
+.pb-sched-confirm:not(:disabled):hover { opacity: 0.85; }
+
+/* Week slot left-border states */
+.pb-slot { border-left: 3px solid #D12225; }
+.pb-slot.filled { border-left-color: var(--gold); }
+.pb-slot.active { border-left-color: var(--gold); }
+.pb-slot-caption-snip {
+  font-size: 10px; color: var(--text-3); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
 }
 
 </style>
@@ -3925,41 +4327,77 @@ body.studio-open .app-header { display: none; }
 
             <!-- Controls column: caption + schedule + notes -->
             <div class="pb-canvas-controls">
-              <!-- Caption card: text + Regenerate footer -->
+              <!-- Caption card: text + variant chips + Regenerate footer -->
               <div class="pb-caption-card">
                 <div class="pb-caption-area" id="pbCaptionArea">
                   <div class="pb-caption-text" id="pbCaptionText"
                        onfocus="pbUnlockCaption(this)"
                        onblur="pbCaptionBlur(this)"></div>
                 </div>
+                <div class="pb-caption-variants" id="pbCaptionVariants"></div>
                 <div class="pb-caption-footer">
                   <span class="pb-caption-hint">Click to edit · Click away to save</span>
                   <button class="pb-caption-regen" onclick="pbRegenCaption()">Regenerate</button>
                 </div>
               </div>
               <button class="pb-schedule-btn" id="pbScheduleBtn" onclick="pbAddToSlot()">Add to Week</button>
-              <textarea class="pb-notes" id="pbNotes" placeholder="Notes — private scratchpad, won't post" rows="3" oninput="pbSaveCurrentNotes()"></textarea>
             </div>
 
           </div><!-- /pb-ws-active -->
 
           <!-- Reel workspace -->
           <div class="pb-reel-ws" id="pbReelWs" style="display:none">
-            <div class="pb-reel-area" id="pbReelArea">
+
+            <!-- NEW: Card list (Reels Surface) -->
+            <div class="pb-reel-list-wrap" id="pbReelListWrap" style="display:none">
+              <div class="pb-reel-slot-ctx" id="pbReelSlotCtx"></div>
+              <div class="pb-reel-card-list" id="pbReelCardList"></div>
+            </div>
+
+            <!-- Chat panel (slides in from right over card list) -->
+            <div class="pb-reel-chat" id="pbReelChatPanel">
+              <div class="pb-reel-chat-top">
+                <button class="pb-reel-chat-close" onclick="pbCloseChatPanel()">&#8592;</button>
+                <span class="pb-reel-chat-title">Generate Captions</span>
+              </div>
+              <div class="pb-reel-chat-summary" id="pbReelChatSummary"></div>
+              <div class="pb-reel-chat-thread" id="pbReelChatThread"></div>
+              <div class="pb-reel-chat-footer">
+                <input class="pb-reel-chat-input" id="pbReelChatInput" type="text"
+                  placeholder="Type a message…"
+                  onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();pbChatSend();}">
+                <button class="pb-reel-chat-send" onclick="pbChatSend()">&#8593;</button>
+              </div>
+            </div>
+
+            <!-- OLD: Player + controls (kept for pbClearPreview compatibility; hidden in new flow) -->
+            <div class="pb-reel-area" id="pbReelArea" style="display:none">
               <div class="pb-reel-player-wrap" id="pbReelPlayerWrap">
                 <div class="pb-reel-player-blank" id="pbReelPlayerBlank">Select a reel</div>
               </div>
               <div class="pb-reel-controls">
-                <!-- Caption card: text + Regenerate footer -->
+                <!-- Caption card: text + variant chips + Regenerate footer -->
                 <div class="pb-caption-card">
                   <div class="pb-caption-area" id="pbReelCaptionArea">
                     <div class="pb-caption-text" id="pbReelCaptionText"
                          onfocus="pbUnlockCaption(this)"
                          onblur="pbCaptionBlur(this)"></div>
                   </div>
+                  <div class="pb-caption-variants" id="pbReelCaptionVariants"></div>
                   <div class="pb-caption-footer">
                     <span class="pb-caption-hint">Click to edit · Click away to save</span>
                     <button class="pb-caption-regen" onclick="pbRegenCaption()">Regenerate</button>
+                  </div>
+                </div>
+                <!-- Title card: short text hook for editorial use in DaVinci -->
+                <div class="pb-titlecard-card">
+                  <div class="pb-titlecard-label">Title Card <span class="pb-titlecard-hint">for editing — 5–8 words</span></div>
+                  <div class="pb-caption-text pb-titlecard-text" id="pbReelTitleCard"
+                       onfocus="pbUnlockCaption(this)"
+                       onblur="pbTitleCardBlur(this)"></div>
+                  <div class="pb-caption-footer">
+                    <span class="pb-caption-hint">Click to edit</span>
+                    <button class="pb-caption-regen" id="pbTitleCardRegenBtn" onclick="pbRegenTitleCard()">Generate</button>
                   </div>
                 </div>
                 <button class="pb-schedule-btn" id="pbReelScheduleBtn" onclick="pbAddToSlot()" disabled>Add to Week</button>
@@ -4003,6 +4441,36 @@ body.studio-open .app-header { display: none; }
       </div><!-- /pb-workspace -->
 
     </div><!-- /pb-body -->
+
+    <!-- Revision request modal -->
+    <div class="pb-revision-overlay" id="pbRevisionOverlay" style="display:none" onclick="pbCloseRevisionModal(event)">
+      <div class="pb-revision-modal" onclick="event.stopPropagation()">
+        <div class="pb-revision-hdr" id="pbRevisionHdr">Request Revisions</div>
+        <div class="pb-revision-body">
+          <textarea class="pb-revision-textarea" id="pbRevisionTextarea"
+            placeholder="Describe the edit — e.g. 'Cut the last 30 seconds' or 'Remove the intro music'&#10;&#10;Be specific so it can be done without a call-back."></textarea>
+        </div>
+        <div class="pb-revision-footer">
+          <button class="pb-sched-cancel" onclick="pbCloseRevisionModal()">Cancel</button>
+          <button class="pb-revision-submit" id="pbRevisionSubmitBtn" onclick="pbSubmitRevision()">Submit Request</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Schedule popover modal (shared across Reels Surface) -->
+    <div class="pb-sched-overlay" id="pbSchedOverlay" style="display:none" onclick="pbCloseSchedPopover(event)">
+      <div class="pb-sched-modal" onclick="event.stopPropagation()">
+        <div class="pb-sched-modal-hdr" id="pbSchedHdr">Schedule Reel</div>
+        <div class="pb-sched-week-grid" id="pbSchedWeekGrid"></div>
+        <div class="pb-sched-add-row">
+          <button class="pb-sched-add-btn" onclick="pbSchedPickCustomDay()">+ Add custom day</button>
+        </div>
+        <div class="pb-sched-modal-footer">
+          <button class="pb-sched-cancel" onclick="pbCloseSchedPopover()">Cancel</button>
+          <button class="pb-sched-confirm" id="pbSchedConfirmBtn" onclick="pbConfirmSchedule()" disabled>Schedule</button>
+        </div>
+      </div>
+    </div>
 
   </div><!-- /stPublishPanel -->
 
@@ -4159,7 +4627,8 @@ body.studio-open .app-header { display: none; }
           <button class="iw-tool-btn" onclick="showToast('Save to Episode — coming in Save spoke.')">Save to Episode</button>
         </div>
         <div class="st-doc-content">
-          <div class="st-doc-sheet" id="stDocSheet" contenteditable="true" spellcheck="true">
+          <div class="st-doc-sheet" id="stDocSheet" contenteditable="true" spellcheck="true"
+               oninput="stDocClearEmpty()">
             <div class="st-doc-empty">
               <span>No doc open.</span>
               <span style="font-size:11px;color:var(--text-3);">Ask Studio Chat or select from My Docs →</span>
@@ -4398,8 +4867,114 @@ var state = {
   expanded:      {},   // taskId -> bool (Tasks view)
   looseExpanded: {},   // taskId -> bool (Dashboard loose tasks)
   assetCounts:   null, // { reels: N, images: N } — fetched on episode detail open
-  backTarget:    null  // 'episodeList' | 'episodeDetail' | 'contacts'
+  backTarget:    null, // 'episodeList' | 'episodeDetail' | 'contacts'
+  versions:      {}    // domain version stamps — maintained by refreshVersions()
 };
+
+// ── VERSION-AWARE LOADER — PHASE 1.4 ────────────────────────
+// Active: version-tracked + batch-fetched on tab return via getDomainsBatch().
+// Tracked only: version recorded from getAllVersions() response, no fetcher today.
+// Phase 4 (Help Desk): move audit_trail to ACTIVE_LOADER_DOMAINS and add its fetcher.
+// asset_library and manifests are out of scope — get version-aware loading with their surfaces.
+var ACTIVE_LOADER_DOMAINS = ['tasks', 'episodes', 'contacts'];
+var TRACKED_ONLY_DOMAINS  = ['audit_trail'];
+// Set true by loadData() just before calling switchTab — prevents a redundant
+// getAllVersions() call on the initial tab switch since versions are already fresh.
+var _coldStartComplete = false;
+
+/**
+ * Called on every within-app tab switch. Fetches all domain versions in one
+ * call, then batch-fetches only the stale active domains. Two-call ceiling:
+ * getAllVersions() always fires; getDomainsBatch() fires only when needed.
+ * On getAllVersions() failure, falls back to fetching all active domains.
+ */
+function refreshVersions() {
+  if (_coldStartComplete) { _coldStartComplete = false; return; }
+  google.script.run
+    .withSuccessHandler(function(serverVersions) {
+      TRACKED_ONLY_DOMAINS.forEach(function(d) {
+        if (serverVersions[d] !== undefined) state.versions[d] = serverVersions[d];
+      });
+
+      var stale = ACTIVE_LOADER_DOMAINS.filter(function(d) {
+        return state.versions[d] === undefined ||
+               serverVersions[d] === undefined ||
+               serverVersions[d] > state.versions[d];
+      });
+
+      if (!stale.length) return;
+
+      google.script.run
+        .withSuccessHandler(function(batchData) {
+          stale.forEach(function(d) {
+            if (batchData && batchData[d] !== undefined) {
+              state[d]          = batchData[d] || [];
+              state.versions[d] = serverVersions[d];
+            } else {
+              console.error('[refreshVersions] batch missing domain:', d);
+            }
+          });
+          _rerenderCurrentTab();
+        })
+        .withFailureHandler(function(err) {
+          console.error('[refreshVersions] batch fetch failed:', err);
+        })
+        .getDomainsBatch(stale);
+    })
+    .withFailureHandler(function(err) {
+      console.error('[refreshVersions] getAllVersions failed, fetching all active:', err);
+      google.script.run
+        .withSuccessHandler(function(batchData) {
+          ACTIVE_LOADER_DOMAINS.forEach(function(d) {
+            if (batchData && batchData[d] !== undefined) state[d] = batchData[d] || [];
+          });
+          _rerenderCurrentTab();
+        })
+        .withFailureHandler(function(e) {
+          console.error('[refreshVersions] fallback batch fetch failed:', e);
+        })
+        .getDomainsBatch(ACTIVE_LOADER_DOMAINS);
+    })
+    .getAllVersions();
+}
+
+function _rerenderCurrentTab() {
+  if      (state.currentTab === 'dashboard') renderDashboard();
+  else if (state.currentTab === 'tasks')     renderTasksList();
+  else if (state.currentTab === 'episodes')  renderEpisodeList();
+  else if (state.currentTab === 'contacts')  renderContactsList(state.contacts);
+}
+
+/**
+ * Returns cached data for a domain, fetching fresh if the cache is cold.
+ * Only works for ACTIVE_LOADER_DOMAINS. Staleness is handled by refreshVersions()
+ * on each tab switch; loadDomain() is for surfaces that need to ensure data is
+ * loaded without triggering a full version refresh.
+ * callback(data) receives the domain's current state array.
+ */
+function loadDomain(domain, callback) {
+  if (ACTIVE_LOADER_DOMAINS.indexOf(domain) === -1) {
+    console.warn('[loadDomain] domain not in ACTIVE_LOADER_DOMAINS:', domain);
+    if (callback) callback(null);
+    return;
+  }
+  if (state.versions[domain] !== undefined) {
+    if (callback) callback(state[domain]);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(batchData) {
+      if (batchData && batchData[domain] !== undefined) {
+        state[domain] = batchData[domain] || [];
+      }
+      if (callback) callback(state[domain]);
+    })
+    .withFailureHandler(function(err) {
+      console.error('[loadDomain] failed for domain:', domain, err);
+      if (callback) callback(state[domain]);
+    })
+    .getDomainsBatch([domain]);
+}
 
 var reviewSession = {
   episodeUid: null,
@@ -4438,19 +5013,28 @@ document.addEventListener("DOMContentLoaded", function() {
 
 function loadData() {
   google.script.run
-    .withSuccessHandler(function(episodes) {
-      state.episodes = episodes || [];
+    .withSuccessHandler(function(serverVersions) {
+      TRACKED_ONLY_DOMAINS.forEach(function(d) {
+        if (serverVersions[d] !== undefined) state.versions[d] = serverVersions[d];
+      });
       google.script.run
-        .withSuccessHandler(function(tasks) {
-          state.tasks  = tasks || [];
-          state.loaded = true;
+        .withSuccessHandler(function(batchData) {
+          ACTIVE_LOADER_DOMAINS.forEach(function(d) {
+            if (batchData && batchData[d] !== undefined) {
+              state[d]          = batchData[d] || [];
+              state.versions[d] = serverVersions[d];
+            }
+          });
+          state.contactsLoaded = true;
+          state.loaded         = true;
+          _coldStartComplete   = true;
           switchTab("dashboard");
         })
         .withFailureHandler(handleLoadError)
-        .getTasks();
+        .getDomainsBatch(ACTIVE_LOADER_DOMAINS);
     })
     .withFailureHandler(handleLoadError)
-    .getEpisodes();
+    .getAllVersions();
 }
 
 function handleLoadError(err) {
@@ -4545,20 +5129,12 @@ function switchTab(tab) {
   document.getElementById("navDashboard").classList.toggle("active", tab === "dashboard");
   document.getElementById("navContacts").classList.toggle("active",  tab === "contacts");
 
-  if (tab === "dashboard") {
-    renderDashboard();
-    google.script.run
-      .withSuccessHandler(function(tasks) {
-        if (state.currentTab !== "dashboard") return;
-        state.tasks = tasks || [];
-        renderDashboard();
-      })
-      .withFailureHandler(function() {})
-      .getTasks();
-  }
-  else if (tab === "tasks")      renderTasksList();
-  else if (tab === "episodes")   renderEpisodeList();
-  else if (tab === "contacts")   loadContacts();
+  refreshVersions();
+
+  if      (tab === "dashboard") renderDashboard();
+  else if (tab === "tasks")     renderTasksList();
+  else if (tab === "episodes")  renderEpisodeList();
+  else if (tab === "contacts")  loadContacts();
 }
 
 // ── STUDIO ───────────────────────────────────────────────────
@@ -4632,9 +5208,18 @@ var pb = {
   slotNotes:            {},
   slotContent:          {},
   reelSummary:          '',
+  captionVariants:      [],
   _defaultTextColor:    '#ffffff',
   _overlayColor:        null,
-  _overlayType:         'solid'
+  _overlayType:         'solid',
+  // Reels Surface state
+  reelCards:            [],
+  activeReelAssetId:    null,
+  chatHistory:          {},     // keyed by Asset_ID
+  chatPanelAssetId:     null,
+  schedPopoverAssetId:  null,
+  schedSelectedSlotId:  null,
+  schedSelectedDay:     null
 };
 
 // ── PUBLISH — localStorage helpers (notes + captions) ─────────
@@ -4732,7 +5317,9 @@ function stSwitchTab(tab) {
   document.getElementById('stStudioMain').style.display    = isPublish ? 'none' : 'flex';
 
   if (isPublish) {
-    if (!pb.episodeUid) pbAutoSelectEpisode();
+    // Auto-select the closest unfinished episode unless the user has explicitly
+    // chosen one this session (pb._userChoseEpisode is set by the dropdown or showEpisodeReview).
+    if (!pb._userChoseEpisode) pbAutoSelectEpisode();
     return;
   }
 
@@ -5038,9 +5625,19 @@ function pbSetEpisode(uid, name) {
   pb.slotNotes             = {};
   pb.slotContent           = {};
   pb.reelSummary           = '';
+  pb.captionVariants       = [];
   pb._defaultTextColor     = '#ffffff';
   pb._overlayColor         = null;
   pb._overlayType          = 'solid';
+  // Reels Surface reset
+  pb.reelCards             = [];
+  pb.activeReelAssetId     = null;
+  pb.chatHistory           = {};
+  pb.chatPanelAssetId      = null;
+  pb.schedPopoverAssetId   = null;
+  pb.schedSelectedSlotId   = null;
+  pb.schedSelectedDay      = null;
+  pbCloseChatPanel();
 
   // Capture release date for Schedule button labels
   pb.releaseDate = null;
@@ -5098,7 +5695,7 @@ function pbPopulateEpDrop() {
     state.episodes.forEach(function(ep) {
       var guest = ep.Guest_Name || ep.Episode_UID || '—';
       var date  = ep.Release_Date ? String(ep.Release_Date).substring(0, 10) : '';
-      html += '<div class="pb-ep-item" data-uid="' + esc(ep.Episode_UID) + '" onclick="event.stopPropagation();pbSetEpisode(\'' + esc(ep.Episode_UID) + '\',\'' + esc(guest) + '\')">' +
+      html += '<div class="pb-ep-item" data-uid="' + esc(ep.Episode_UID) + '" onclick="event.stopPropagation();pb._userChoseEpisode=true;pbSetEpisode(\'' + esc(ep.Episode_UID) + '\',\'' + esc(guest) + '\')">' +
         '<span>' + esc(guest) + '</span>' +
         (date ? '<span class="pb-ep-date">' + esc(date) + '</span>' : '') +
         '</div>';
@@ -5133,12 +5730,20 @@ function pbRenderAccordion() {
         thumb = '<img src="' + esc(slot.filled.thumbnailUrl) + '" onerror="this.style.display=\'none\'" />';
       }
       var checkmark = isFilled ? '<div class="pb-slot-check">✓</div>' : '';
-      var xBtn = isFilled ? '<button class="pb-slot-x" onclick="pbUnscheduleSlot(\'' + esc(slot.slotId) + '\',event)" title="Unschedule">×</button>' : '';
-      html += '<div class="pb-slot' + (isFilled ? ' filled' : '') + '" data-slot-id="' + esc(slot.slotId) + '" data-slot-day="' + esc(day.day) + '" onclick="pbSelectSlot(\'' + esc(slot.slotId) + '\',\'' + esc(day.day) + '\')">' +
+      var isCustom  = !slot.isPlaybook;
+      var trashSvg  = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>';
+      var xBtn = isCustom
+        ? '<button class="pb-slot-del" onclick="pbDeleteCustomSlot(\'' + esc(slot.slotId) + '\',event)" title="Delete slot">' + trashSvg + '</button>'
+        : (isFilled ? '<button class="pb-slot-x" onclick="pbUnscheduleSlot(\'' + esc(slot.slotId) + '\',event)" title="Unschedule">×</button>' : '');
+      var captionSnip = isFilled && slot.filled.caption
+        ? '<div class="pb-slot-caption-snip">' + esc((slot.filled.caption || '').slice(0, 60)) + '</div>'
+        : '<div class="pb-slot-why">' + esc(slot.platform || '') + '</div>';
+      var typeLabel = slot.assetType.replace(/_/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
+      html += '<div class="pb-slot' + (isFilled ? ' filled' : '') + (isCustom ? '" data-custom="1' : '') + '" data-slot-id="' + esc(slot.slotId) + '" data-slot-day="' + esc(day.day) + '" onclick="pbSelectSlot(\'' + esc(slot.slotId) + '\',\'' + esc(day.day) + '\')">' +
         '<div class="pb-slot-rect ' + colorClass + '">' + thumb + checkmark + '</div>' +
         '<div class="pb-slot-info">' +
-          '<div class="pb-slot-type">' + esc(slot.assetType.replace(/_/g,' ')) + '</div>' +
-          '<div class="pb-slot-why">' + esc(slot.platform || '') + '</div>' +
+          '<div class="pb-slot-type">' + esc(typeLabel) + '</div>' +
+          captionSnip +
         '</div>' +
         xBtn +
       '</div>';
@@ -5228,40 +5833,39 @@ function pbSelectSlot(slotId, day) {
   pbUpdateScheduleBtn();
 
   if (pb.activeSlotIsReel) {
-    document.getElementById('pbHqPanel').style.display     = 'none';
-    document.getElementById('pbReelBrowser').style.display = 'block';
-    document.getElementById('pbPanel3Hdr').textContent     = 'Reels';
-    document.getElementById('pbReelBrowser').innerHTML     = '<span class="pb-no-candidates">Loading…</span>';
-    // Restore notes for this reel slot (localStorage preferred over in-memory)
-    var reelNotes = document.getElementById('pbReelNotes');
-    var savedReelNotes = pbLsGet(pbLsKey('notes', slotId)) || pb.slotNotes[slotId] || '';
-    if (reelNotes) { reelNotes.value = savedReelNotes; pb.slotNotes[slotId] = savedReelNotes; }
-    // Restore reel caption
-    var savedReelCap = pbLsGet(pbLsKey('caption', slotId));
-    var reelCapEl = document.getElementById('pbReelCaptionText');
-    if (reelCapEl && savedReelCap) { reelCapEl.textContent = savedReelCap; pb.caption = savedReelCap; }
-    var prevPostId = slot.filled ? slot.filled.postId : null;
+    // Close chat panel if open from a previous slot
+    pbCloseChatPanel();
+    pb.activeReelAssetId = null;
+
+    // Show card list, hide old browser/player
+    document.getElementById('pbReelListWrap').style.display = 'flex';
+    document.getElementById('pbReelCardList').innerHTML = '<div style="padding:16px;font-size:11px;color:var(--text-3)">Loading…</div>';
+    document.getElementById('pbReelSlotCtx').textContent =
+      slot.assetType.replace(/_/g, ' ') + ' · ' + day +
+      (slot.platform ? ' · ' + slot.platform : '');
+
     google.script.run
-      .withSuccessHandler(function(assets) {
-        pb.candidates = assets || [];
-        pbRenderReelBrowser(prevPostId);
+      .withSuccessHandler(function(reels) {
+        pb.reelCards = reels || [];
+        pbRenderReelCardList();
       })
       .withFailureHandler(function() {
-        document.getElementById('pbReelBrowser').innerHTML = '<span class="pb-no-candidates">Could not load reels.</span>';
+        document.getElementById('pbReelCardList').innerHTML =
+          '<div style="padding:16px;font-size:11px;color:var(--text-3)">Could not load reels.</div>';
       })
-      .getSocialAssets(pb.episodeUid, slot.assetType);
+      .getReelsForEpisode(pb.episodeUid);
   } else {
+    document.getElementById('pbReelListWrap').style.display = 'none';
+    pbCloseChatPanel();
     document.getElementById('pbHqPanel').style.display     = 'block';
     document.getElementById('pbReelBrowser').style.display = 'none';
     document.getElementById('pbPanel3Hdr').textContent     = 'Hooks & Quotes';
-    // Restore notes for this image slot (localStorage preferred over in-memory)
-    var imgNotes = document.getElementById('pbNotes');
-    var savedImgNotes = pbLsGet(pbLsKey('notes', slotId)) || pb.slotNotes[slotId] || '';
-    if (imgNotes) { imgNotes.value = savedImgNotes; pb.slotNotes[slotId] = savedImgNotes; }
-    // Restore image caption
-    var savedImgCap = pbLsGet(pbLsKey('caption', slotId));
+    // Restore image caption — always show the area regardless of whether caption exists
+    var savedImgCap = pbLsGet(pbLsKey('caption', slotId)) || '';
     var imgCapEl = document.getElementById('pbCaptionText');
-    if (imgCapEl && savedImgCap) { imgCapEl.textContent = savedImgCap; pb.caption = savedImgCap; }
+    var capArea   = document.getElementById('pbCaptionArea');
+    if (imgCapEl) { imgCapEl.textContent = savedImgCap; pb.caption = savedImgCap; }
+    if (capArea)  capArea.style.display = 'block';
     var saved = pb.slotCanvases[slotId];
     if (saved) {
       pb.logoPlaced  = saved.logoPlaced;
@@ -5423,14 +6027,62 @@ function pbSelectReel(postId) {
       .getOrGenerateReelSummary(postId, pb.episodeUid);
   }
 
-  // Caption — prefer localStorage (generated/edited) over sheet value
+  // Caption — prefer localStorage, then AL Caption_Draft variants, then raw Caption
   var storedReelCap = pbLsGet(pbLsKey('caption', pb.activeSlotId));
-  pb.caption = storedReelCap || asset.Caption || '';
+  if (storedReelCap) {
+    pb.caption = storedReelCap;
+    pb.captionVariants = [];
+  } else if (asset.Caption) {
+    // Caption_Draft may be a JSON array of variants
+    var capVariants = [];
+    try { capVariants = JSON.parse(asset.Caption); } catch (e) { capVariants = [asset.Caption]; }
+    if (!Array.isArray(capVariants)) capVariants = [asset.Caption];
+    pb.caption = capVariants[0] || '';
+    pb.captionVariants = capVariants;
+  } else {
+    pb.caption = '';
+    pb.captionVariants = [];
+  }
   var capText = document.getElementById('pbReelCaptionText');
   if (capText) capText.textContent = pb.caption;
+  pbRenderCaptionVariants(true);
+
+  // Title card — restore from localStorage
+  var titleCardEl = document.getElementById('pbReelTitleCard');
+  if (titleCardEl) {
+    var savedTitleCard = pb.activeSlotId ? pbLsGet(pbLsKey('titlecard', pb.activeSlotId)) : '';
+    titleCardEl.textContent = savedTitleCard || '';
+  }
 
   var schedBtn = document.getElementById('pbReelScheduleBtn');
   if (schedBtn) schedBtn.disabled = false;
+}
+
+function pbTitleCardBlur(el) {
+  el.contentEditable = 'false';
+  var text = el.textContent.trim();
+  if (pb.activeSlotId) pbLsSet(pbLsKey('titlecard', pb.activeSlotId), text);
+}
+
+function pbRegenTitleCard() {
+  var asset = null;
+  pb.candidates.forEach(function(a) { if (a.Post_ID === pb.selectedPostId) asset = a; });
+  if (!asset) return;
+  var btn = document.getElementById('pbTitleCardRegenBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+      if (res && res.titleCard) {
+        var el = document.getElementById('pbReelTitleCard');
+        if (el) el.textContent = res.titleCard;
+        if (pb.activeSlotId) pbLsSet(pbLsKey('titlecard', pb.activeSlotId), res.titleCard);
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate'; }
+    })
+    .generateReelTitleCard(asset.Post_ID, pb.episodeUid);
 }
 
 function pbUnlockReelName(tile, e) {
@@ -5453,12 +6105,11 @@ function pbUnlockReelName(tile, e) {
     nameEl.textContent = newName;
     nameEl.classList.remove('editing');
     if (newName !== current) {
-      var rowIdx = parseInt(tile.dataset.rowIndex, 10);
       var fileId = tile.dataset.fileId;
       var postId = tile.dataset.postId;
       google.script.run
         .withFailureHandler(function() { showToast('Could not save reel name.'); })
-        .updateReelDisplayName(rowIdx, newName, fileId, postId);
+        .updateReelDisplayName(postId, newName, fileId);
       // Update in-memory candidate
       pb.candidates.forEach(function(a) {
         if (a.Post_ID === postId) a.Display_Name = newName;
@@ -5474,10 +6125,856 @@ function pbUnlockReelName(tile, e) {
 
 // ── End reel browser ──────────────────────────────────────────────────────────
 
+// ── REELS SURFACE — Card list ─────────────────────────────────────────────────
+
+function pbReelCaption(reel) {
+  // Returns clean caption text for a reel card (parses JSON-array Caption_Draft)
+  if (!reel) return '';
+  if (reel.Caption_Final) return reel.Caption_Final;
+  var raw = reel.Caption_Draft || '';
+  if (raw && raw.charAt(0) === '[') {
+    try { var p = JSON.parse(raw); if (Array.isArray(p) && p.length) { var s = p[0]; return (s.length > 1 && s[0] === '"' && s[s.length-1] === '"') ? s.slice(1,-1) : s; } } catch(e) {}
+  }
+  return raw;
+}
+
+function pbReelSummaryClean(raw) {
+  var s = raw || '';
+  // Strip any Gemini-style preamble line(s) followed by --- separator
+  s = s.replace(/^[\s\S]*?---+\s*/m, '');
+  // Strip remaining intro phrases if no separator was present
+  s = s.replace(/^Here['']s a (?:detailed |brief |)?(?:description|analysis|breakdown)[^.]*[.:]\s*/i, '');
+  // Strip markdown bold labels like **1. What is being said:**
+  s = s.replace(/\*\*[^*]+\*\*:?\s*/g, '');
+  // Strip heading markers
+  s = s.replace(/#{1,4}\s+/g, '');
+  // Collapse newlines to spaces
+  s = s.replace(/\n+/g, ' ').trim();
+  return s;
+}
+
+// Lucide-style play SVG for thumbnail hover
+var _pbPlaySvg = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>';
+var _pbPencilSvg = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 1.5l3.5 3.5-8 8H3v-3.5l8-8z"/><path d="M10 2.5l3 3"/></svg>';
+var _pbCopySvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+
+function pbRenderReelCardList() {
+  var list = document.getElementById('pbReelCardList');
+  if (!pb.reelCards.length) {
+    list.innerHTML = '<div style="padding:24px 0;font-size:12px;color:var(--text-3);text-align:center">No reels yet — add MP4 files to Staging/Reels.</div>';
+    return;
+  }
+  // Starred cards float to top
+  var sorted = pb.reelCards.slice().sort(function(a, b) {
+    var as = pbIsStarred(a.Asset_ID), bs = pbIsStarred(b.Asset_ID);
+    return (as === bs) ? 0 : (as ? -1 : 1);
+  });
+  var html = '';
+  sorted.forEach(function(r) {
+    var id       = r.Asset_ID;
+    var name     = (r.Display_Name && r.Display_Name !== 'undefined' && r.Display_Name !== '')
+                   ? r.Display_Name : (r.Asset_Type || 'Reel');
+    var caption  = pbReelCaption(r);
+    var hasFinal = !!r.Caption_Final;
+    var summary  = pbReelSummaryClean(r.Reel_Summary);
+    var status   = (r.Status || '').toLowerCase();
+    var starred  = pbIsStarred(id);
+    var tc       = pbLsGet('dwyp_tc_' + id) || '';
+
+    var thumbImg = r.thumbnailUrl
+      ? '<img src="' + esc(r.thumbnailUrl) + '" onerror="pbReelThumbError(this)" loading="eager">' +
+        '<div class="pb-reel-card-thumb-blank" style="display:none">▶</div>'
+      : '<div class="pb-reel-card-thumb-blank">▶</div>';
+
+    var statusPill = (status === 'scheduled')
+      ? '<div class="pb-reel-card-status scheduled">Scheduled</div>'
+      : '<div class="pb-reel-card-status candidate">' + esc(status || 'Candidate') + '</div>';
+
+    html +=
+      '<div class="pb-reel-card' + (pb.activeReelAssetId === id ? ' active' : '') + '"' +
+        ' id="pbRc-' + esc(id) + '" data-asset-id="' + esc(id) + '"' +
+        ' onclick="pbSelectReelCard(\'' + esc(id) + '\',event)">' +
+
+        // Media column (left) — thumbnail, expands to player on click
+        '<div class="pb-reel-card-media" id="pbRcMedia-' + esc(id) + '"' +
+            ' onclick="pbToggleCardPlayer(\'' + esc(id) + '\',event)">' +
+          '<div class="pb-reel-card-thumb" id="pbRcThumb-' + esc(id) + '">' +
+            thumbImg +
+            '<div class="pb-reel-card-thumb-hover">' + _pbPlaySvg + '</div>' +
+          '</div>' +
+        '</div>' +
+
+        // Info columns (right)
+        '<div class="pb-reel-card-row">' +
+
+          // Col 1 — Info (name + summary)
+          '<div class="pb-reel-card-info">' +
+            '<div class="pb-reel-card-name-row">' +
+              '<div class="pb-reel-card-name" id="pbRcName-' + esc(id) + '">' + esc(name) + '</div>' +
+              '<span class="pb-reel-name-pencil" onclick="pbUnlockCardName(\'' + esc(id) + '\',event)" title="Rename">' + _pbPencilSvg + '</span>' +
+            '</div>' +
+            '<div class="pb-reel-card-summary-area">' +
+              (summary
+                ? '<div class="pb-reel-card-desc">' + esc(summary) + '</div>'
+                : '<div class="pb-reel-card-desc" style="font-style:italic">No summary yet</div>') +
+              '<button class="pb-reel-copy-btn" onclick="pbCopySummary(\'' + esc(id) + '\',event)" title="Copy summary to clipboard">' + _pbCopySvg + '</button>' +
+            '</div>' +
+          '</div>' +
+
+          // Col 3 — Content (Caption + Title Card)
+          '<div class="pb-reel-card-content">' +
+            // Caption box
+            '<div class="pb-reel-content-box">' +
+              '<div class="pb-reel-content-hdr">' +
+                '<span class="pb-reel-content-lbl">Caption</span>' +
+                '<button class="pb-reel-content-regen" onclick="pbGenerateCaption(\'' + esc(id) + '\',event)">Generate</button>' +
+              '</div>' +
+              '<div class="pb-reel-card-caption' + (hasFinal ? ' has-final' : '') + '"' +
+                  ' id="pbRcCap-' + esc(id) + '"' +
+                  ' onclick="pbUnlockCardCaption(\'' + esc(id) + '\',event)"' +
+                  ' onblur="pbCardCaptionBlur(\'' + esc(id) + '\',this)">' +
+                esc(caption) +
+              '</div>' +
+            '</div>' +
+            // Title Card box
+            '<div class="pb-reel-content-box">' +
+              '<div class="pb-reel-content-hdr">' +
+                '<span class="pb-reel-content-lbl">Title Card</span>' +
+                '<button class="pb-reel-content-regen" onclick="pbRegenCardTc(\'' + esc(id) + '\',event)">Generate</button>' +
+              '</div>' +
+              '<div class="pb-reel-card-tc" id="pbRcTc-' + esc(id) + '"' +
+                  ' onclick="pbUnlockCardTc(\'' + esc(id) + '\',event)"' +
+                  ' onblur="pbCardTcBlur(\'' + esc(id) + '\',this)">' +
+                esc(tc) +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+
+          // Col 4 — Actions
+          '<div class="pb-reel-card-actions">' +
+            '<button class="pb-reel-card-star' + (starred ? ' starred' : '') + '"' +
+                ' onclick="pbToggleStar(\'' + esc(id) + '\',event)" title="' + (starred ? 'Unstar' : 'Star') + '">' +
+              (starred ? '★' : '☆') +
+            '</button>' +
+            statusPill +
+            '<button class="pb-reel-card-btn primary" onclick="pbOpenSchedPopover(\'' + esc(id) + '\',event)">Schedule</button>' +
+            '<button class="pb-reel-card-btn danger" onclick="pbOpenRevisionModal(\'' + esc(id) + '\',event)">Request Revisions</button>' +
+          '</div>' +
+
+        '</div>' + // /pb-reel-card-row
+      '</div>'; // /pb-reel-card
+  });
+  list.innerHTML = html;
+}
+
+function pbSelectReelCard(assetId, e) {
+  if (e) e.stopPropagation();
+  pb.activeReelAssetId = assetId;
+  document.querySelectorAll('.pb-reel-card').forEach(function(c) {
+    c.classList.toggle('active', c.dataset.assetId === assetId);
+    if (c.dataset.assetId === assetId) {
+      c.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+  // Close chat panel if open for a different card
+  if (pb.chatPanelAssetId && pb.chatPanelAssetId !== assetId) {
+    pbCloseChatPanel();
+  }
+}
+
+function pbToggleCardPlayer(assetId, e) {
+  if (e) { e.stopPropagation(); e.preventDefault(); }
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (!reel || !reel.Drive_File_ID) return;
+
+  var media = document.getElementById('pbRcMedia-' + assetId);
+  if (!media) return;
+
+  // Toggle off
+  if (media.classList.contains('playing')) {
+    media.classList.remove('playing');
+    var ep = media.querySelector('.pb-reel-card-media-player');
+    if (ep) ep.remove();
+    return;
+  }
+
+  // Close any other open player
+  document.querySelectorAll('.pb-reel-card-media.playing').forEach(function(m) {
+    m.classList.remove('playing');
+    var ep = m.querySelector('.pb-reel-card-media-player');
+    if (ep) ep.remove();
+  });
+
+  var playerDiv = document.createElement('div');
+  playerDiv.className = 'pb-reel-card-media-player';
+
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'pb-reel-card-player-close';
+  closeBtn.innerHTML = '&times;';
+  closeBtn.onclick = function(ev) {
+    ev.stopPropagation();
+    media.classList.remove('playing');
+    playerDiv.remove();
+  };
+
+  playerDiv.appendChild(closeBtn);
+  media.appendChild(playerDiv);
+  media.classList.add('playing');
+
+  function onTransitionEnd(ev) {
+    if (ev.propertyName !== 'width') return;
+    media.removeEventListener('transitionend', onTransitionEnd);
+    if (!media.classList.contains('playing')) return;
+    var iframe = document.createElement('iframe');
+    iframe.src = 'https://drive.google.com/file/d/' + encodeURIComponent(reel.Drive_File_ID) + '/preview';
+    iframe.allow = 'autoplay';
+    iframe.setAttribute('allowfullscreen', '');
+    playerDiv.appendChild(iframe);
+  }
+  media.addEventListener('transitionend', onTransitionEnd);
+}
+
+function pbReelThumbError(img) {
+  img.style.display = 'none';
+  var blank = img.parentElement && img.parentElement.querySelector('.pb-reel-card-thumb-blank');
+  if (blank) blank.style.display = '';
+}
+
+function pbUnlockCardName(assetId, e) {
+  if (e) e.stopPropagation();
+  var nameEl = document.getElementById('pbRcName-' + assetId);
+  if (!nameEl || nameEl.contentEditable === 'true') return;
+  var current = nameEl.textContent.trim();
+  nameEl.contentEditable = 'true';
+  nameEl.focus();
+  // Select all
+  var range = document.createRange(); range.selectNodeContents(nameEl);
+  var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+
+  function commit() {
+    nameEl.contentEditable = 'false';
+    var newName = nameEl.textContent.trim() || current;
+    if (newName !== current) {
+      var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+      if (reel) reel.Display_Name = newName;
+      google.script.run
+        .withFailureHandler(function() { showToast('Could not save reel name.'); })
+        .updateDisplayName(assetId, newName);
+    }
+  }
+  nameEl.onblur = commit;
+  nameEl.onkeydown = function(ev) {
+    if (ev.key === 'Enter')  { ev.preventDefault(); nameEl.blur(); }
+    if (ev.key === 'Escape') { nameEl.textContent = current; nameEl.blur(); }
+  };
+}
+
+function pbUnlockCardCaption(assetId, e) {
+  if (e) e.stopPropagation();
+  var el = document.getElementById('pbRcCap-' + assetId);
+  if (!el || el.contentEditable === 'true') return;
+  el.contentEditable = 'true';
+  el.focus();
+}
+
+var _pbCaptionDebounce = {};
+function pbCardCaptionBlur(assetId, el) {
+  el.contentEditable = 'false';
+  var text = el.textContent.trim();
+  // Update in-memory
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (reel) { reel.Caption_Final = text; el.classList.toggle('has-final', !!text); }
+  // Debounced write
+  clearTimeout(_pbCaptionDebounce[assetId]);
+  _pbCaptionDebounce[assetId] = setTimeout(function() {
+    google.script.run
+      .withFailureHandler(function() { showToast('Could not save caption.'); })
+      .updateCaption(assetId, text);
+  }, 1500);
+}
+
+function pbGenerateCaption(assetId, e) {
+  if (e) e.stopPropagation();
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (!reel) return;
+  var el = document.getElementById('pbRcCap-' + assetId);
+  if (el) { el.contentEditable = 'false'; el.textContent = 'Generating…'; el.classList.remove('has-final'); }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.caption) {
+        if (el) { el.textContent = res.caption; }
+        reel.Caption_Draft = res.draft || res.caption;
+        reel.Caption_Final = '';
+        clearTimeout(_pbCaptionDebounce[assetId]);
+      } else {
+        if (el) el.textContent = pbReelCaption(reel);
+        showToast('Caption generation failed.');
+      }
+    })
+    .withFailureHandler(function() {
+      if (el) el.textContent = pbReelCaption(reel);
+      showToast('Caption generation failed.');
+    })
+    .generateReelCaption(assetId, pb.episodeUid);
+}
+
+function pbUnlockCardTc(assetId, e) {
+  if (e) e.stopPropagation();
+  var el = document.getElementById('pbRcTc-' + assetId);
+  if (!el || el.contentEditable === 'true') return;
+  el.contentEditable = 'true'; el.focus();
+}
+
+function pbCardTcBlur(assetId, el) {
+  el.contentEditable = 'false';
+  var text = el.textContent.trim();
+  try { localStorage.setItem('dwyp_tc_' + assetId, text); } catch(e) {}
+}
+
+function pbRegenCardTc(assetId, e) {
+  if (e) e.stopPropagation();
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (!reel) return;
+  var tcEl = document.getElementById('pbRcTc-' + assetId);
+  if (tcEl) tcEl.textContent = 'Generating…';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.titleCard && tcEl) {
+        tcEl.textContent = res.titleCard;
+        try { localStorage.setItem('dwyp_tc_' + assetId, res.titleCard); } catch(e) {}
+      } else if (tcEl) {
+        tcEl.textContent = '';
+      }
+    })
+    .withFailureHandler(function() {
+      if (tcEl) tcEl.textContent = '';
+      showToast('Title card generation failed.');
+    })
+    .generateReelTitleCard(assetId, pb.episodeUid);
+}
+
+// ── REELS SURFACE — Stars ────────────────────────────────────────────────────
+
+function pbIsStarred(assetId) {
+  return pbLsGet('dwyp_star_' + assetId) === 'true';
+}
+
+function pbToggleStar(assetId, e) {
+  if (e) e.stopPropagation();
+  var nowStarred = !pbIsStarred(assetId);
+  try { localStorage.setItem('dwyp_star_' + assetId, String(nowStarred)); } catch(ex) {}
+  // Re-render to resort (starred cards float to top)
+  pbRenderReelCardList();
+}
+
+function pbToggleBgStar(fileId, e) {
+  if (e) e.stopPropagation();
+  var key = 'dwyp_star_bg_' + fileId;
+  var nowStarred = !(pbLsGet(key) === 'true');
+  try { localStorage.setItem(key, String(nowStarred)); } catch(ex) {}
+  // Update icon in place
+  var btn = document.querySelector('.pb-bg-star[data-file-id="' + fileId + '"]');
+  if (btn) {
+    btn.classList.toggle('starred', nowStarred);
+    btn.innerHTML = nowStarred ? '★' : '☆';
+  }
+  // Move thumbnail to front of grid visually by re-rendering
+  pbRenderBgLibrary();
+}
+
+function pbDeleteBg(fileId, e) {
+  if (e) e.stopPropagation();
+  // Remove immediately for instant feedback; GAS call runs async
+  var thumb = document.querySelector('.pb-bg-thumb[data-file-id="' + fileId + '"]');
+  if (thumb) thumb.style.opacity = '0.35';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        if (thumb) thumb.remove();
+        if (pbBgCache) delete pbBgCache[fileId];
+        showToast('Background moved to deleted folder.');
+      } else {
+        if (thumb) thumb.style.opacity = '';
+        showToast('Could not delete — ' + ((res && res.error) || 'unknown'), true);
+      }
+    })
+    .withFailureHandler(function() {
+      if (thumb) thumb.style.opacity = '';
+      showToast('Could not delete background.', true);
+    })
+    .deleteBackgroundPhoto(fileId);
+}
+
+// ── REELS SURFACE — Summary copy ─────────────────────────────────────────────
+
+function pbCopySummary(assetId, e) {
+  if (e) e.stopPropagation();
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (!reel) return;
+  var text = pbReelSummaryClean(reel.Reel_Summary);
+  if (!text) { showToast('No summary to copy.'); return; }
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Summary copied — paste into Write for caption help.');
+  }).catch(function() {
+    // Fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showToast('Summary copied.'); } catch(ex) {}
+    document.body.removeChild(ta);
+  });
+}
+
+// ── REELS SURFACE — Request Revisions modal ───────────────────────────────────
+
+var _pbRevisionAssetId = null;
+
+function pbOpenRevisionModal(assetId, e) {
+  if (e) e.stopPropagation();
+  _pbRevisionAssetId = assetId;
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var name = reel ? (reel.Display_Name || 'Reel') : 'Reel';
+  var hdr  = document.getElementById('pbRevisionHdr');
+  if (hdr) hdr.textContent = 'Request Revisions · ' + name;
+  var ta   = document.getElementById('pbRevisionTextarea');
+  if (ta)  ta.value = '';
+  var btn  = document.getElementById('pbRevisionSubmitBtn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Submit Request'; }
+  document.getElementById('pbRevisionOverlay').style.display = 'flex';
+  if (ta) setTimeout(function() { ta.focus(); }, 60);
+}
+
+function pbCloseRevisionModal(e) {
+  if (e && e.target !== document.getElementById('pbRevisionOverlay')) return;
+  document.getElementById('pbRevisionOverlay').style.display = 'none';
+  _pbRevisionAssetId = null;
+}
+
+function pbSubmitRevision() {
+  var assetId = _pbRevisionAssetId;
+  if (!assetId) return;
+  var ta   = document.getElementById('pbRevisionTextarea');
+  var text = ta ? ta.value.trim() : '';
+  if (!text) { if (ta) ta.focus(); return; }
+
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var btn  = document.getElementById('pbRevisionSubmitBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('pbRevisionOverlay').style.display = 'none';
+      _pbRevisionAssetId = null;
+      if (res && res.success) {
+        showToast('Revision request submitted.');
+      } else {
+        showToast('Could not submit — ' + ((res && res.error) || 'unknown error'), true);
+      }
+    })
+    .withFailureHandler(function() {
+      if (btn) { btn.disabled = false; btn.textContent = 'Submit Request'; }
+      showToast('Could not submit revision request.', true);
+    })
+    .submitRevisionRequest({
+      episodeUid: pb.episodeUid,
+      assetId:    assetId,
+      assetType:  reel ? (reel.Asset_Type || 'Reel') : 'Reel',
+      reelName:   reel ? (reel.Display_Name || '') : '',
+      requestText: text
+    });
+}
+
+// ── REELS SURFACE — Unschedule ───────────────────────────────────────────────
+
+function pbConfirmUnschedule(assetId, slotId, e) {
+  if (e) e.stopPropagation();
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var name = reel ? (reel.Display_Name || 'this reel') : 'this reel';
+  if (!confirm('Unschedule "' + name + '" and return it to the library?\n\nCaption and title card are preserved.')) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.success) {
+        // Update in-memory reel
+        if (reel) { reel.Status = 'candidate'; reel.Availability = 'available'; }
+        // Clear schedule slot
+        if (pb.schedule && pb.schedule.days) {
+          pb.schedule.days.forEach(function(d) {
+            d.slots.forEach(function(s) { if (s.slotId === slotId) s.filled = null; });
+          });
+        }
+        pbCloseSchedPopover();
+        pbRenderAccordion();
+        pbRenderReelCardList();
+        showToast('Reel returned to library.');
+      } else {
+        showToast('Could not unschedule — ' + ((res && res.error) || 'unknown error'), true);
+      }
+    })
+    .withFailureHandler(function() { showToast('Could not unschedule.', true); })
+    .unscheduleReel(assetId);
+}
+
+// ── REELS SURFACE — Chat panel ────────────────────────────────────────────────
+
+function pbOpenChatPanel(assetId, e) {
+  if (e) e.stopPropagation();
+  pbSelectReelCard(assetId, null);
+  pb.chatPanelAssetId = assetId;
+
+  var reel    = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var summary = pbReelSummaryClean(reel ? reel.Reel_Summary : '');
+  var caption = pbReelCaption(reel);
+
+  // Populate summary bar
+  var summEl = document.getElementById('pbReelChatSummary');
+  if (summEl) summEl.textContent = summary || '(No reel summary available)';
+
+  // Show panel
+  var panel = document.getElementById('pbReelChatPanel');
+  if (panel) panel.classList.add('open');
+
+  // Render existing history or auto-generate
+  pbRenderChatThread(assetId);
+
+  if (!pb.chatHistory[assetId] || !pb.chatHistory[assetId].length) {
+    // Auto-generate 3 captions
+    var slot = null;
+    if (pb.schedule && pb.schedule.days) {
+      pb.schedule.days.forEach(function(d) {
+        d.slots.forEach(function(s) { if (s.slotId === pb.activeSlotId) slot = s; });
+      });
+    }
+    pbChatCallLLM(assetId, "Please give me 3 caption options for this reel.", caption, slot);
+  } else {
+    // Focus input for continued conversation
+    var input = document.getElementById('pbReelChatInput');
+    if (input) input.focus();
+  }
+}
+
+function pbCloseChatPanel() {
+  var panel = document.getElementById('pbReelChatPanel');
+  if (panel) panel.classList.remove('open');
+  pb.chatPanelAssetId = null;
+}
+
+function pbRenderChatThread(assetId) {
+  var thread = document.getElementById('pbReelChatThread');
+  if (!thread) return;
+  var history = pb.chatHistory[assetId] || [];
+  var html = '';
+  history.forEach(function(msg) {
+    html += pbChatMsgHtml(msg.role, msg.content);
+  });
+  thread.innerHTML = html;
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function pbChatMsgHtml(role, content) {
+  var chips = pbParseCapChips(content);
+  var bubbleContent = chips.plain
+    ? '<div class="pb-reel-chat-bubble">' + escHtml(chips.plain) + '</div>'
+    : '';
+  var chipHtml = '';
+  if (chips.chips.length) {
+    chipHtml = '<div class="pb-reel-cap-chips">';
+    chips.chips.forEach(function(c, idx) {
+      chipHtml += '<div class="pb-reel-cap-chip" onclick="pbApplyCapChip(' + JSON.stringify(c) + ',\'' + esc(pb.chatPanelAssetId || '') + '\')">' + escHtml(c) + '</div>';
+    });
+    chipHtml += '</div>';
+  }
+  return '<div class="pb-reel-chat-msg ' + role + '">' + bubbleContent + chipHtml + '</div>';
+}
+
+function pbParseCapChips(text) {
+  var chips = [];
+  var cleaned = text.replace(/\[\[CAPTION:([\s\S]*?)\]\]/g, function(m, cap) {
+    chips.push(cap.trim());
+    return '';
+  }).trim();
+  return { plain: cleaned, chips: chips };
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/\n/g, '<br>');
+}
+
+function pbChatSend() {
+  var input   = document.getElementById('pbReelChatInput');
+  var assetId = pb.chatPanelAssetId;
+  if (!input || !assetId) return;
+  var msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  var reel    = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var caption = pbReelCaption(reel);
+  var slot    = null;
+  if (pb.schedule && pb.schedule.days) {
+    pb.schedule.days.forEach(function(d) {
+      d.slots.forEach(function(s) { if (s.slotId === pb.activeSlotId) slot = s; });
+    });
+  }
+  pbChatCallLLM(assetId, msg, caption, slot);
+}
+
+function pbChatCallLLM(assetId, userMessage, captionCurrent, slot) {
+  if (!pb.chatHistory[assetId]) pb.chatHistory[assetId] = [];
+  var history = pb.chatHistory[assetId];
+
+  // Add user message to history and render
+  history.push({ role: 'user', content: userMessage });
+  pbRenderChatThread(assetId);
+
+  // Add thinking indicator
+  var thread = document.getElementById('pbReelChatThread');
+  var thinkingId = 'pbChatThink-' + Date.now();
+  if (thread) {
+    var el = document.createElement('div');
+    el.id = thinkingId; el.className = 'pb-reel-chat-thinking';
+    el.textContent = 'Writing…';
+    thread.appendChild(el);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  var payload = {
+    episodeUid:           pb.episodeUid || '',
+    assetId:              assetId,
+    platform:             slot ? (slot.platform || '') : (pb.activeSlotPlatform || ''),
+    day:                  pb.activeSlotDay || '',
+    captionCurrent:       captionCurrent,
+    conversationHistory:  history.slice(0, -1), // all but the just-added user msg
+    userMessage:          userMessage
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      // Remove thinking indicator
+      var thinkEl = document.getElementById(thinkingId);
+      if (thinkEl) thinkEl.remove();
+      var responseText = (res && res.success && res.text) ? res.text : '(No response — try again)';
+      history.push({ role: 'assistant', content: responseText });
+      pbRenderChatThread(assetId);
+    })
+    .withFailureHandler(function(err) {
+      var thinkEl = document.getElementById(thinkingId);
+      if (thinkEl) thinkEl.remove();
+      history.push({ role: 'assistant', content: '(Error — please try again)' });
+      pbRenderChatThread(assetId);
+    })
+    .callPublishLLM(payload);
+}
+
+function pbApplyCapChip(captionText, assetId) {
+  if (!assetId) return;
+  // Write to card caption element
+  var capEl = document.getElementById('pbRcCap-' + assetId);
+  if (capEl) {
+    capEl.textContent = captionText;
+    capEl.classList.add('has-final');
+  }
+  // Update in-memory
+  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  if (reel) reel.Caption_Final = captionText;
+  // Persist to GAS
+  google.script.run
+    .withFailureHandler(function() { showToast('Could not save caption.'); })
+    .updateCaption(assetId, captionText);
+  // Close panel
+  pbCloseChatPanel();
+  showToast('Caption saved.');
+}
+
+// ── REELS SURFACE — Schedule popover ─────────────────────────────────────────
+
+function pbOpenSchedPopover(assetId, e) {
+  if (e) e.stopPropagation();
+  pbSelectReelCard(assetId, null);
+  pb.schedPopoverAssetId  = assetId;
+  pb.schedSelectedSlotId  = pb.activeSlotId || null;
+  pb.schedSelectedDay     = pb.activeSlotDay || null;
+
+  // Build week grid from pb.schedule
+  var grid = document.getElementById('pbSchedWeekGrid');
+  if (!grid) return;
+
+  var DAY_ORDER = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var html = '';
+  DAY_ORDER.forEach(function(day) {
+    html += '<div class="pb-sched-day-col"><div class="pb-sched-day-lbl">' + esc(day.slice(0,3)) + '</div>';
+    var dayData = null;
+    if (pb.schedule && pb.schedule.days) {
+      pb.schedule.days.forEach(function(d) { if (d.day === day) dayData = d; });
+    }
+    if (dayData) {
+      dayData.slots.forEach(function(slot) {
+        var normType = slot.assetType.toLowerCase().replace(/[_ ]/g,'');
+        var isReel = (normType === 'reel' || normType === 'bankclip');
+        if (!isReel) return; // only show reel slots in popover
+        var isSelected = (slot.slotId === pb.schedSelectedSlotId);
+        var isOccupied = !!slot.filled;
+        var cls = 'pb-sched-pill' +
+          (isSelected ? ' selected' : isOccupied ? ' occupied' : ' available');
+        if (isOccupied) {
+          var occupiedAssetId = slot.filled.assetLibraryId || '';
+          html += '<div class="' + cls + '">' +
+            '<span>✓</span>' +
+            '<button class="pb-sched-unschedule-btn" title="Unschedule"' +
+              ' onclick="pbConfirmUnschedule(\'' + esc(occupiedAssetId) + '\',\'' + esc(slot.slotId) + '\',event)">×</button>' +
+            '</div>';
+        } else {
+          var onclick = 'pbSchedSelectSlot(\'' + esc(slot.slotId) + '\',\'' + esc(day) + '\')';
+          var label = (slot.platform || slot.assetType || 'Reel').slice(0, 8);
+          html += '<div class="' + cls + '" onclick="' + onclick + '">' + esc(label) + '</div>';
+        }
+      });
+    }
+    html += '</div>';
+  });
+  grid.innerHTML = html;
+
+  // Update header
+  var hdr = document.getElementById('pbSchedHdr');
+  if (hdr) {
+    var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+    var name = reel ? (reel.Display_Name || 'Reel') : 'Reel';
+    hdr.textContent = 'Schedule · ' + name;
+  }
+
+  pbSchedUpdateConfirmBtn();
+  document.getElementById('pbSchedOverlay').style.display = 'flex';
+}
+
+function pbCloseSchedPopover(e) {
+  if (e && e.target !== document.getElementById('pbSchedOverlay')) return;
+  document.getElementById('pbSchedOverlay').style.display = 'none';
+  pb.schedPopoverAssetId = null;
+  pb.schedSelectedSlotId = null;
+  pb.schedSelectedDay    = null;
+}
+
+function pbSchedSelectSlot(slotId, day) {
+  pb.schedSelectedSlotId = slotId;
+  pb.schedSelectedDay    = day;
+  document.querySelectorAll('.pb-sched-pill.available, .pb-sched-pill.selected').forEach(function(p) {
+    p.classList.remove('selected');
+    p.classList.add('available');
+  });
+  // Find and mark selected
+  var grid = document.getElementById('pbSchedWeekGrid');
+  if (grid) {
+    grid.querySelectorAll('[onclick]').forEach(function(p) {
+      if (p.getAttribute('onclick') && p.getAttribute('onclick').indexOf(slotId) !== -1) {
+        p.classList.remove('available'); p.classList.add('selected');
+      }
+    });
+  }
+  pbSchedUpdateConfirmBtn();
+}
+
+function pbSchedUpdateConfirmBtn() {
+  var btn = document.getElementById('pbSchedConfirmBtn');
+  if (!btn) return;
+  if (pb.schedSelectedSlotId && pb.schedSelectedDay) {
+    btn.disabled = false;
+    btn.textContent = 'Schedule ' + (pb.schedSelectedDay || '') +
+      (pb.releaseDate ? ', ' + pb.releaseDate : '');
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Schedule';
+  }
+}
+
+function pbSchedPickCustomDay() {
+  var day = prompt('Enter a day (e.g. Monday, Tuesday…):');
+  if (!day) return;
+  var custom = day.trim();
+  pb.schedSelectedSlotId = 'custom-' + custom;
+  pb.schedSelectedDay    = custom;
+  pbSchedUpdateConfirmBtn();
+}
+
+function pbConfirmSchedule() {
+  var assetId = pb.schedPopoverAssetId;
+  var slotId  = pb.schedSelectedSlotId;
+  var day     = pb.schedSelectedDay;
+  if (!assetId || !slotId) return;
+
+  var reel    = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
+  var caption = pbReelCaption(reel);
+  var fileId  = reel ? (reel.Drive_File_ID || '') : '';
+
+  // Determine platform from schedule
+  var platform = '';
+  if (pb.schedule && pb.schedule.days) {
+    pb.schedule.days.forEach(function(d) {
+      d.slots.forEach(function(s) { if (s.slotId === slotId) platform = s.platform || ''; });
+    });
+  }
+
+  var btn = document.getElementById('pbSchedConfirmBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  var payload = {
+    episodeUid:  pb.episodeUid,
+    slotId:      slotId,
+    assetId:     assetId,
+    caption:     caption,
+    driveFileId: fileId,
+    platform:    platform,
+    scheduledAt: new Date().toISOString()
+  };
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      document.getElementById('pbSchedOverlay').style.display = 'none';
+      pb.schedPopoverAssetId = null;
+      pb.schedSelectedSlotId = null;
+      pb.schedSelectedDay    = null;
+      if (res && res.success) {
+        showToast('Reel scheduled for ' + day + '.');
+        // Update in-memory reel status
+        if (reel) reel.Status = 'scheduled';
+        // Update schedule slot to filled
+        if (pb.schedule && pb.schedule.days && slotId.indexOf('custom-') === -1) {
+          pb.schedule.days.forEach(function(d) {
+            d.slots.forEach(function(s) {
+              if (s.slotId === slotId) {
+                s.filled = {
+                  postId:      res.postId || '',
+                  assetLibraryId: assetId,
+                  driveFileId: fileId,
+                  caption:     caption,
+                  assetType:   'Reel',
+                  thumbnailUrl: reel ? reel.thumbnailUrl : ''
+                };
+              }
+            });
+          });
+          pbRenderAccordion();
+        }
+        // Refresh card list to reflect new status
+        pbRenderReelCardList();
+      } else {
+        showToast('Could not schedule reel — ' + ((res && res.error) || 'unknown error'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Schedule ' + day; }
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('pbSchedOverlay').style.display = 'none';
+      showToast('Schedule failed — check connection.', true);
+    })
+    .scheduleReel(payload);
+}
+
 function pbShowWsActive(isReel) {
   document.getElementById('pbWsEmpty').style.display    = 'none';
   document.getElementById('pbWsEpisode').classList.remove('active');
-  document.getElementById('pbPanel3').style.display     = 'flex';
+  // Panel 3 (hooks/reel browser) only shown for image slots; reel list lives in workspace
+  document.getElementById('pbPanel3').style.display     = isReel ? 'none' : 'flex';
   document.getElementById('pbWsSlotHdr').style.display  = 'block';
   document.getElementById('pbWsActive').style.display   = isReel ? 'none' : 'flex';
   document.getElementById('pbReelWs').style.display     = isReel ? 'flex' : 'none';
@@ -5757,7 +7254,7 @@ function pbToggleShadow() {
   var active = pb.canvas.getActiveObject();
   if (!active || !active._isText) return;
   pbSaveCanvasState();
-  active.set('shadow', active.shadow ? null : new fabric.Shadow({ color: 'rgba(0,0,0,0.6)', blur: 18, offsetX: 2, offsetY: 4 }));
+  active.set('shadow', active.shadow ? null : new fabric.Shadow({ color: 'rgba(0,0,0,0.6)', blur: 9, offsetX: 2, offsetY: 4 }));
   pb.canvas.renderAll();
   var btn = document.getElementById('pbShadowBtn');
   if (btn) btn.classList.toggle('active', !!active.shadow);
@@ -5869,9 +7366,10 @@ function pbAddTextToCanvas(text, attribution) {
         width:           canvasW - 64,
         fontFamily:      'Nunito',
         fontStyle:       'normal',
-        fontWeight:      '400',
-        fontSize:        14,
-        fill:            fill,
+        fontWeight:      '700',
+        fontSize:        15,
+        fill:            '#FAB016',
+        backgroundColor: 'rgba(0,0,0,0.52)',
         textAlign:       'center',
         lineHeight:      1.2,
         splitByGrapheme: false,
@@ -6138,10 +7636,41 @@ function pbRenderBgLibrary() {
         grid.innerHTML = '<div class="pb-bg-loading">No backgrounds yet.</div>';
         return;
       }
-      grid.innerHTML = items.map(function(item) {
-        var thumb = item.thumbnailUrl || ('https://drive.google.com/thumbnail?id=' + item.fileId + '&sz=w200');
+      // Determine format keywords from active slot platform
+      var _slotPlat = (pb.activeSlotPlatform || '').toLowerCase();
+      var _fmtKeys = (function() {
+        if (_slotPlat.indexOf('feed') !== -1)       return ['4x5','4_5','4-5','feed'];
+        if (_slotPlat.indexOf('story') !== -1)      return ['9x16','9_16','9-16','story','portrait'];
+        if (_slotPlat.indexOf('reel') !== -1)       return ['9x16','9_16','story','portrait'];
+        if (_slotPlat === 'facebook' || _slotPlat === 'linkedin') return ['16x9','16_9','16-9','landscape','wide'];
+        return [];
+      })();
+      function _matchesFmt(name) {
+        if (!_fmtKeys.length) return false;
+        var n = (name || '').toLowerCase();
+        return _fmtKeys.some(function(k) { return n.indexOf(k) !== -1; });
+      }
+
+      // Sort: starred → format-matching → rest
+      var sorted = items.slice().sort(function(a, b) {
+        var as = pbLsGet('dwyp_star_bg_' + a.fileId) === 'true';
+        var bs = pbLsGet('dwyp_star_bg_' + b.fileId) === 'true';
+        if (as !== bs) return as ? -1 : 1;
+        var af = _matchesFmt(a.name), bf = _matchesFmt(b.name);
+        if (af !== bf) return af ? -1 : 1;
+        return 0;
+      });
+      grid.innerHTML = sorted.map(function(item) {
+        var thumb    = item.thumbnailUrl || ('https://drive.google.com/thumbnail?id=' + item.fileId + '&sz=w200');
+        var starred  = pbLsGet('dwyp_star_bg_' + item.fileId) === 'true';
         return '<div class="pb-bg-thumb" data-file-id="' + esc(item.fileId) + '" onclick="pbApplyBackground(\'' + esc(item.fileId) + '\')" title="' + esc(item.name || '') + '">' +
                '<img src="' + esc(thumb) + '" onerror="this.style.display=\'none\'" loading="lazy" />' +
+               '<button class="pb-bg-star' + (starred ? ' starred' : '') + '" data-file-id="' + esc(item.fileId) + '"' +
+                 ' onclick="pbToggleBgStar(\'' + esc(item.fileId) + '\',event)" title="' + (starred ? 'Unstar' : 'Star') + '">' +
+                 (starred ? '★' : '☆') + '</button>' +
+               '<button class="pb-bg-delete" onclick="pbDeleteBg(\'' + esc(item.fileId) + '\',event)" title="Remove from library">' +
+                 '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>' +
+               '</button>' +
                '</div>';
       }).join('');
     })
@@ -6230,40 +7759,44 @@ function pbRenderHqPanel() {
   var usedTexts = {};
   Object.keys(pb.slotContent).forEach(function(sid) { usedTexts[pb.slotContent[sid]] = sid; });
 
-  function hqItemHtml(text, assetId) {
+  function hqItemHtml(text, assetId, captionDraft) {
     var slotId  = usedTexts[text];
     var used    = !!slotId;
     var cls     = 'pb-hq-item' + (used ? ' used' : '');
     var badge   = used ? '<span class="pb-hq-used-badge">' + esc(slotId.replace(/^.*?-([^-]+)$/, '$1')) + '</span>' : '';
     var safeTxt = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     var safeId  = assetId ? String(assetId).replace(/"/g,'&quot;') : '';
-    return '<div class="' + cls + '" data-hq-text="' + safeTxt + '" data-asset-id="' + safeId + '">' + esc(text) + badge + '</div>';
+    var safeCap = captionDraft ? captionDraft.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
+    return '<div class="' + cls + '" data-hq-text="' + safeTxt + '" data-asset-id="' + safeId + '" data-caption-draft="' + safeCap + '">' + esc(text) + badge + '</div>';
   }
 
   var html = '';
   if (hooks.length) {
     html += '<div class="pb-hq-section">Hooks</div>';
     hooks.forEach(function(h) {
-      var text    = (typeof h === 'string') ? h : (h.text || h.hook || String(h));
-      var assetId = (typeof h === 'object' && h.assetId) ? h.assetId : null;
-      html += hqItemHtml(text, assetId);
+      var text         = (typeof h === 'string') ? h : (h.text || h.hook || String(h));
+      var assetId      = (typeof h === 'object' && h.assetId)      ? h.assetId      : null;
+      var captionDraft = (typeof h === 'object' && h.captionDraft) ? h.captionDraft : null;
+      html += hqItemHtml(text, assetId, captionDraft);
     });
   }
   if (quotes.length) {
     html += '<div class="pb-hq-section">Quotes</div>';
     quotes.forEach(function(q) {
-      var text    = (typeof q === 'string') ? q : (q.text || q.quote || String(q));
-      var assetId = (typeof q === 'object' && q.assetId) ? q.assetId : null;
-      html += hqItemHtml(text, assetId);
+      var text         = (typeof q === 'string') ? q : (q.text || q.quote || String(q));
+      var assetId      = (typeof q === 'object' && q.assetId)      ? q.assetId      : null;
+      var captionDraft = (typeof q === 'object' && q.captionDraft) ? q.captionDraft : null;
+      html += hqItemHtml(text, assetId, captionDraft);
     });
   }
   panel.innerHTML = html;
 
   // Attach click handlers via JS — avoids HTML attribute quoting bugs
   panel.querySelectorAll('.pb-hq-item[data-hq-text]').forEach(function(el) {
-    var text    = el.getAttribute('data-hq-text');
-    var assetId = el.getAttribute('data-asset-id') || null;
-    el.addEventListener('click', function() { pbDropText(text, assetId); });
+    var text         = el.getAttribute('data-hq-text');
+    var assetId      = el.getAttribute('data-asset-id')    || null;
+    var captionDraft = el.getAttribute('data-caption-draft') || null;
+    el.addEventListener('click', function() { pbDropText(text, assetId, captionDraft); });
   });
 }
 
@@ -6293,15 +7826,55 @@ function pbUseSuggestion(text) {
   if (el) el.value = text;
 }
 
-function pbDropText(text, assetId) {
+function pbDropText(text, assetId, captionDraft) {
   pb.activeAssetId = assetId || null;
   var attribution = pb.guestName ? '— ' + pb.guestName : null;
   pbAddTextToCanvas(text, attribution);
   if (pb.activeSlotId) {
     pb.slotContent[pb.activeSlotId] = text;
     pbMarkHqUsed();
-    if (!pb.activeSlotIsReel) pbRegenCaption();
+    if (!pb.activeSlotIsReel) {
+      if (captionDraft) {
+        pbSetCaptionFromDraft(captionDraft, false);
+      } else {
+        pbRegenCaption();
+      }
+    }
   }
+}
+
+function pbSetCaptionFromDraft(captionJson, isReel) {
+  var capTextEl = document.getElementById(isReel ? 'pbReelCaptionText' : 'pbCaptionText');
+  if (!capTextEl) return;
+  var variants = [];
+  try { variants = JSON.parse(captionJson); } catch (e) { variants = [captionJson]; }
+  if (!Array.isArray(variants) || !variants.length) { variants = [captionJson]; }
+  var primary = variants[0] || '';
+  capTextEl.textContent = primary;
+  pb.caption = primary;
+  if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), primary);
+  pb.captionVariants = variants;
+  pbRenderCaptionVariants(isReel);
+}
+
+function pbRenderCaptionVariants(isReel) {
+  var el = document.getElementById(isReel ? 'pbReelCaptionVariants' : 'pbCaptionVariants');
+  if (!el) return;
+  var variants = pb.captionVariants || [];
+  if (variants.length <= 1) { el.innerHTML = ''; return; }
+  el.innerHTML = variants.map(function(v, i) {
+    return '<button class="pb-variant-chip" onclick="pbPickVariant(' + (isReel ? 'true' : 'false') + ',' + i + ')" title="' + v.replace(/"/g, '&quot;') + '">Option ' + (i + 1) + '</button>';
+  }).join('');
+}
+
+function pbPickVariant(isReel, idx) {
+  var variants = pb.captionVariants;
+  if (!variants || !variants[idx]) return;
+  var text     = variants[idx];
+  var capTextEl = document.getElementById(isReel ? 'pbReelCaptionText' : 'pbCaptionText');
+  if (capTextEl) { capTextEl.textContent = text; }
+  pb.caption = text;
+  if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), text);
 }
 
 function pbDropManualText() {
@@ -6403,8 +7976,8 @@ function pbAddToSlot() {
                 d.slots.forEach(function(s) {
                   if (s.slotId === slotIdCapture) {
                     s.filled = {
-                      postId:         pb.selectedPostId,
-                      assetLibraryId: assetId || pb.selectedPostId,
+                      postId:         res.postId || pb.selectedPostId,
+                      assetLibraryId: res.assetLibraryId || assetId || pb.selectedPostId,
                       driveFileId:    selectedCand ? selectedCand.Drive_File_ID : '',
                       caption:        caption,
                       assetType:      selectedCand ? selectedCand.Asset_Type : '',
@@ -6441,7 +8014,16 @@ function pbAddToSlot() {
     var exportH    = pb.activeSlotIsThumbnail ? PB_THUMB_H : PB_CANVAS_H;
     var dataUrl    = pb.canvas.toDataURL({ format: 'png', multiplier: 1920 / exportH });
     var b64        = dataUrl.split(',')[1];
-    var canvasJson = JSON.stringify(pb.canvas.toJSON(['_isText', '_isAttribution', '_isBackground', '_isBrightnessOverlay', '_isOverlay', '_isLogo']));
+    // Strip base64 image srcs from canvas JSON — Sheets cells cap at 50k chars.
+    // The exported PNG is saved to Drive separately, so this data isn't needed.
+    var _rawJson = pb.canvas.toJSON(['_isText', '_isAttribution', '_isBackground', '_isBrightnessOverlay', '_isOverlay', '_isLogo']);
+    if (_rawJson.objects) {
+      _rawJson.objects.forEach(function(obj) {
+        if (obj.src && obj.src.indexOf('data:') === 0) obj.src = '';
+        if (obj.filters) obj.filters.forEach(function(f) { if (f && f.matrix) f.matrix = null; });
+      });
+    }
+    var canvasJson = JSON.stringify(_rawJson);
     var quoteText  = '';
     pb.canvas.getObjects().forEach(function(o) { if (o._isText) quoteText = o.text || ''; });
     var slotIdCapture  = pb.activeSlotId;
@@ -6514,6 +8096,22 @@ function pbAddToSlot() {
   }
 }
 
+function pbDeleteCustomSlot(slotId, ev) {
+  ev.stopPropagation();
+  if (pb.schedule && pb.schedule.days) {
+    pb.schedule.days.forEach(function(d) {
+      d.slots = d.slots.filter(function(s) { return s.slotId !== slotId; });
+    });
+    pb.schedule.days = pb.schedule.days.filter(function(d) { return d.slots.length > 0; });
+  }
+  if (pb.activeSlotId === slotId) {
+    pb.activeSlotId  = null;
+    pb.activeSlotDay = null;
+  }
+  pbRenderAccordion();
+  pbUpdateScheduleBtn();
+}
+
 function pbUnscheduleSlot(slotId, ev) {
   ev.stopPropagation();
   if (!confirm('Remove this asset from the schedule?')) return;
@@ -6565,16 +8163,16 @@ function pbAddCustomSlot(day) {
   var overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
   var box = document.createElement('div');
-  box.style.cssText = 'background:var(--bg-card,#1e1b18);border:1px solid var(--border);border-radius:10px;padding:24px 28px;min-width:260px;display:flex;flex-direction:column;gap:14px;';
+  box.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px 28px;min-width:260px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);';
   box.innerHTML =
-    '<div style="font-weight:600;font-size:14px;color:var(--text-primary);">Add slot — ' + esc(day) + '</div>' +
-    '<div style="font-size:12px;color:var(--text-muted);">Choose platform:</div>' +
+    '<div style="font-weight:600;font-size:14px;color:var(--text);">Add slot — ' + esc(day) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-2);">Choose platform:</div>' +
     '<div id="pbPlatPicker" style="display:flex;flex-direction:column;gap:6px;">' +
       PLATFORMS.map(function(p) {
-        return '<button style="text-align:left;padding:8px 12px;background:var(--bg-elevated,#252220);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:13px;cursor:pointer;" data-plat="' + esc(p) + '">' + esc(p) + '</button>';
+        return '<button style="text-align:left;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;cursor:pointer;" data-plat="' + esc(p) + '">' + esc(p) + '</button>';
       }).join('') +
     '</div>' +
-    '<button id="pbPlatCancel" style="align-self:flex-end;padding:4px 12px;font-size:12px;color:var(--text-muted);background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;">Cancel</button>';
+    '<button id="pbPlatCancel" style="align-self:flex-end;padding:4px 12px;font-size:12px;color:var(--text-2);background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;">Cancel</button>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);
 
@@ -6586,24 +8184,23 @@ function pbAddCustomSlot(day) {
       var platform  = btn.getAttribute('data-plat');
       var assetType = ASSET_TYPES[platform] || 'quote_graphic';
       document.body.removeChild(overlay);
-      btn.disabled = true;
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.slot) {
-            if (!pb.schedule) pb.schedule = { days: [] };
-            var found = false;
-            pb.schedule.days.forEach(function(d) { if (d.day === day) { d.slots.push(res.slot); found = true; } });
-            if (!found) pb.schedule.days.push({ day: day, slots: [res.slot] });
-            pbRenderAccordion();
-            var dayEl = document.getElementById('pbDay-' + day);
-            if (dayEl) dayEl.classList.add('open');
-            pbSelectSlot(res.slot.slotId, day);
-          } else {
-            showToast('Error: ' + (res && res.error ? res.error : 'Could not add slot.'));
-          }
-        })
-        .withFailureHandler(function() { showToast('Error adding slot — check connection.'); })
-        .addPostingSlot(day, platform, assetType);
+      var newSlot = {
+        slotId:    'CUSTOM-' + day.toUpperCase().slice(0,3) + '-' + Date.now(),
+        assetType: assetType,
+        platform:  platform,
+        why:       'Custom slot',
+        sortOrder: 999,
+        isPlaybook: false,
+        filled:    null
+      };
+      if (!pb.schedule) pb.schedule = { days: [] };
+      var found = false;
+      pb.schedule.days.forEach(function(d) { if (d.day === day) { d.slots.push(newSlot); found = true; } });
+      if (!found) pb.schedule.days.push({ day: day, slots: [newSlot] });
+      pbRenderAccordion();
+      var dayEl = document.getElementById('pbDay-' + day);
+      if (dayEl) dayEl.classList.add('open');
+      pbSelectSlot(newSlot.slotId, day);
     };
   });
 }
@@ -6910,6 +8507,7 @@ function stAppendChatBubble(role, text) {
       cc.onclick = function() {
         var doc = document.getElementById('stDocSheet');
         if (doc) {
+          stDocClearEmpty();
           doc.innerHTML += (doc.innerHTML.trim() ? '<br><br>' : '') + stRenderModelMessage(rawText);
         }
         cc.textContent = '✓ Saved to Doc';
@@ -6985,6 +8583,7 @@ function stTapChip(type, text) {
   } else {
     var doc = document.getElementById('stDocSheet');
     if (!doc) return;
+    stDocClearEmpty();
     var p = document.createElement('p');
     p.textContent = text;
     doc.appendChild(p);
@@ -7413,7 +9012,7 @@ function stToggleShadow() {
   var active = st.fabricCanvas.getActiveObject();
   if (!active || !active._isText) return;
   stPushHistory();
-  active.set('shadow', active.shadow ? null : new fabric.Shadow({ color: 'rgba(0,0,0,0.6)', blur: 18, offsetX: 2, offsetY: 4 }));
+  active.set('shadow', active.shadow ? null : new fabric.Shadow({ color: 'rgba(0,0,0,0.6)', blur: 9, offsetX: 2, offsetY: 4 }));
   st.fabricCanvas.renderAll(); stUpdateTextBtns();
 }
 
@@ -7754,6 +9353,12 @@ function stExport() {
 }
 
 // ── DOC VIEW ─────────────────────────────────────────────────
+function stDocClearEmpty() {
+  var sheet = document.getElementById('stDocSheet');
+  if (!sheet) return;
+  sheet.querySelectorAll('.st-doc-empty').forEach(function(el) { el.remove(); });
+}
+
 function stDocCopy(btn) {
   var orig = btn.textContent;
   btn.textContent = '✓ Copied';
@@ -8553,6 +10158,7 @@ function showEpisodeReview(episodeUid) {
     if (episodeUid) {
       var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
       var name = ep ? (ep.Guest_Name || episodeUid) : episodeUid;
+      pb._userChoseEpisode = true;
       pbSetEpisode(episodeUid, name);
     }
   }, 120);

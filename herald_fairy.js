@@ -911,6 +911,7 @@ function writeBioSummary(contactId, bioText) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idCol]).trim() === String(contactId).trim()) {
       sheet.getRange(i + 1, bioCol + 1).setValue(bioText);
+      bumpVersion("contacts", "writeBioSummary");
       return;
     }
   }
@@ -936,6 +937,7 @@ function writeContactFolderId(contactId, folderId) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idCol]).trim() === String(contactId).trim()) {
       sheet.getRange(i + 1, folCol + 1).setValue(folderId);
+      bumpVersion("contacts", "writeContactFolderId");
       return;
     }
   }
@@ -979,13 +981,16 @@ function writeSocialFields(contactId, socialData) {
   if (targetRow === -1) throw new Error(`Contact_ID ${contactId} not found — social fields not written.`);
 
   // Write each populated social field in a single pass
+  let wrote = false;
   SOCIAL_FIELDS.forEach(field => {
     const value = socialData[field];
     if (!value || value === "null") return; // skip null or stringified null
     const colIdx = headers.indexOf(field);
     if (colIdx === -1) return; // field not in sheet — skip silently
     sheet.getRange(targetRow, colIdx + 1).setValue(value);
+    wrote = true;
   });
+  if (wrote) bumpVersion("contacts", "writeSocialFields");
 }
 
 /**
@@ -1011,6 +1016,7 @@ function writeOrganization(contactId, orgString) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idCol]).trim() === String(contactId).trim()) {
       sheet.getRange(i + 1, orgCol + 1).setValue(orgString);
+      bumpVersion("contacts", "writeOrganization");
       return;
     }
   }

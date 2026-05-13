@@ -1,7 +1,7 @@
-// =============================================================================
+﻿// =============================================================================
 // FILE: artist_fairy.gs
 // Fairy: The Artist Fairy (Visual Asset Architect)
-// Trigger: Called automatically at end of runMarcom() in marcom_fairy.gs
+// Trigger: Called automatically at end of runVertFairy() in vert_fairy.gs
 // Entry point: runArtistFairy(epUid)
 //
 // What it does:
@@ -34,8 +34,8 @@
 //   {{HOST_NAME}}                                       — from Governance_Config HOST_NAME
 //
 // Deck-to-subfolder mapping:
-//   ARTIST_SQUARE_DECK_ID   → Social_Images/
-//   ARTIST_VERTICAL_DECK_ID → Social_Images/
+//   ARTIST_SQUARE_DECK_ID   → Images/
+//   ARTIST_VERTICAL_DECK_ID → Images/
 //
 // Image shapes identified by alt text (getDescription()):
 //   {{GUEST_HEADSHOT}} — file containing "headshot" in guest Contact Library folder
@@ -63,7 +63,7 @@
 // =============================================================================
 
 /**
- * Main entry point. Called at end of runMarcom() in marcom_fairy.gs.
+ * Main entry point. Called by Daily Pulse on transcript detection via vert_fairy.gs.
  * Loads manifest, resolves headshots, populates all five slide decks.
  */
 function runArtistFairy(epUid) {
@@ -81,53 +81,30 @@ function runArtistFairy(epUid) {
 
     const guestName = manifest.guest_name;
 
-    // --- Resolve Episode Card ID for placeholder extraction ---
-    // Artist Fairy reads copy directly from the Episode Card doc.
-    // extractSectionFromProse() pulls each section by heading.
-    const episodeCardId = manifest.asset_ids ? manifest.asset_ids.episode_card : null;
-    if (!episodeCardId) {
+    // --- Resolve content doc for placeholder extraction ---
+    // show_notes (Vert Fairy) takes priority over episode_card (Marcom legacy).
+    // extractSectionFromProse() pulls each section by heading from whichever doc is present.
+    const showNotesDocId = manifest.show_notes || null;
+    const episodeCardId  = (manifest.asset_ids && manifest.asset_ids.episode_card) || null;
+    const contentDocId   = showNotesDocId || episodeCardId;
+    if (!contentDocId) {
       logToAuditTrail(agentName, "error", epUid, null,
-        "No episode_card ID in manifest. Slide deck placeholders for hooks, quotes, and titles will be blank.");
+        "No show_notes or episode_card ID in manifest. Slide deck placeholders will be blank.");
     }
 
-    // --- Build placeholder map from Episode Card doc ---
-    const placeholders = buildPlaceholderMap(manifest, episodeCardId, agentName, epUid);
+    // --- Build placeholder map from Show Notes or Episode Card doc ---
+    const placeholders = buildPlaceholderMap(manifest, contentDocId, agentName, epUid);
 
-    // --- Resolve guest headshot blob ---
-    // New schema: Contact_ID from Episodes tab → Contact_Library_Folder_ID from
-    // Contacts tab → flat search for filename containing "headshot".
-    const contactId = getContactIdByEpisodeUid(epUid);
-    if (!contactId) {
-      logToAuditTrail(agentName, "error", epUid, null,
-        "Could not resolve Contact_ID from Episodes tab. Guest headshot will not be inserted.");
-    }
-
-    const contactLibraryFolderId = contactId
-      ? getContactLibraryFolderIdByContactId(contactId)
-      : null;
-    if (contactId && !contactLibraryFolderId) {
-      logToAuditTrail(agentName, "error", epUid, contactId,
-        "Contact_Library_Folder_ID not found on Contacts tab. Guest headshot will not be inserted.");
-    }
-
-    const guestHeadshotBlob = resolveGuestHeadshotBlob(
-      contactLibraryFolderId,
-      agentName,
-      epUid,
-      contactId
-    );
-
-    // --- Resolve host headshot blob ---
-    const hostHeadshotBlob = resolveHostHeadshotBlob(
-      manifest.raw_folder_id,
-      agentName,
-      epUid
-    );
+    // --- Headshots disabled for now ---
+    // resolveGuestHeadshotBlob() and resolveHostHeadshotBlob() are preserved below
+    // but not called. Re-enable when headshot insertion is needed.
+    const guestHeadshotBlob = null;
+    const hostHeadshotBlob  = null;
 
     // --- Define the two template decks ---
     const decks = [
-      { govKey: "ARTIST_SQUARE_DECK_ID",   label: "Square",   subfolder: "Social_Images" },
-      { govKey: "ARTIST_VERTICAL_DECK_ID", label: "Vertical", subfolder: "Social_Images" }
+      { govKey: "ARTIST_SQUARE_DECK_ID",   label: "Square",   subfolder: "Images" },
+      { govKey: "ARTIST_VERTICAL_DECK_ID", label: "Vertical", subfolder: "Images" }
     ];
 
     const populatedDeckIds = [];
@@ -157,7 +134,7 @@ function runArtistFairy(epUid) {
 
     // --- Total failure — spawn Audra task ---
     if (populatedDeckIds.length === 0) {
-      throw new Error("All five decks failed. Check Audit_Trail for individual deck errors.");
+      throw new Error("Both decks failed. Check Audit_Trail for individual deck errors.");
     }
 
     // --- Patch manifest ---
@@ -166,8 +143,8 @@ function runArtistFairy(epUid) {
       fairies_dispatched:     [...(manifest.fairies_dispatched || []), "Artist_Fairy"]
     });
 
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Artist Fairy complete. ${populatedDeckIds.length} of 5 deck(s) populated for ${guestName}.`);
+    logToAuditTrail(agentName, "DECKS_CREATED", epUid, null,
+      `Square and Vertical decks written to staging. ${populatedDeckIds.length} of 2 deck(s) populated for ${guestName}.`, "INFO");
 
   } catch (err) {
     logToAuditTrail(agentName, "error", epUid, null, err.message);
@@ -204,51 +181,74 @@ function runArtistFairy(epUid) {
  * @param {string} agentName      - For audit logging
  * @param {string} epUid          - Episode UID
  */
-function buildPlaceholderMap(manifest, episodeCardId, agentName, epUid) {
+function buildPlaceholderMap(manifest, contentDocId, agentName, epUid) {
   const hostName = getGovernance("HOST_NAME") || "JT";
 
   let hooksLines      = [];
   let guestQuoteLines = [];
   let hostQuoteLines  = [];
-  let titleLines      = [];
 
-  // --- Extract sections from Episode Card doc ---
-  if (episodeCardId) {
+  // --- Extract sections from Show Notes or Episode Card doc ---
+  // Supports two source formats:
+  //   Vert Fairy (new): HOOKS section (numbered list) + QUOTES section (combined 1–5 guest, 6–10 host)
+  //   Marcom legacy:    HOOKS section (plain lines) + GUEST QUOTES + HOST QUOTES sections
+  if (contentDocId) {
     try {
-      const cardText = getBodyTextSkippingHeadings(episodeCardId);
+      const cardText = getBodyTextSkippingHeadings(contentDocId);
       console.log("cardText sample:\n" + cardText.substring(0, 6000));
-      const hooksBlock      = extractSectionFromProse(cardText, "HOOKS");
-      const guestQuoteBlock = extractSectionFromProse(cardText, "GUEST QUOTES");
-      const hostQuoteBlock  = extractSectionFromProse(cardText, "HOST QUOTES");
-      const titlesBlock     = extractSectionFromProse(cardText, "EPISODE TITLES");
 
-      hooksLines      = hooksBlock      ? hooksBlock.split("\n").map(l => l.trim()).filter(l => l)      : [];
-      guestQuoteLines = guestQuoteBlock ? guestQuoteBlock.split("\n").map(l => l.trim()).filter(l => l) : [];
-      hostQuoteLines  = hostQuoteBlock  ? hostQuoteBlock.split("\n").map(l => l.trim()).filter(l => l)  : [];
-      titleLines      = titlesBlock     ? titlesBlock.split("\n").map(l => l.trim()).filter(l => l)     : [];
+      // HOOKS — strip leading "N. " numbering (Vert Fairy format); harmless if plain (Marcom format)
+      const hooksBlock = extractSectionFromProse(cardText, "HOOKS");
+      hooksLines = hooksBlock
+        ? hooksBlock.split("\n").map(l => l.trim().replace(/^\d+\.\s*/, "")).filter(l => l)
+        : [];
+
+      // QUOTES (Vert Fairy): combined section, 1–5 guest, 6–10 host identified by attribution
+      const quotesBlock = extractSectionFromProse(cardText, "QUOTES");
+      if (quotesBlock) {
+        const allQuoteLines = quotesBlock
+          .split("\n")
+          .map(l => l.trim().replace(/^\d+\.\s*/, ""))
+          .filter(l => l);
+
+        // Host lines contain "— hostName" attribution; guest lines contain any other "— Name"
+        guestQuoteLines = allQuoteLines.filter(l => !l.endsWith("— " + hostName));
+        hostQuoteLines  = allQuoteLines.filter(l =>  l.endsWith("— " + hostName));
+      }
+
+      // Fallback for Marcom legacy format: separate GUEST QUOTES / HOST QUOTES sections
+      if (guestQuoteLines.length === 0) {
+        const guestQuoteBlock = extractSectionFromProse(cardText, "GUEST QUOTES");
+        guestQuoteLines = guestQuoteBlock
+          ? guestQuoteBlock.split("\n").map(l => l.trim()).filter(l => l)
+          : [];
+      }
+      if (hostQuoteLines.length === 0) {
+        const hostQuoteBlock = extractSectionFromProse(cardText, "HOST QUOTES");
+        hostQuoteLines = hostQuoteBlock
+          ? hostQuoteBlock.split("\n").map(l => l.trim()).filter(l => l)
+          : [];
+      }
 
       logToAuditTrail(agentName, "state_change", epUid, null,
-        `Extracted from Episode Card — hooks: ${hooksLines.length}, guest quotes: ${guestQuoteLines.length}, host quotes: ${hostQuoteLines.length}, titles: ${titleLines.length}`);
+        `Extracted from Show Notes / Episode Card — hooks: ${hooksLines.length}, guest quotes: ${guestQuoteLines.length}, host quotes: ${hostQuoteLines.length}`);
 
     } catch (e) {
       logToAuditTrail(agentName, "error", epUid, null,
-        `Could not read Episode Card doc: ${e.message}. All content placeholders will be blank.`);
+        `Could not read Show Notes / Episode Card doc: ${e.message}. All content placeholders will be blank.`);
     }
   }
 
   // Warn on empty sections — decks still run, placeholders resolve to ""
   if (hooksLines.length === 0)
     logToAuditTrail(agentName, "error", epUid, null,
-      "HOOKS section empty or not found in Episode Card. {{HOOK_*}} placeholders will be blank.");
+      "HOOKS section empty or not found. {{HOOK_*}} placeholders will be blank.");
   if (guestQuoteLines.length === 0)
     logToAuditTrail(agentName, "error", epUid, null,
-      "GUEST QUOTES section empty or not found in Episode Card. {{GUEST_QUOTE_*}} placeholders will be blank.");
+      "Guest quotes empty or not found. {{GUEST_QUOTE_*}} placeholders will be blank.");
   if (hostQuoteLines.length === 0)
     logToAuditTrail(agentName, "error", epUid, null,
-      "HOST QUOTES section empty or not found in Episode Card. {{HOST_QUOTE_*}} placeholders will be blank.");
-  if (titleLines.length === 0)
-    logToAuditTrail(agentName, "error", epUid, null,
-      "EPISODE TITLES section empty or not found in Episode Card. {{TITLE_*}} placeholders will be blank.");
+      "Host quotes empty or not found. {{HOST_QUOTE_*}} placeholders will be blank.");
 
   return {
     "{{HOOK_1}}":        hooksLines[0]      || "",
@@ -263,13 +263,15 @@ function buildPlaceholderMap(manifest, episodeCardId, agentName, epUid) {
     "{{GUEST_QUOTE_2}}": guestQuoteLines[1] || "",
     "{{GUEST_QUOTE_3}}": guestQuoteLines[2] || "",
     "{{GUEST_QUOTE_4}}": guestQuoteLines[3] || "",
+    "{{GUEST_QUOTE_5}}": guestQuoteLines[4] || "",
     "{{HOST_QUOTE_1}}":  hostQuoteLines[0]  || "",
     "{{HOST_QUOTE_2}}":  hostQuoteLines[1]  || "",
     "{{HOST_QUOTE_3}}":  hostQuoteLines[2]  || "",
     "{{HOST_QUOTE_4}}":  hostQuoteLines[3]  || "",
-    "{{TITLE_1}}":       titleLines[0]      || "",
-    "{{TITLE_2}}":       titleLines[1]      || "",
-    "{{TITLE_3}}":       titleLines[2]      || "",
+    "{{HOST_QUOTE_5}}":  hostQuoteLines[4]  || "",
+    "{{TITLE_1}}":       "",
+    "{{TITLE_2}}":       "",
+    "{{TITLE_3}}":       "",
     "{{GUEST_NAME}}":    manifest.guest_name || "",
     "{{HOST_NAME}}":     hostName
   };
@@ -416,13 +418,21 @@ function populateSlideDeck(govKey, label, subfolderName, stagingFolderId, guestN
     targetFolder = DriveApp.getFolderById(stagingFolderId);
   }
 
-  // --- Copy template to target folder ---
-  const templateFile = DriveApp.getFileById(templateId);
-  const deckCopy = templateFile.makeCopy(
-    `SocialGraphics_${label}_${epUid}_${guestName}`,
-    targetFolder
+  // --- Copy template + convert .pptx → Google Slides in one operation ---
+  // Drive.Files.copy with mimeType override handles both copy and format conversion.
+  // Drive Advanced Service must be enabled in the GAS project (Resources → Advanced Google Services).
+  // Copy without specifying parents — Drive API v2 ignores parents for Shared Drive
+  // source files. File lands next to the template; moveTo() relocates it.
+  const copiedResource = Drive.Files.copy(
+    {
+      title:   `SocialGraphics_${label}_${epUid}_${guestName}`,
+      mimeType: 'application/vnd.google-apps.presentation'
+    },
+    templateId,
+    { supportsAllDrives: true }
   );
-  const deckId = deckCopy.getId();
+  const deckId = copiedResource.id;
+  DriveApp.getFileById(deckId).moveTo(targetFolder);
 
   logToAuditTrail(agentName, "state_change", epUid, null,
     `${label} deck copied to ${subfolderName}: ${deckId}`);
@@ -591,5 +601,45 @@ function replaceTextPlaceholders(textRange, placeholders) {
 }
 
 function testArtistFairy() {
-  runArtistFairy("EP-260326-0107");
+  runArtistFairy("EP-260428-1928"); // Carrie Sipe — replace with active UID if needed
+}
+
+
+// =============================================================================
+// SLIDE PNG EXPORTER
+// Exports each slide in a presentation as a PNG to the same Drive folder.
+// Uses the Slides API thumbnail endpoint (LARGE = ~1600px wide).
+// Call manually from dev_tools or wire into populateSlideDeck() when ready.
+// =============================================================================
+
+/**
+ * Exports all slides in a presentation as individual PNG files.
+ * Saves each PNG to the same Drive folder as the presentation.
+ * Files are named: [DeckName]_Slide1.png, _Slide2.png, etc.
+ *
+ */
+function exportSlidesToPng(presentationId) {
+  const token            = ScriptApp.getOAuthToken();
+  const presentationFile = DriveApp.getFileById(presentationId);
+  const targetFolder     = presentationFile.getParents().next();
+  const baseName         = presentationFile.getName();
+  const slides           = SlidesApp.openById(presentationId).getSlides();
+
+  slides.forEach((slide, index) => {
+    const pageId  = slide.getObjectId();
+    const thumbUrl =
+      `https://slides.googleapis.com/v1/presentations/${presentationId}/pages/${pageId}/thumbnail` +
+      `?thumbnailProperties.mimeType=PNG&thumbnailProperties.thumbnailSize=LARGE`;
+
+    const thumbResponse = UrlFetchApp.fetch(thumbUrl, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const contentUrl = JSON.parse(thumbResponse.getContentText()).contentUrl;
+
+    const imageBlob = UrlFetchApp.fetch(contentUrl).getBlob();
+    imageBlob.setName(`${baseName}_Slide${index + 1}.png`);
+    targetFolder.createFile(imageBlob);
+  });
+
+  console.log(`exportSlidesToPng: exported ${slides.length} slide(s) from "${baseName}".`);
 }

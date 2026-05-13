@@ -682,6 +682,7 @@ function updateLastActivity(contactId) {
   for (let i = 1; i < data.length; i++) {
     if (data[i][contactIdCol] === contactId) {
       sheet.getRange(i + 1, lastActivityCol + 1).setValue(new Date());
+      bumpVersion("contacts", "updateLastActivity");
       return;
     }
   }
@@ -752,7 +753,7 @@ function createContactStub(signals) {
 
 
   contactSheet.appendRow(row);
-
+  bumpVersion("contacts", "createContactStub");
 
   return contactId;
 }

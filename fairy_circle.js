@@ -147,6 +147,47 @@ function getMasterSheetId() {
   return stagingId;
 }
 
+/**
+ * Increments the version stamp for a named domain in the Versions tab.
+ * Uses LockService to prevent concurrent write conflicts.
+ * Returns the new version number, or null on error or unknown domain.
+ *
+ * @param {string} domain     - Domain key (e.g. "tasks", "episodes"). Must exist in Versions tab.
+ * @param {string} callerName - Identifier for the Modified_By column (function or fairy name).
+ */
+function bumpVersion(domain, callerName) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Versions");
+    if (!sheet) {
+      if (domain !== "audit_trail") logToAuditTrail("bumpVersion", "error", "", "", "[WARNING] bumpVersion: Versions tab not found.", "WARNING");
+      else console.error("[bumpVersion] Versions tab not found (audit_trail guard).");
+      return null;
+    }
+    var data = sheet.getDataRange().getValues();
+    var now  = new Date();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() === domain) {
+        var newVersion = (Number(data[i][1]) || 0) + 1;
+        sheet.getRange(i + 1, 2, 1, 3).setValues([[newVersion, now, callerName || "system"]]);
+        return newVersion;
+      }
+    }
+    if (domain !== "audit_trail") logToAuditTrail("bumpVersion", "error", "", "", "[WARNING] bumpVersion: unknown domain '" + domain + "'.", "WARNING");
+    else console.error("[bumpVersion] unknown domain 'audit_trail' (audit_trail guard).");
+    return null;
+  } catch (err) {
+    if (domain !== "audit_trail") logToAuditTrail("bumpVersion", "error", "", "", "[ERROR] bumpVersion failed for '" + domain + "': " + err.message, "ERROR");
+    else console.error("[bumpVersion] failed for audit_trail: " + err.message);
+    return null;
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
 
 // =============================================================================
 // CONFIG
@@ -787,6 +828,7 @@ function logToAuditTrail(actor, eventCategory, episodeUid, contactId, detail, le
       contactId  || "",
       detail     || ""
     ]);
+    bumpVersion("audit_trail", "logToAuditTrail");
   } catch (e) {
     console.error(`[AUDIT FAIL] ${actor} | ${eventCategory} | ${episodeUid} | ${contactId} | ${detail}`);
   }
@@ -851,7 +893,7 @@ function generateContactId() {
  * @param {string} [taskConfig.executiveSummary]- Episode/situation context. System tasks only.
  * @param {string} [taskConfig.payloadLink]     - Drive doc, folder, or external URL.
  */
-function spawnTask(taskConfig) {
+function spawnTask(taskConfig, suppressBump) {
   const scriptProps = PropertiesService.getScriptProperties();
   const sheetId     = getMasterSheetId();
   if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
@@ -891,6 +933,7 @@ function spawnTask(taskConfig) {
   });
 
   sheet.appendRow(row);
+  if (!suppressBump) bumpVersion("tasks", "spawnTask");
 
   logToAuditTrail(
     taskConfig.assignedBy || "The Fairy Team",
@@ -911,7 +954,7 @@ function spawnTask(taskConfig) {
  * @param {string} taskId    - The Task_ID to update.
  * @param {string} newStatus - New status value. Enum: open | in_progress | waiting | complete | cancelled
  */
-function updateTaskStatus(taskId, newStatus) {
+function updateTaskStatus(taskId, newStatus, suppressBump) {
   const scriptProps = PropertiesService.getScriptProperties();
   const sheetId     = getMasterSheetId();
   if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
@@ -931,6 +974,7 @@ function updateTaskStatus(taskId, newStatus) {
       if (newStatus === "complete" || newStatus === "cancelled") {
         sheet.getRange(i + 1, completedCol + 1).setValue(new Date());
       }
+      if (!suppressBump) bumpVersion("tasks", "updateTaskStatus");
       logToAuditTrail(
         "Task_Fairy",
         "state_change",
@@ -1103,6 +1147,7 @@ function writeManifest(stagingFolderId, manifestData) {
       folder.createFile("episode_manifest.json", content, MimeType.PLAIN_TEXT);
     }
 
+    bumpVersion("manifests", "writeManifest");
     logToAuditTrail(
       "Jason_Protocol",
       "state_change",
@@ -1423,6 +1468,7 @@ function patchEpisodes(epUid, fields) {
       logToAuditTrail(agentName, "error", epUid, "", `[WARNING] Skipped unknown column(s): ${skipped.join(", ")}`, "WARNING");
     }
     if (written.length > 0) {
+      bumpVersion("episodes", "patchEpisodes");
       logToAuditTrail(agentName, "state_change", epUid, "", `[INFO] Episodes tab updated: ${written.join(", ")}`, "INFO");
     }
 
@@ -1470,6 +1516,7 @@ function upsertEpisodes(episodeData) {
             sheet.getRange(i + 1, idx + 1).setValue(episodeData[h]);
           }
         });
+        bumpVersion("episodes", "upsertEpisodes");
         logToAuditTrail(agentName, "state_change", episodeData.Episode_UID, episodeData.Contact_ID || "", `[INFO] Episodes row updated.`, "INFO");
         return;
       }
@@ -1492,7 +1539,7 @@ function upsertEpisodes(episodeData) {
     });
 
     sheet.appendRow(row);
-
+    bumpVersion("episodes", "upsertEpisodes");
     logToAuditTrail(agentName, "state_change", episodeData.Episode_UID, episodeData.Contact_ID || "", `[INFO] New Episodes row created.`, "INFO");
 
   } catch (e) {
@@ -1961,7 +2008,7 @@ function dailyPulse() {
           if (taskDue && taskDue <= today) {
             const taskId = tasksData[t][taskIdCol];
             try {
-              updateTaskStatus(String(taskId), "complete");
+              updateTaskStatus(String(taskId), "complete", true);
               logToAuditTrail(agentName, "state_change", epUid, "",
                 `[INFO] Recording_Reminder task ${taskId} self-completed — due date reached.`, "INFO");
             } catch (e) {
@@ -2008,7 +2055,7 @@ function dailyPulse() {
           episodeUid:       epUid,
           workflowStep:     "Recording_Reminder",
           executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
-        });
+        }, true);
         spawnTask({
           actionTitle:      spawnTitle,
           assignee:         getGovernance("ASSIGNEE_PRODUCER"),
@@ -2020,7 +2067,7 @@ function dailyPulse() {
           episodeUid:       epUid,
           workflowStep:     "Recording_Reminder",
           executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
-        });
+        }, true);
         recRemindersSpawned += 2;
         logToAuditTrail(agentName, "state_change", epUid, contactId,
           `[INFO] Recording_Reminder tasks spawned for ${guestName} (${recDate.toDateString()}).`, "INFO");
@@ -2083,7 +2130,7 @@ function dailyPulse() {
           if (taskDue && taskDue <= todayRel) {
             const taskId = tasksData[t][taskIdCol];
             try {
-              updateTaskStatus(String(taskId), "complete");
+              updateTaskStatus(String(taskId), "complete", true);
               logToAuditTrail(agentName, "state_change", epUid, contactId,
                 `[INFO] Release_Reminder task ${taskId} self-completed — release date reached.`, "INFO");
             } catch (e) {
@@ -2131,7 +2178,7 @@ function dailyPulse() {
           episodeUid:       epUid,
           workflowStep:     "Release_Reminder",
           executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
-        });
+        }, true);
         spawnTask({
           actionTitle:      spawnTitle,
           assignee:         getGovernance("ASSIGNEE_PRODUCER"),
@@ -2143,7 +2190,7 @@ function dailyPulse() {
           episodeUid:       epUid,
           workflowStep:     "Release_Reminder",
           executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
-        });
+        }, true);
         releaseRemindersSpawned += 2;
         logToAuditTrail(agentName, "state_change", epUid, contactId,
           `[INFO] Release_Reminder tasks spawned for ${guestName} (${relDate.toDateString()}).`, "INFO");
@@ -2199,7 +2246,7 @@ function dailyPulse() {
               status:           "open",
               priority:         "urgent",
               executiveSummary: `episode_manifest.json in folder ${e.folderId || prodFolderId} failed JSON.parse during the daily safety audit scan. Manually inspect and repair the manifest file, then re-run the daily pulse or manually clear the safety_audited flag.`
-            });
+            }, true);
           }
         }
       }
@@ -2283,7 +2330,7 @@ function dailyPulse() {
             episodeUid:       epUid,
             workflowStep:     "Review_Episode",
             executiveSummary: `The episode proxy for ${guestName} is ready for your review.`
-          });
+          }, true);
 
           proxySpawned++;
           logToAuditTrail(agentName, "state_change", epUid, contactId,
@@ -2359,7 +2406,7 @@ function dailyPulse() {
             episodeUid:       epUid,
             workflowStep:     "Review_Images",
             executiveSummary: `New images are ready for your review for ${guestName}.`
-          });
+          }, true);
 
           imagesDetectSpawned++;
           logToAuditTrail(agentName, "state_change", epUid, contactId,
@@ -2435,7 +2482,7 @@ function dailyPulse() {
             episodeUid:       epUid,
             workflowStep:     "Review_Reels",
             executiveSummary: `New reels are ready for your review for ${guestName}.`
-          });
+          }, true);
 
           reelsDetectSpawned++;
           logToAuditTrail(agentName, "state_change", epUid, contactId,
@@ -2715,6 +2762,8 @@ function dailyPulse() {
     logToAuditTrail(agentName, "state_change", "", "", `[INFO] _ready subfolder scan complete. Episodes scanned: ${subfolderScanned}. Review tasks spawned: ${reviewsSpawned}. Filing tasks spawned: ${filingSpawned}.`, "INFO");
     */
 
+    bumpVersion("tasks", "dailyPulse");
+    bumpVersion("episodes", "dailyPulse");
     logToAuditTrail(agentName, "human_action", "", "", "[INFO] Daily Pulse complete.", "INFO");
 
   } catch (e) {

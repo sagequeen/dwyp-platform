@@ -194,6 +194,108 @@ var EPISODES_COLS = {
 };
 
 
+// ── SERVER: VERSION ENDPOINTS ────────────────────────────────────────────────
+
+/**
+ * Returns all domain versions as a flat object { domain: versionNumber }.
+ * Called by the frontend on tab return to determine which domains need a refetch.
+ * image_library uses a Drive folder hybrid — auto-bumps if Drive is newer than
+ * the last bumpVersion() call (catches external file additions by Audra).
+ */
+function getAllVersions() {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var sheet   = ss.getSheetByName("Versions");
+  if (!sheet) return {};
+
+  var data   = sheet.getDataRange().getValues();
+  var result = {};
+  for (var i = 1; i < data.length; i++) {
+    var domain = String(data[i][0]).trim();
+    if (!domain) continue;
+    result[domain] = domain === "image_library"
+      ? _resolveImageLibraryVersion(data[i])
+      : (Number(data[i][1]) || 0);
+  }
+  return result;
+}
+
+/**
+ * Returns the current version number for a single domain.
+ * image_library applies the same Drive folder hybrid as getAllVersions().
+ */
+function getDomainVersion(domain) {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var sheet   = ss.getSheetByName("Versions");
+  if (!sheet) return 0;
+
+  var data = sheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0]).trim() === domain) {
+      return domain === "image_library"
+        ? _resolveImageLibraryVersion(data[i])
+        : (Number(data[i][1]) || 0);
+    }
+  }
+  return 0;
+}
+
+/**
+ * image_library hybrid resolver.
+ * Compares the Drive folder's last-updated timestamp to the Versions row's
+ * Last_Modified. If Drive is newer, calls bumpVersion("image_library") to
+ * record the external change and returns the bumped version number.
+ * Fails closed to the sheet version on any Drive API error.
+ */
+function _resolveImageLibraryVersion(versionRow) {
+  var sheetVersion = Number(versionRow[1]) || 0;
+  try {
+    var folderId = getGovernance("IMAGE_BACKGROUND_LIBRARY_ID");
+    if (!folderId) return sheetVersion;
+    var folder       = DriveApp.getFolderById(folderId);
+    var lastModified = versionRow[2] instanceof Date ? versionRow[2] : new Date(versionRow[2]);
+    var files = folder.getFiles();
+    var newestMod = null;
+    while (files.hasNext()) {
+      var fileMod = files.next().getLastUpdated();
+      if (!newestMod || fileMod > newestMod) newestMod = fileMod;
+    }
+    if (newestMod && newestMod > lastModified) {
+      var bumped = bumpVersion("image_library", "drive_sync");
+      return bumped !== null ? bumped : sheetVersion;
+    }
+    return sheetVersion;
+  } catch (e) {
+    return sheetVersion;
+  }
+}
+
+/**
+ * Batch-fetches data for the active frontend loader domains.
+ * Accepts an array of domain names (subset of ['tasks','episodes','contacts']).
+ * Returns an object keyed by domain with fetched data.
+ * Domains outside the active set are silently skipped.
+ * Per-domain failures are caught and logged; other domains succeed normally.
+ */
+function getDomainsBatch(domains) {
+  var FETCHABLE = { tasks: true, episodes: true, contacts: true };
+  var result    = {};
+  for (var i = 0; i < domains.length; i++) {
+    var d = domains[i];
+    if (!FETCHABLE[d]) continue;
+    try {
+      if (d === 'tasks')    result.tasks    = getTasks();
+      if (d === 'episodes') result.episodes = getEpisodes();
+      if (d === 'contacts') result.contacts = getContacts();
+    } catch (e) {
+      Logger.log('[getDomainsBatch] domain=' + d + ' failed: ' + e.message);
+    }
+  }
+  return result;
+}
+
+
 // ── SERVER: ENTRY POINT ──────────────────────────────────────────────────────
 
 /**
@@ -340,7 +442,7 @@ function writeTaskComplete(rowIndex) {
 
     sheet.getRange(rowIndex, TASKS_COLS.Status).setValue("complete");
     sheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(new Date());
-
+    bumpVersion("tasks", "writeTaskComplete");
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -360,6 +462,7 @@ function deleteTaskRow(rowIndex) {
     var ss      = SpreadsheetApp.openById(sheetId);
     var sheet   = ss.getSheetByName("Tasks");
     sheet.deleteRow(rowIndex);
+    bumpVersion("tasks", "deleteTaskRow");
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -431,6 +534,7 @@ function createTask(payload) {
     row[TASKS_COLS.Created_At        - 1] = now;
 
     sheet.appendRow(row);
+    bumpVersion("tasks", "createTask");
     return { success: true, taskId: taskId };
   } catch (err) {
     return { success: false, error: err.message };
@@ -489,6 +593,7 @@ function writeVideoStatus(episodeUid, status) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
         sheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue(status);
+        bumpVersion("episodes", "writeVideoStatus");
         return { success: true };
       }
     }
@@ -687,6 +792,7 @@ function updateReelDisplayName(assetId, newName, fileId) {
     if (fileId) {
       DriveApp.getFileById(fileId).setName(newName);
     }
+    bumpVersion("asset_library", "updateReelDisplayName");
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -710,6 +816,7 @@ function writeSocialAssetStatus(assetId, status) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status).setValue(status);
+      bumpVersion("asset_library", "writeSocialAssetStatus");
       return { success: true };
     }
     return { success: false, error: "Asset not found: " + assetId };
@@ -861,7 +968,7 @@ function placeAssetInSlot(episodeUid, slotId, assetId, caption, driveFileId, ass
     saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
     saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
     saSheet.appendRow(saRow);
-
+    bumpVersion("asset_library", "placeAssetInSlot");
     return { success: true, assetLibraryId: resolvedAlId || '', postId: postId };
   } catch (err) {
     return { success: false, error: err.message };
@@ -924,6 +1031,7 @@ function unscheduleAsset(episodeUid, slotId) {
       }
     }
 
+    bumpVersion("asset_library", "unscheduleAsset");
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1547,6 +1655,7 @@ function submitEpisodeComments(episodeUid, comments, sessionDate) {
       var existing = String(row[TASKS_COLS.Revision_Notes - 1] || "");
       var updated  = existing ? existing + "\n" + block : block;
       sheet.getRange(r + 1, TASKS_COLS.Revision_Notes).setValue(updated);
+      bumpVersion("tasks", "submitEpisodeComments");
       found = true;
       break;
     }
@@ -1890,6 +1999,7 @@ function triggerReadyForRelease(episodeUid) {
       sheet.getRange(r + 1, TASKS_COLS.Status).setValue("complete");
       sheet.getRange(r + 1, TASKS_COLS.Completed_At).setValue(now);
     }
+    bumpVersion("tasks", "triggerReadyForRelease");
 
     var manifest  = getManifest(getStagingFolderIdByUid(episodeUid));
     var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;
@@ -1962,6 +2072,7 @@ function updateContactField(rowIndex, field, value) {
     var col     = headers.indexOf(field);
     if (col === -1) throw new Error("Column not found in Contacts sheet: " + field);
     sheet.getRange(rowIndex, col + 1).setValue(value);
+    bumpVersion("contacts", "updateContactField");
     return { success: true };
   } catch(e) {
     throw new Error("updateContactField failed: " + e.message);
@@ -2383,6 +2494,7 @@ function generateReelCaption(assetId, episodeUid) {
 
     sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variantsJson);
     sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Caption_Final).setValue('');
+    bumpVersion("asset_library", "generateReelCaption");
     return { caption: first, draft: variantsJson };
   } catch (err) {
     return { caption: '', error: err.message };
@@ -2425,7 +2537,10 @@ function getOrGenerateReelSummary(assetId, episodeUid) {
     var summaryText = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 256 });
     if (summaryText) {
       var summary = summaryText.trim();
-      if (rowIndex > 0) sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
+      if (rowIndex > 0) {
+        sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
+        bumpVersion("asset_library", "getOrGenerateReelSummary");
+      }
       return { success: true, summary: summary };
     }
     return { success: false, summary: '' };
@@ -2472,6 +2587,7 @@ function ensureReelSummaries(episodeUid) {
         if (reelSummary) sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Reel_Summary).setValue(reelSummary.trim());
       } catch (genErr) { /* non-fatal — skip this reel */ }
     }
+    bumpVersion("asset_library", "ensureReelSummaries");
     return { done: true };
   } catch (e) {
     return { done: false, error: e.message };
@@ -2560,7 +2676,7 @@ function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, c
     saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
     saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = "publish_canvas";
     saSheet.appendRow(saRow);
-
+    bumpVersion("asset_library", "addToWeekAsImage");
     return { success: true, postId: postId, fileId: fileId, assetLibraryId: resolvedAlId };
   } catch (e) {
     return { success: false, error: e.message };
@@ -2630,6 +2746,7 @@ function rescheduleAsset(assetId, postId, imageDataB64, mimeType, caption, quote
       }
     }
 
+    bumpVersion("asset_library", "rescheduleAsset");
     return { success: true, fileId: fileId };
   } catch (e) {
     return { success: false, error: e.message };
@@ -2733,6 +2850,7 @@ function enrichQuoteAssetsFromTranscript(episodeUid) {
           var variants = backfillMap[bIdx] || '[]';
           if (variants !== '[]') { alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variants); backfilled++; }
         });
+        if (backfilled) bumpVersion("asset_library", "enrichQuoteAssetsFromTranscript");
       }
       return { done: true, skipped: existingCount, backfilled: backfilled };
     }
@@ -2825,7 +2943,7 @@ function enrichQuoteAssetsFromTranscript(episodeUid) {
       alSheet.appendRow(newRow);
       created++;
     });
-
+    if (created) bumpVersion("asset_library", "enrichQuoteAssetsFromTranscript");
     return { done: true, hooks: hooks.length, quotes: quotes.length, created: created };
   } catch (err) {
     return { done: false, error: err.message };
@@ -2939,6 +3057,7 @@ function enrichReelsForEpisode(episodeUid) {
       Utilities.sleep(3000); // brief pause between files
     }
 
+    if (processed) bumpVersion("asset_library", "enrichReelsForEpisode");
     return { done: true, processed: processed, skipped: skipped, timedOut: timedOut, remaining: timedOut ? mp4Files.length - processed - skipped : 0 };
   } catch (err) {
     return { done: false, error: err.message };
@@ -3244,6 +3363,7 @@ function updateCaption(assetId, captionFinal) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Caption_Final).setValue(captionFinal);
+      bumpVersion("asset_library", "updateCaption");
       return { success: true };
     }
     return { success: false, error: "Asset not found: " + assetId };
@@ -3267,6 +3387,7 @@ function updateDisplayName(assetId, displayName) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Display_Name).setValue(displayName);
+      bumpVersion("asset_library", "updateDisplayName");
       return { success: true };
     }
     return { success: false, error: "Asset not found: " + assetId };
@@ -3389,7 +3510,7 @@ function scheduleReel(schedulePayload) {
     saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
     saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
     saSheet.appendRow(saRow);
-
+    bumpVersion("asset_library", "scheduleReel");
     return { success: true, postId: postId };
   } catch (e) {
     return { success: false, error: e.message };
@@ -3464,6 +3585,7 @@ function unscheduleReel(assetId) {
       }
     }
 
+    bumpVersion("asset_library", "unscheduleReel");
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };

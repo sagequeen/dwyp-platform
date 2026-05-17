@@ -5,20 +5,20 @@
 Read in this order before doing any work in this codebase:
 
 **Always (every session):**
-1. `DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.**
-2. `DWYP_Platform_State.md` — Active working state. Current position, GAS file status, pipeline status, open issues.
+1. `docs/DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.**
+2. `docs/DWYP_Platform_State.md` — Active working state. Current position, GAS file status, pipeline status, open issues.
 
 **Always for any code, UI, or design work:**
-3. `DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation)
-4. `DWYP_Performance_Principle.md` — how things feel (show first, sync second; version-stamp invalidation)
+3. `docs/DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation)
+4. `docs/DWYP_Performance_Principle.md` — how things feel (show first, sync second; version-stamp invalidation)
 
 **When relevant to the current task:**
-- `DWYP_Build_Playbook.md` — when picking next work or sequencing dependencies
-- `DWYP_Publish_AI_Companion_Design.md` — when working on Publish AI features
-- `DWYP_PreFlight_Staging_Verification.md` — when handed a verification prompt
-- `DWYP_App_Structure.md` v1.3 — Phase 2 design sessions; any app structure or surface work
-- `DWYP_User_Flows.md` v1.0 — any verb-level question on a specific surface
-- Active spoke prompt — when included in the session (current: `DWYP_Spoke_Bridge_v2_Reel_Editorial.md`)
+- `docs/DWYP_Build_Playbook.md` — when picking next work or sequencing dependencies
+- `docs/DWYP_Publish_AI_Companion_Design.md` — when working on Publish AI features
+- `docs/DWYP_PreFlight_Staging_Verification.md` — when handed a verification prompt
+- `docs/DWYP_App_Structure.md` v1.3 — Phase 2 design sessions; any app structure or surface work
+- `docs/DWYP_User_Flows.md` v1.0 — any verb-level question on a specific surface
+- Active spoke prompt — when included in the session (no active spoke)
 
 If a referenced doc is not in context, ask before proceeding rather than assuming.
 
@@ -92,7 +92,7 @@ When designing or building any UI surface, apply the test:
 
 Mobile is operations-only. Desktop is the creation layer. No graceful degradation — if a mobile user taps a desktop-only surface, the response is a hard wall ("open on desktop"), not a read-only mobile view.
 
-Full spec: `DWYP_Surface_Principle.md`. Surface decisions that conflict with this principle should be flagged, not silently resolved.
+Full spec: `docs/DWYP_Surface_Principle.md`. Surface decisions that conflict with this principle should be flagged, not silently resolved.
 
 ### Performance Principle (any new feature)
 
@@ -102,7 +102,7 @@ Three pillars apply to every new feature:
 2. **Optimistic UI by default.** User actions apply to local state immediately, backend writes happen async, failures surface visibly with rollback.
 3. **Progressive loading.** Skeleton → low-fi → high-fi. Never block on the heaviest asset.
 
-Full spec: `DWYP_Performance_Principle.md`.
+Full spec: `docs/DWYP_Performance_Principle.md`.
 
 **Versioning pattern (live as of Phase 1.2):**
 - All new write paths must call `bumpVersion(domain, callerName)` for the affected domain.

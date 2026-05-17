@@ -583,3 +583,15 @@ function test_materializeQuoteGraphicAssets() {
   const result = materializeQuoteGraphicAssets('EP-260430-1427', { force: true });
   Logger.log(JSON.stringify(result, null, 2));
 }
+
+function test_runReelEditorialPass() {
+  var epUid  = "EP-260430-1427"; // David Bedrick — replace at run time
+  var result = runReelEditorialPass(epUid, { force: false });
+  Logger.log(JSON.stringify(result, null, 2));
+}
+
+function test_runReelEditorialPass_force() {
+  var epUid  = "EP-260430-1427"; // David Bedrick — replace at run time
+  var result = runReelEditorialPass(epUid, { force: true });
+  Logger.log(JSON.stringify(result, null, 2));
+}

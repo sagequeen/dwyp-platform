@@ -1339,18 +1339,18 @@ function runEditorialPass(epUid, opts) {
       "runEditorialPass: Guest Brief lookup failed: " + e.message + ". Continuing without.", "warning");
   }
 
-  // Master Template — full doc body (extractPrompt requires #-prefixed headings;
-  // the Google Doc uses styled headings, so read body directly instead)
-  var masterTemplateStructure = "";
+  // Master Template — compose prompt from named sections (v2.3: # headings enable extractPrompt)
+  var templatePrompt = "";
   try {
-    var templateId = getGovernance("MASTER_TEMPLATE_ID");
-    if (!templateId) throw new Error("MASTER_TEMPLATE_ID not in Governance_Config.");
-    masterTemplateStructure = DocumentApp.openById(templateId).getBody().getText().trim();
+    var voice     = extractPrompt("# Voice Prohibitions");
+    var ranking   = extractPrompt("# Ranking Schema");
+    var showNotes = extractPrompt("# Show Notes");
+    templatePrompt = [voice, ranking, showNotes].filter(function(s) { return s.trim(); }).join('\n\n');
   } catch (e) {
-    throw new Error("runEditorialPass: Master Template not accessible: " + e.message);
+    throw new Error("runEditorialPass: Master Template sections unreadable: " + e.message);
   }
-  if (!masterTemplateStructure) {
-    throw new Error("runEditorialPass: Master Template not accessible");
+  if (!templatePrompt) {
+    throw new Error("runEditorialPass: Master Template sections missing or empty — check # Voice Prohibitions, # Ranking Schema, # Show Notes headings in template");
   }
 
   // ── 5. Release date string ───────────────────────────────────────────────────
@@ -1362,7 +1362,7 @@ function runEditorialPass(epUid, opts) {
   }
 
   // ── 6. Build prompt ──────────────────────────────────────────────────────────
-  var systemInstruction = _buildEditorialPassSystemInstruction_(brandVoiceText, masterTemplateStructure);
+  var systemInstruction = _buildEditorialPassSystemInstruction_(brandVoiceText, templatePrompt);
   var userPrompt        = _buildEditorialPassPrompt_(
     epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text
   );
@@ -1524,11 +1524,18 @@ function _buildEditorialPassPrompt_(epUid, guestName, releaseDateStr, guestBrief
  * Returns '' if startHeader not found.
  */
 function _bridgeSliceSection_(fullText, startHeader, endHeader) {
-  var startIdx = fullText.indexOf(startHeader);
+  // Normalize em-dash / en-dash / horizontal bar to hyphen-minus before matching
+  // so header constants are robust to whatever Unicode dash the doc emits.
+  var normDash = function(s) { return s.replace(/[–—―]/g, '-'); };
+  var normText  = normDash(fullText);
+  var normStart = normDash(startHeader);
+
+  var startIdx = normText.indexOf(normStart);
   if (startIdx === -1) return '';
-  var contentStart = startIdx + startHeader.length;
+  var contentStart = startIdx + normStart.length;
   if (!endHeader) return fullText.slice(contentStart);
-  var endIdx = fullText.indexOf(endHeader, contentStart);
+  var normEnd = normDash(endHeader);
+  var endIdx  = normText.indexOf(normEnd, contentStart);
   return endIdx === -1 ? fullText.slice(contentStart) : fullText.slice(contentStart, endIdx);
 }
 
@@ -1543,17 +1550,105 @@ function _bridgeSliceSection_(fullText, startHeader, endHeader) {
  */
 function _bridgeParseLabeledCaptions_(block, labelPrefix) {
   var result     = new Map();
-  var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):.*$', 'gm');
+  // Group 1 = number, Group 2 = inline caption text (may be empty for multi-line formats)
+  var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):\\s*(.*)$', 'gm');
   var matches    = Array.from(block.matchAll(labelRegex));
   for (var i = 0; i < matches.length; i++) {
-    var m        = matches[i];
-    var num      = parseInt(m[1], 10);
-    var bodyStart = m.index + m[0].length;
-    var bodyEnd   = (i + 1 < matches.length) ? matches[i + 1].index : block.length;
-    result.set(num, block.slice(bodyStart, bodyEnd).trim());
+    var m          = matches[i];
+    var num        = parseInt(m[1], 10);
+    var inlineText = (m[2] || '').trim();
+    var bodyStart  = m.index + m[0].length;
+    var bodyEnd    = (i + 1 < matches.length) ? matches[i + 1].index : block.length;
+    var bodyText   = block.slice(bodyStart, bodyEnd).trim();
+    // Inline text takes priority (single-line format); fall back to body for multi-line
+    result.set(num, inlineText || bodyText);
   }
   return result;
 }
+
+/**
+ * Appends the CAPTION_SIGNOFF governance value to a caption string.
+ * Idempotent — skips append if the signoff is already present.
+ * Returns captionText unchanged if signoff is empty or captionText is empty.
+ */
+function _appendCaptionSignoff_(captionText) {
+  var signoff = (getGovernance("CAPTION_SIGNOFF") || "").trim();
+  if (!signoff || !captionText) return captionText;
+  var trimmed = captionText.trimEnd();
+  if (trimmed.slice(-signoff.length) === signoff) return captionText;
+  return trimmed + "\n\n" + signoff;
+}
+
+
+/**
+ * Parses a HOOKS or GUEST QUOTES section (v2.3 format) into ranked items.
+ * Each block has a numbered label line (e.g. HOOK 1: or QUOTE 1:) followed by
+ * SLOT_TAGS: and QUALITY_SCORE: lines.
+ *
+ * @param {string} sectionText  — extracted section content
+ * @param {string} labelPrefix  — 'HOOK' or 'QUOTE' (all-caps, matches template)
+ * @returns {Array<{index: number, text: string, slot_tags: string[], quality_score: number}>}
+ */
+function _bridgeParseRankedItems_(sectionText, labelPrefix) {
+  var VALID_TAGS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Any"];
+  var agentName  = 'Bridge_Fairy';
+  var result     = [];
+  var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):\\s*(.*)$', 'gm');
+  var matches    = Array.from(sectionText.matchAll(labelRegex));
+
+  for (var i = 0; i < matches.length; i++) {
+    var m     = matches[i];
+    var index = parseInt(m[1], 10);
+    var text  = m[2].trim();
+
+    var blockStart = m.index + m[0].length;
+    var blockEnd   = (i + 1 < matches.length) ? matches[i + 1].index : sectionText.length;
+    var block      = sectionText.slice(blockStart, blockEnd);
+
+    // SLOT_TAGS
+    var slotTagsMatch = block.match(/^SLOT_TAGS:\s*(.+)$/m);
+    var slot_tags;
+    if (slotTagsMatch) {
+      var rawTags = slotTagsMatch[1].split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      slot_tags   = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) !== -1; });
+      var dropped = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) === -1; });
+      if (dropped.length) {
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_bridgeParseRankedItems_: Dropped unrecognized tags [' + dropped.join(', ') + '] for ' + labelPrefix + ' ' + index, 'WARNING');
+      }
+      if (!slot_tags.length) {
+        slot_tags = ['Any'];
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_bridgeParseRankedItems_: All tags invalid for ' + labelPrefix + ' ' + index + ' — defaulting to Any', 'WARNING');
+      }
+    } else {
+      slot_tags = ['Any'];
+      logToAuditTrail(agentName, 'state_change', '', null,
+        '_bridgeParseRankedItems_: SLOT_TAGS missing for ' + labelPrefix + ' ' + index + ' — defaulting to Any', 'WARNING');
+    }
+
+    // QUALITY_SCORE
+    var qualMatch    = block.match(/^QUALITY_SCORE:\s*(\d+)$/m);
+    var quality_score;
+    if (qualMatch) {
+      quality_score = parseInt(qualMatch[1], 10);
+      if (quality_score < 1 || quality_score > 5) {
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_bridgeParseRankedItems_: QUALITY_SCORE ' + quality_score + ' out of [1,5] for ' + labelPrefix + ' ' + index + ' — clamping', 'WARNING');
+        quality_score = Math.max(1, Math.min(5, quality_score));
+      }
+    } else {
+      quality_score = 3;
+      logToAuditTrail(agentName, 'state_change', '', null,
+        '_bridgeParseRankedItems_: QUALITY_SCORE missing for ' + labelPrefix + ' ' + index + ' — defaulting to 3', 'WARNING');
+    }
+
+    result.push({ index: index, text: text, slot_tags: slot_tags, quality_score: quality_score });
+  }
+
+  return result;
+}
+
 
 /**
  * Reads Show Notes Doc (manifest.show_notes), parses HOOKS + GUEST QUOTES + labeled
@@ -1681,17 +1776,13 @@ function materializeQuoteGraphicAssets(epUid, opts) {
   if (!hookCaptionsBlock)  logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — HOOKS section not found in Show Notes Doc', 'WARNING');
   if (!quoteCaptionsBlock) logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
 
-  // HOOKS: split by newline, trim, drop blanks. Each line is the full hook text.
-  var hooks = hooksBlock
-    ? hooksBlock.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; })
-    : [];
+  // HOOKS: v2.3 format — HOOK N: / SLOT_TAGS: / QUALITY_SCORE: blocks
+  var hookItems = _bridgeParseRankedItems_(hooksBlock || '', 'HOOK');
+  var hooks     = hookItems.map(function(h) { return h.text; });
 
-  // GUEST QUOTES: filter to lines starting with straight or curly open quote.
-  // Drops the hook reprint on the label line, Note: paragraphs, and blank lines.
-  var quotes = quotesBlock
-    ? quotesBlock.split('\n').map(function(l) { return l.trim(); })
-        .filter(function(l) { return l.charAt(0) === '"' || l.charAt(0) === '“'; })
-    : [];
+  // GUEST QUOTES: v2.3 format — QUOTE N: / SLOT_TAGS: / QUALITY_SCORE: blocks
+  var quoteItems = _bridgeParseRankedItems_(quotesBlock || '', 'QUOTE');
+  var quotes     = quoteItems.map(function(q) { return q.text; });
 
   // STARTER CAPTIONS: multi-line body parser. Returns Map<number, string> where
   // the value is everything between the label line and the next label line, trimmed.
@@ -1744,11 +1835,11 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     hookRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
     hookRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = 'Hook ' + (i + 1);
-    hookRow[ASSET_LIBRARY_COLS.Slide_Index   - 1] = i + 1;
+    // RETIRED Slide_Index write (May 2026) — Item 92 Phase 1 retired pairing logic; v2.3 retired write path.
     hookRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = hooks[i];
     hookRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    hookRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = hookCaptions.get(i + 1) || '';
+    hookRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = _appendCaptionSignoff_(hookCaptions.get(i + 1) || '');
     hookRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
@@ -1757,8 +1848,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     hookRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
     hookRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
     hookRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
-    hookRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
-    hookRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = hookItems[i] ? hookItems[i].quality_score : '';
+    hookRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = hookItems[i] ? hookItems[i].slot_tags.join(', ') : '';
     rows.push(hookRow);
   }
 
@@ -1769,11 +1860,11 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     quoteRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
     quoteRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = 'Guest Quote ' + (j + 1);
-    quoteRow[ASSET_LIBRARY_COLS.Slide_Index   - 1] = hooks.length + j + 1;
+    // RETIRED Slide_Index write (May 2026) — Item 92 Phase 1 retired pairing logic; v2.3 retired write path.
     quoteRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = quotes[j];
     quoteRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    quoteRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = quoteCaptions.get(j + 1) || '';
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = _appendCaptionSignoff_(quoteCaptions.get(j + 1) || '');
     quoteRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
@@ -1782,8 +1873,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     quoteRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
     quoteRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
     quoteRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
-    quoteRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
-    quoteRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = quoteItems[j] ? quoteItems[j].quality_score : '';
+    quoteRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = quoteItems[j] ? quoteItems[j].slot_tags.join(', ') : '';
     rows.push(quoteRow);
   }
 
@@ -1820,6 +1911,230 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     totalRows:  totalRows,
     errors:     errors
   };
+}
+
+
+// =============================================================================
+// REEL EDITORIAL PASS (Track D)
+// Entry: runReelEditorialPass(epUid, opts)
+// Reads Reel-type Asset_Library rows, passes raw Reel_Summary values to Claude
+// with composed Voice Prohibitions + Ranking Schema + Reel Editorial sections.
+// Writes cleaned Reel_Summary, Slot_Tags, Quality_Score back to each row.
+// Manual trigger only — no Daily Pulse wiring in this spoke.
+// =============================================================================
+
+/**
+ * Parses Claude's reel editorial response into an array of structured objects.
+ * Expected block format per reel:
+ *   REEL [Asset_ID]:
+ *   SUMMARY: [2-3 sentence cleaned summary]
+ *   SLOT_TAGS: [comma-separated days]
+ *   QUALITY_SCORE: [1-5]
+ *
+ * @param {string} responseText — full Claude response
+ * @returns {Array<{asset_id: string, summary: string, slot_tags: string[], quality_score: number}>}
+ */
+function _parseReelEditorialOutput_(responseText) {
+  var VALID_TAGS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Any"];
+  var agentName  = 'Bridge_Fairy';
+  var result     = [];
+
+  // Split on blank lines; each non-empty block that opens with REEL is one entry
+  var blocks = responseText.split(/\n\s*\n/);
+
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i].trim();
+    if (!block) continue;
+
+    var assetIdMatch = block.match(/^REEL\s+([^:\n]+):/i);
+    if (!assetIdMatch) continue;
+    var assetId = assetIdMatch[1].trim();
+
+    var summaryMatch = block.match(/^SUMMARY:\s*(.+)$/m);
+    var summary = summaryMatch ? summaryMatch[1].trim() : '';
+
+    // SLOT_TAGS
+    var slotTagsMatch = block.match(/^SLOT_TAGS:\s*(.+)$/m);
+    var slot_tags;
+    if (slotTagsMatch) {
+      var rawTags = slotTagsMatch[1].split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      slot_tags   = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) !== -1; });
+      var dropped = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) === -1; });
+      if (dropped.length) {
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_parseReelEditorialOutput_: Dropped unrecognized tags [' + dropped.join(', ') + '] for REEL ' + assetId, 'WARNING');
+      }
+      if (!slot_tags.length) {
+        slot_tags = ['Any'];
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_parseReelEditorialOutput_: All tags invalid for REEL ' + assetId + ' — defaulting to Any', 'WARNING');
+      }
+    } else {
+      slot_tags = ['Any'];
+      logToAuditTrail(agentName, 'state_change', '', null,
+        '_parseReelEditorialOutput_: SLOT_TAGS missing for REEL ' + assetId + ' — defaulting to Any', 'WARNING');
+    }
+
+    // QUALITY_SCORE
+    var qualMatch = block.match(/^QUALITY_SCORE:\s*(\d+)$/m);
+    var quality_score;
+    if (qualMatch) {
+      quality_score = parseInt(qualMatch[1], 10);
+      if (quality_score < 1 || quality_score > 5) {
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_parseReelEditorialOutput_: QUALITY_SCORE ' + quality_score + ' out of [1,5] for REEL ' + assetId + ' — clamping', 'WARNING');
+        quality_score = Math.max(1, Math.min(5, quality_score));
+      }
+    } else {
+      quality_score = 3;
+      logToAuditTrail(agentName, 'state_change', '', null,
+        '_parseReelEditorialOutput_: QUALITY_SCORE missing for REEL ' + assetId + ' — defaulting to 3', 'WARNING');
+    }
+
+    result.push({ asset_id: assetId, summary: summary, slot_tags: slot_tags, quality_score: quality_score });
+  }
+
+  return result;
+}
+
+
+/**
+ * Reads Reel-type Asset_Library rows for an episode, passes raw Reel_Summary
+ * values to Claude (with composed Voice Prohibitions + Ranking Schema + Reel Editorial),
+ * and writes cleaned summary, Slot_Tags, Quality_Score back to each row.
+ *
+ * @param {string} epUid
+ * @param {Object} [opts]
+ * @param {boolean} [opts.force=false] — if true, reprocesses rows that already have Quality_Score
+ * @returns {{ status: string, processed: number, skipped: number, errors: string[] }}
+ */
+function runReelEditorialPass(epUid, opts) {
+  var force     = !!(opts && opts.force === true);
+  var agentName = 'Bridge_Fairy';
+
+  // ── 1. Read Asset_Library ──────────────────────────────────────────────────────
+  var sheetId = getMasterSheetId();
+  if (!sheetId) throw new Error("runReelEditorialPass: MASTER_SHEET_ID not set.");
+
+  var ss     = SpreadsheetApp.openById(sheetId);
+  var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var alSheet = ss.getSheetByName(alName);
+  if (!alSheet) throw new Error("runReelEditorialPass: Asset_Library tab not found.");
+
+  var alData = alSheet.getDataRange().getValues();
+
+  // ── 2. Filter reel rows ────────────────────────────────────────────────────────
+  var targetRows = [];
+  var skipCount  = 0;
+
+  for (var i = 1; i < alData.length; i++) {
+    var row = alData[i];
+    if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(epUid)) continue;
+    if (String(row[ASSET_LIBRARY_COLS.Asset_Type  - 1]).toLowerCase() !== 'reel') continue;
+
+    var summary      = String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
+    var qualityScore = String(row[ASSET_LIBRARY_COLS.Quality_Score - 1] || '').trim();
+    var assetId      = String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1] || '');
+
+    if (!summary) {
+      logToAuditTrail(agentName, 'state_change', epUid, null,
+        'REEL_EDITORIAL_SKIP: ' + assetId + ' — Reel_Summary empty', 'INFO');
+      skipCount++;
+      continue;
+    }
+
+    if (qualityScore && !force) {
+      logToAuditTrail(agentName, 'state_change', epUid, null,
+        'REEL_EDITORIAL_SKIP: ' + assetId + ' — Quality_Score already set (' + qualityScore + '), force=false', 'INFO');
+      skipCount++;
+      continue;
+    }
+
+    targetRows.push({ rowNum: i + 1, assetId: assetId, summary: summary });
+  }
+
+  // ── 3. Early exit if nothing to do ───────────────────────────────────────────
+  if (targetRows.length === 0) {
+    logToAuditTrail(agentName, 'state_change', epUid, null,
+      'REEL_EDITORIAL_NO_WORK: skipped=' + skipCount, 'INFO');
+    return { status: 'no_work', processed: 0, skipped: skipCount, errors: [] };
+  }
+
+  logToAuditTrail(agentName, 'state_change', epUid, null,
+    'REEL_EDITORIAL_START: epUid=' + epUid + ' reelCount=' + targetRows.length, 'INFO');
+
+  // ── 4. Compose system prompt ──────────────────────────────────────────────────
+  var voice    = extractPrompt("# Voice Prohibitions");
+  var ranking  = extractPrompt("# Ranking Schema");
+  var reelEd   = extractPrompt("# Reel Editorial");
+  var systemPrompt = [voice, ranking, reelEd].filter(function(s) { return s.trim(); }).join('\n\n');
+
+  if (!systemPrompt) {
+    throw new Error("runReelEditorialPass: Master Template sections missing — check # Voice Prohibitions, # Ranking Schema, # Reel Editorial");
+  }
+
+  // ── 5. Build user message ─────────────────────────────────────────────────────
+  var userLines = [
+    "Process the following reels. For each, return a block in the exact format specified in the Reel Editorial template.",
+    ""
+  ];
+  for (var t = 0; t < targetRows.length; t++) {
+    userLines.push("REEL " + targetRows[t].assetId + ":");
+    userLines.push("RAW_SUMMARY: " + targetRows[t].summary);
+    userLines.push("");
+  }
+  var userMessage = userLines.join('\n');
+
+  // ── 6. Call Claude ────────────────────────────────────────────────────────────
+  var claudeResponse = callClaudeAPI(systemPrompt, userMessage, agentName, null, { maxTokens: 8192 });
+  if (!claudeResponse) throw new Error("runReelEditorialPass: Claude returned empty response.");
+
+  // ── 7. Parse response ─────────────────────────────────────────────────────────
+  var parsedReels = _parseReelEditorialOutput_(claudeResponse);
+
+  // ── 8. Write back to Asset_Library ───────────────────────────────────────────
+  var processedCount = 0;
+  var errors         = [];
+
+  // Re-read for fresh row indices (Claude call may take several seconds)
+  alData = alSheet.getDataRange().getValues();
+
+  for (var p = 0; p < parsedReels.length; p++) {
+    var parsed = parsedReels[p];
+    try {
+      var foundRow = -1;
+      for (var r = 1; r < alData.length; r++) {
+        if (String(alData[r][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(parsed.asset_id)) {
+          foundRow = r + 1;
+          break;
+        }
+      }
+
+      if (foundRow === -1) {
+        var errMsg = 'REEL_EDITORIAL_ERROR: Asset_ID not found: ' + parsed.asset_id;
+        logToAuditTrail(agentName, 'error', epUid, null, errMsg, 'ERROR');
+        errors.push(errMsg);
+        continue;
+      }
+
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Reel_Summary ).setValue(parsed.summary);
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Slot_Tags    ).setValue(parsed.slot_tags.join(', '));
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Quality_Score).setValue(parsed.quality_score);
+      processedCount++;
+    } catch (e) {
+      var errMsg = 'REEL_EDITORIAL_ERROR: Write failed for ' + parsed.asset_id + ': ' + e.message;
+      logToAuditTrail(agentName, 'error', epUid, null, errMsg, 'ERROR');
+      errors.push(errMsg);
+    }
+  }
+
+  if (processedCount > 0) bumpVersion('asset_library', 'runReelEditorialPass');
+
+  // ── 9. Log completion ─────────────────────────────────────────────────────────
+  logToAuditTrail(agentName, 'state_change', epUid, null,
+    'REEL_EDITORIAL_COMPLETE: processed=' + processedCount + ' skipped=' + skipCount + ' errors=' + errors.length, 'INFO');
+
+  return { status: 'processed', processed: processedCount, skipped: skipCount, errors: errors };
 }
 
 

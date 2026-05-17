@@ -122,7 +122,7 @@ var SOCIAL_ASSETS_COLS = {
   Created_By:       13
 };
 
-// Asset_Library tab column map (18 columns — single source of truth for content assets)
+// Asset_Library tab column map (20 columns — single source of truth for content assets)
 var ASSET_LIBRARY_COLS = {
   Asset_ID:      1,
   Episode_UID:   2,
@@ -141,7 +141,10 @@ var ASSET_LIBRARY_COLS = {
   Status:        15,  // candidate | scheduled | bank | rejected
   Availability:  16,  // available | placed | paired
   Created_At:    17,
-  Created_By:    18
+  Created_By:    18,
+  Quality_Score: 19,  // int 1–5; empty until midnight pass populates — read-only in wiring spoke
+  Slot_Tags:     20,  // comma-separated Posting_Schedule Slot_IDs; empty until midnight pass
+  Display_Text:  21   // JT-edited card text; source of truth for card stack render; null until first edit
 };
 
 // Posting_Schedule tab column map (6 columns)
@@ -929,15 +932,15 @@ function placeAssetInSlot(episodeUid, slotId, assetId, caption, driveFileId, ass
         resolvedType   = resolvedType   || String(alData[i][ASSET_LIBRARY_COLS.Asset_Type   - 1]);
         break;
       }
-      // Mark sibling slides (same Slide_Index) as paired in AL
-      if (placedSlideIdx && placedSlideIdx !== "") {
-        for (var j = 1; j < alData.length; j++) {
-          if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === String(assetId))     continue;
-          if (String(alData[j][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid))  continue;
-          if (String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== placedSlideIdx)      continue;
-          alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("paired");
-        }
-      }
+      // RETIRED Slide_Index pairing (May 2026) — one asset = one slot
+      // if (placedSlideIdx && placedSlideIdx !== "") {
+      //   for (var j = 1; j < alData.length; j++) {
+      //     if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === String(assetId))     continue;
+      //     if (String(alData[j][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid))  continue;
+      //     if (String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== placedSlideIdx)      continue;
+      //     alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("paired");
+      //   }
+      // }
     } else if (driveFileId && assetType && alSheet) {
       // Drive-fallback: create an AL stub row first
       var newAlId = "AL-DRV-" + Date.now();
@@ -1017,17 +1020,17 @@ function unscheduleAsset(episodeUid, slotId) {
           slideIdx = String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]);
           break;
         }
-        // Un-pair image siblings
-        if (slideIdx && slideIdx !== "" && slideIdx !== "null") {
-          for (var k = 1; k < alData.length; k++) {
-            if (String(alData[k][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === foundAlId)    continue;
-            if (String(alData[k][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== episodeUid)   continue;
-            if (String(alData[k][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== slideIdx)     continue;
-            if (String(alData[k][ASSET_LIBRARY_COLS.Availability- 1]) === "paired") {
-              alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
-            }
-          }
-        }
+        // RETIRED Slide_Index pairing (May 2026) — one asset = one slot
+        // if (slideIdx && slideIdx !== "" && slideIdx !== "null") {
+        //   for (var k = 1; k < alData.length; k++) {
+        //     if (String(alData[k][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === foundAlId)    continue;
+        //     if (String(alData[k][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== episodeUid)   continue;
+        //     if (String(alData[k][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== slideIdx)     continue;
+        //     if (String(alData[k][ASSET_LIBRARY_COLS.Availability- 1]) === "paired") {
+        //       alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+        //     }
+        //   }
+        // }
       }
     }
 
@@ -1035,6 +1038,135 @@ function unscheduleAsset(episodeUid, slotId) {
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+}
+
+// ── CANVAS UNSCHEDULE HELPERS (Phase 2, May 2026) ────────────────────────────
+
+/**
+ * Returns a plain object for the Asset_Library row matching assetId, or null.
+ * Includes _rowNum for targeted writes.
+ */
+function getAssetLibraryRow(assetId) {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+  var alSheet = ss.getSheetByName(alName);
+  if (!alSheet) return null;
+  var data = alSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+    var row = data[i];
+    return {
+      _rowNum:       i + 1,
+      Asset_ID:      String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]),
+      Episode_UID:   String(row[ASSET_LIBRARY_COLS.Episode_UID   - 1]),
+      Drive_File_ID: String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || ''),
+      Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
+      Availability:  String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
+      Quote_Text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
+      Caption_Final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '')
+    };
+  }
+  return null;
+}
+
+/**
+ * Patches specific ASSET_LIBRARY_COLS fields on the row for assetId.
+ * @param {string} assetId
+ * @param {Object} fields  e.g. { Status: 'candidate', Drive_File_ID: '' }
+ */
+function patchAssetLibraryRow(assetId, fields) {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+  var alSheet = ss.getSheetByName(alName);
+  if (!alSheet) return;
+  var data = alSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+    var rowNum = i + 1;
+    Object.keys(fields).forEach(function(colName) {
+      var colIdx = ASSET_LIBRARY_COLS[colName];
+      if (colIdx) alSheet.getRange(rowNum, colIdx).setValue(fields[colName]);
+    });
+    break;
+  }
+}
+
+/**
+ * Sets Status = 'rejected' on an Asset_Library row. Card stops appearing in candidate pool.
+ */
+function rejectAsset(assetId) {
+  try {
+    patchAssetLibraryRow(assetId, { Status: 'rejected' });
+    bumpVersion('asset_library', 'rejectAsset');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Deletes the first Social_Assets row whose Asset_Library_ID column matches assetId.
+ */
+function deleteSocialAssetByAssetLibraryId(assetId) {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var saSheet = ss.getSheetByName("Social_Assets");
+  if (!saSheet) return;
+  var data = saSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]) !== String(assetId)) continue;
+    saSheet.deleteRow(i + 1);
+    break;
+  }
+}
+
+/**
+ * Canvas-level unschedule by assetId.
+ * Trashes the Drive PNG (non-fatal), deletes the Social_Assets row, and resets the
+ * Asset_Library row to candidate/available — preserving Quote_Text and Caption_Final.
+ *
+ * Distinct from unscheduleAsset(episodeUid, slotId), which operates by slot lookup
+ * and is called from the accordion-level unschedule flow.
+ */
+function unscheduleAssetById(assetId) {
+  var agentName = "Publish_Unschedule";
+  try {
+    var alRow = getAssetLibraryRow(assetId);
+    if (!alRow) throw new Error("Asset not found: " + assetId);
+
+    // 1. Trash the PNG — non-fatal; log warn and continue on failure
+    if (alRow.Drive_File_ID) {
+      try {
+        DriveApp.getFileById(alRow.Drive_File_ID).setTrashed(true);
+      } catch (e) {
+        logToAuditTrail(agentName, "state_change", alRow.Episode_UID, "",
+          "PNG_TRASH_FAILED for " + alRow.Drive_File_ID + ": " + e.message, "WARN");
+      }
+    }
+
+    // 2. Delete matching Social_Assets row
+    deleteSocialAssetByAssetLibraryId(assetId);
+
+    // 3. Reset AL row — Quote_Text and Caption_Final are intentionally preserved
+    patchAssetLibraryRow(assetId, {
+      Status:        'candidate',
+      Availability:  'available',
+      Drive_File_ID: '',
+      Canvas_State:  ''
+    });
+
+    bumpVersion("asset_library", "unscheduleAssetById");
+    logToAuditTrail(agentName, "state_change", alRow.Episode_UID, "",
+      "Unscheduled " + assetId + " — quote and caption preserved.", "INFO");
+
+    return { success: true, assetId: assetId };
+  } catch (e) {
+    logToAuditTrail(agentName, "error", "", "",
+      "UNSCHEDULE_FAILED for " + assetId + ": " + e.message, "ERROR");
+    return { success: false, error: e.message };
   }
 }
 
@@ -1102,6 +1234,7 @@ function getBackgroundLibrary() {
       var file = files.next();
       var name = file.getName();
       var id = file.getId();
+      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
       result.push({
         fileId:        id,
         name:          name,
@@ -1116,11 +1249,170 @@ function getBackgroundLibrary() {
 }
 
 /**
+ * Returns up to 30 images from the PRECOMP_BG_IMAGES Drive folder.
+ * Used as the fallback candidate pool in getRankedCandidates() before Vert Fairy Pass 2 ships.
+ * @returns {{ fileId: string, name: string, thumbnailUrl: string }[]}
+ * Publish no longer consumes — Design tab only (May 2026 pare-down).
+ */
+function getPrecompBgImages() {
+  try {
+    var folderId = getGovernance('PRECOMP_BACKGROUND_LIBRARY_ID');
+    if (!folderId) return [];
+    var folder = DriveApp.getFolderById(folderId);
+    var files   = folder.getFiles();
+    var result  = [];
+    while (files.hasNext() && result.length < 60) {
+      var file = files.next();
+      if (file.getMimeType().indexOf('image/') !== 0) continue;
+      var id   = file.getId();
+      var name = file.getName();
+      // Parse text color signal from filename: *_darktext → black, *_lighttext (or anything else) → white
+      var lower     = name.toLowerCase();
+      var textColor = lower.indexOf('darktext') !== -1 ? '#1a1714' : '#ffffff';
+      try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
+      result.push({
+        fileId:       id,
+        name:         name,
+        textColor:    textColor,
+        thumbnailUrl: 'https://drive.google.com/thumbnail?id=' + id + '&sz=w320'
+      });
+    }
+    // Sort by filename so bg_001 < bg_002 regardless of Drive insertion order
+    result.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    return result;
+  } catch (err) {
+    return [];
+  }
+}
+
+function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFinal) {
+  try {
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var sheet  = ss.getSheetByName(alName);
+    if (!sheet) return { ok: false, error: 'Asset_Library tab not found' };
+
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      var row     = i + 1;
+      var written = false;
+      if (captionText !== undefined && captionText !== null) {
+        sheet.getRange(row, ASSET_LIBRARY_COLS.Caption_Draft).setValue(captionText);
+        written = true;
+      }
+      if (canvasJson !== undefined && canvasJson !== null) {
+        sheet.getRange(row, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
+        written = true;
+      }
+      if (displayText !== undefined && displayText !== null) {
+        sheet.getRange(row, ASSET_LIBRARY_COLS.Display_Text).setValue(displayText);
+        written = true;
+      }
+      if (captionFinal !== undefined && captionFinal !== null) {
+        sheet.getRange(row, ASSET_LIBRARY_COLS.Caption_Final).setValue(captionFinal);
+        written = true;
+      }
+      if (written) bumpVersion('asset_library', 'saveAssetDraft');
+      return { ok: true };
+    }
+    return { ok: false, error: 'Asset not found: ' + assetId };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Returns the display-layer state for a single asset: display_text, caption_final,
+ * caption_draft, canvas_state, and quote_text_fallback.
+ * Used by the frontend to do a targeted refresh without re-fetching the full candidate list.
+ */
+function getAssetDisplayState(assetId) {
+  try {
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var sheet  = ss.getSheetByName(alName);
+    if (!sheet) return { ok: false, error: 'Asset_Library tab not found' };
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      return {
+        ok:                  true,
+        display_text:        String(data[i][ASSET_LIBRARY_COLS.Display_Text  - 1] || '') || null,
+        caption_final:       String(data[i][ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
+        caption_draft:       _parseCaptionDraft_(String(data[i][ASSET_LIBRARY_COLS.Caption_Draft - 1] || '')),
+        canvas_state:        String(data[i][ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
+        quote_text_fallback: String(data[i][ASSET_LIBRARY_COLS.Quote_Text    - 1] || '')
+      };
+    }
+    return { ok: false, error: 'Asset not found: ' + assetId };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Returns the full image as a base64 data URL for canvas placement.
  * Used instead of a Drive URL to avoid CORS restrictions in the GAS web app.
  * @param {string} fileId
  * @returns {{ success: true, dataUrl: string } | { success: false, error: string }}
  */
+/**
+ * Exports the current canvas render to a Manual_Exports subfolder inside the episode working folder.
+ * Also writes canvasJson to the AL row (Export IS save + render — canonical state after manual export).
+ * @param {string} episodeUid
+ * @param {string} slotId
+ * @param {string} assetId
+ * @param {string} b64           - base64-encoded PNG, no data: prefix
+ * @param {string} canvasJson    - Fabric.js canvas JSON, base64 srcs already stripped
+ * @returns {{ success: boolean, filename?: string, url?: string, folderUrl?: string, error?: string }}
+ */
+function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
+    var stagingFolder  = DriveApp.getFolderById(stagingId);
+    var exportFolderIt = stagingFolder.getFoldersByName('Manual_Exports');
+    var exportFolder   = exportFolderIt.hasNext() ? exportFolderIt.next() : stagingFolder.createFolder('Manual_Exports');
+
+    var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
+    var filename  = (slotId || 'noslot') + '_' + (assetId || 'noasset') + '_' + timestamp + '.png';
+    var blob      = Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', filename);
+    var file      = exportFolder.createFile(blob);
+    var fileId    = file.getId();
+
+    var ss = SpreadsheetApp.openById(getMasterSheetId());
+
+    if (assetId && canvasJson) {
+      var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+      var alSheet = ss.getSheetByName(alName);
+      if (alSheet) {
+        var alData = alSheet.getDataRange().getValues();
+        for (var i = 1; i < alData.length; i++) {
+          if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
+          break;
+        }
+      }
+      bumpVersion('asset_library', 'exportAssetToDrive');
+    }
+
+    try {
+      var audit = ss.getSheetByName('Audit_Trail');
+      if (audit) audit.appendRow([new Date(), 'DWYP_App', 'exportAssetToDrive', assetId + ' → ' + filename]);
+    } catch(logErr) {}
+
+    return {
+      success:   true,
+      filename:  filename,
+      url:       'https://drive.google.com/file/d/' + fileId + '/view',
+      folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
 /**
  * Moves a background image to a 'deleted' subfolder within the background library.
  * getBackgroundLibrary() uses folder.getFiles() (immediate children only),
@@ -2413,7 +2705,7 @@ function generateReelTitleCard(assetId, episodeUid) {
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       summary     = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
+      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
       break;
     }
 
@@ -2473,7 +2765,7 @@ function generateReelCaption(assetId, episodeUid) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       rowIndex    = i + 1;
       summary     = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
+      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
       break;
     }
     if (rowIndex === -1) return { caption: '', error: "Asset not found: " + assetId };
@@ -2517,7 +2809,7 @@ function getOrGenerateReelSummary(assetId, episodeUid) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       rowIndex    = i + 1;
       existing    = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
+      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
       break;
     }
     if (existing) return { success: true, summary: existing };
@@ -2574,7 +2866,7 @@ function ensureReelSummaries(episodeUid) {
       var existing = String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
       if (existing) continue;
 
-      var displayName = String(row[ASSET_LIBRARY_COLS.Display_Name - 1] || 'Reel clip').trim();
+      var displayName = String(row[ASSET_LIBRARY_COLS.Quote_Text - 1] || row[ASSET_LIBRARY_COLS.Display_Name - 1] || 'Reel clip').trim();
       var promptText =
         "In 1-2 sentences, describe what this social media video clip is likely about.\n\n" +
         "Clip name: " + displayName + "\n" +
@@ -2592,6 +2884,20 @@ function ensureReelSummaries(episodeUid) {
   } catch (e) {
     return { done: false, error: e.message };
   }
+}
+
+/**
+ * Normalizes curly quotes to ASCII in Quote_Text before any write to Asset_Library.
+ * Replaces U+2018/U+2019 (single curly) and U+201C/U+201D (double curly) with ASCII equivalents.
+ * Em-dash (U+2014) and en-dash (U+2013) are intentionally left unchanged.
+ */
+function normalizeQuoteText(str) {
+  if (!str) return str;
+  return str
+    .replace(/‘/g, "'")
+    .replace(/’/g, "'")
+    .replace(/“/g, '"')
+    .replace(/”/g, '"');
 }
 
 /**
@@ -2635,7 +2941,7 @@ function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, c
           alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
           alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability ).setValue("placed");
           alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status       ).setValue("scheduled");
-          if (quoteText)  alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Quote_Text   ).setValue(quoteText);
+          if (quoteText)  alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Quote_Text   ).setValue(normalizeQuoteText(quoteText));
           if (canvasJson) alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Canvas_State ).setValue(canvasJson);
           break;
         }
@@ -2653,7 +2959,7 @@ function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, c
         alRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = fileId;
         alRow[ASSET_LIBRARY_COLS.Status       - 1] = "scheduled";
         alRow[ASSET_LIBRARY_COLS.Availability - 1] = "placed";
-        if (quoteText)  alRow[ASSET_LIBRARY_COLS.Quote_Text   - 1] = quoteText;
+        if (quoteText)  alRow[ASSET_LIBRARY_COLS.Quote_Text   - 1] = normalizeQuoteText(quoteText);
         if (canvasJson) alRow[ASSET_LIBRARY_COLS.Canvas_State - 1] = canvasJson;
         alRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
         alRow[ASSET_LIBRARY_COLS.Created_By   - 1] = "publish_canvas";
@@ -2730,7 +3036,7 @@ function rescheduleAsset(assetId, postId, imageDataB64, mimeType, caption, quote
       fileId = imgFolder.createFile(blob).getId();
       alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
     }
-    if (quoteText)  alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Quote_Text  ).setValue(quoteText);
+    if (quoteText)  alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Quote_Text  ).setValue(normalizeQuoteText(quoteText));
     if (canvasJson) alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
 
     // Update Social_Assets row (caption always; Drive_File_ID only when image changed)
@@ -2848,7 +3154,11 @@ function enrichQuoteAssetsFromTranscript(episodeUid) {
         );
         needsBackfill.forEach(function(b, bIdx) {
           var variants = backfillMap[bIdx] || '[]';
-          if (variants !== '[]') { alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variants); backfilled++; }
+          if (variants !== '[]') {
+            alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variants);
+            alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Final).setValue(_parseCaptionDraft_(variants));
+            backfilled++;
+          }
         });
         if (backfilled) bumpVersion("asset_library", "enrichQuoteAssetsFromTranscript");
       }
@@ -2934,9 +3244,10 @@ function enrichQuoteAssetsFromTranscript(episodeUid) {
       newRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
       newRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = 'quote_graphic';
       newRow[ASSET_LIBRARY_COLS.Display_Name - 1] = displayName;
-      newRow[ASSET_LIBRARY_COLS.Quote_Text   - 1] = entry.text;
-      newRow[ASSET_LIBRARY_COLS.Caption_Draft- 1] = captionVariants;
-      newRow[ASSET_LIBRARY_COLS.Status       - 1] = 'candidate';
+      newRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = normalizeQuoteText(entry.text);
+      newRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = captionVariants;
+      newRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = _parseCaptionDraft_(captionVariants);
+      newRow[ASSET_LIBRARY_COLS.Status        - 1] = 'candidate';
       newRow[ASSET_LIBRARY_COLS.Availability - 1] = 'available';
       newRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
       newRow[ASSET_LIBRARY_COLS.Created_By   - 1] = 'transcript_enrichment';
@@ -3320,6 +3631,7 @@ function getReelsForEpisode(episodeUid) {
         Asset_Type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
         Drive_File_ID: fileId,
         Display_Name:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
+        Quote_Text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
         Reel_Summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
         Caption_Draft: String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
         Caption_Final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
@@ -3345,6 +3657,196 @@ function getReelsForEpisode(episodeUid) {
     return keyOrder.map(function(k) { return bestByKey[k]; });
   } catch (e) {
     return [];
+  }
+}
+
+// Defensive parse: Caption_Draft may be a JSON-stringified array (pre-midnight-pass Gemini output).
+// Post-midnight-pass the parse fails and the raw string is returned unchanged.
+function _parseCaptionDraft_(raw) {
+  var s = String(raw || '');
+  try {
+    var p = JSON.parse(s);
+    if (Array.isArray(p) && p.length > 0) return String(p[0]);
+    if (Array.isArray(p)) return '';
+  } catch (e) {}
+  return s;
+}
+
+/**
+ * Returns the top-6 ranked Asset_Library candidates for a given episode + asset type.
+ * Server-side ranking — frontend never sees the full pool.
+ * For Reels, delegates to getReelsForEpisode() and maps to candidate shape.
+ * Sorts by Quality_Score DESC, Created_At ASC (stable secondary). Empty Quality_Score = 0.
+ *
+ * future midnight pass populates Quality_Score / Slot_Tags; ranking gains tag-match
+ * tiebreaker against slot Why when those fields are populated.
+ */
+function getRankedAssetLibraryCandidates(episodeUid, assetType) {
+  try {
+    var normType = String(assetType || '').toLowerCase().replace(/[_ ]/g, '');
+    var isReel   = (normType === 'reel' || normType === 'bankclip');
+
+    if (isReel) {
+      var reels  = getReelsForEpisode(episodeUid);
+      var sorted = reels.slice().sort(function(a, b) {
+        var qa = Number(a.Quality_Score) || 0;
+        var qb = Number(b.Quality_Score) || 0;
+        if (qb !== qa) return qb - qa;
+        return String(a.createdAt).localeCompare(String(b.createdAt));
+      });
+      return sorted.slice(0, 6).map(function(r) {
+        return {
+          asset_id:      r.Asset_ID,
+          asset_type:    r.Asset_Type || 'Reel',
+          quality_score: Number(r.Quality_Score) || 0,
+          slot_tags:     r.Slot_Tags ? String(r.Slot_Tags).split(',').map(function(t) { return t.trim(); }) : [],
+          thumb_url:     r.thumbnailUrl || '',
+          preview_text:  r.Reel_Summary || r.Quote_Text || r.Display_Name || '',
+          display_text:  null,
+          title_card:    r.Quote_Text || r.Display_Name || '',
+          caption_draft: _parseCaptionDraft_(r.Caption_Draft || ''),
+          caption_final: r.Caption_Final || '',
+          background_id: null,
+          canvas_state:  null,
+          drive_file_id: r.Drive_File_ID || '',
+          quote_text:    ''
+        };
+      });
+    }
+
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return [];
+    var data = sheet.getDataRange().getValues();
+
+    var candidates = [];
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      var rowType  = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
+      if (rowType !== normType) continue;
+      var status = String(row[ASSET_LIBRARY_COLS.Status - 1]).toLowerCase();
+      if (status === 'rejected') continue;
+      var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
+      if (avail !== 'available') continue;
+
+      var qs      = Number(row[ASSET_LIBRARY_COLS.Quality_Score - 1]) || 0;
+      var fileId  = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+      var rawTags = String(row[ASSET_LIBRARY_COLS.Slot_Tags    - 1] || '');
+      if (fileId) {
+        try { DriveApp.getFileById(fileId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
+      }
+      var _displayText = String(row[ASSET_LIBRARY_COLS.Display_Text - 1] || '') || null;
+      var _displayName = String(row[ASSET_LIBRARY_COLS.Display_Name - 1] || '');
+      var _isQuote     = _displayName.toLowerCase().indexOf('quote') === 0;
+      candidates.push({
+        asset_id:      String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]),
+        asset_type:    String(row[ASSET_LIBRARY_COLS.Asset_Type     - 1]),
+        quality_score: qs,
+        is_quote:      _isQuote,
+        slot_tags:     rawTags ? rawTags.split(',').map(function(t) { return t.trim(); }) : [],
+        thumb_url:     fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200' : '',
+        preview_text:  _displayText || String(row[ASSET_LIBRARY_COLS.Quote_Text - 1] || row[ASSET_LIBRARY_COLS.Display_Name - 1] || ''),
+        display_text:  _displayText,
+        quote_text:    _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || '')),
+        caption_draft: _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || '')),
+        caption_final: _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '')),
+        background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
+        canvas_state:  String(row[ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
+        drive_file_id: fileId,
+        created_at:    String(row[ASSET_LIBRARY_COLS.Created_At    - 1] || '')
+      });
+    }
+
+    var quoteBonus = parseFloat(getGovernance("STUDIO_QUOTE_RANK_BONUS")) || 0;
+    candidates.sort(function(a, b) {
+      var aScore = a.quality_score + (a.is_quote ? quoteBonus : 0);
+      var bScore = b.quality_score + (b.is_quote ? quoteBonus : 0);
+      if (bScore !== aScore) return bScore - aScore;
+      return String(a.created_at).localeCompare(String(b.created_at));
+    });
+    return candidates;
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Assembles the slot foreground context for the right-rail Claude companion.
+ * Called on every right-rail Claude send. Returns the active card + same-date siblings + episode.
+ * Sibling cap = 4 hardcoded; OQ-D is the deferred UX question — replace literal with
+ * getGovernance("PUBLISH_SIBLING_CONTEXT_CAP") when that question resolves.
+ */
+function assembleSlotForegroundContext(activeAssetId, activeAssetType, episodeUid) {
+  var SIBLING_CAP = 4;
+  var result = {
+    active_card:        null,
+    same_date_siblings: [],
+    episode:            { episode_uid: episodeUid, guest_name: '', release_date: '' }
+  };
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet || !activeAssetId) return result;
+
+    var data     = sheet.getDataRange().getValues();
+    var siblings = [];
+
+    for (var i = 1; i < data.length; i++) {
+      var row       = data[i];
+      var rowEpUid  = String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]);
+      var rowId     = String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1]);
+      if (rowEpUid !== String(episodeUid)) continue;
+
+      var cardObj = {
+        asset_id:      rowId,
+        asset_type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
+        quote_text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
+        reel_summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
+        caption_draft: String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
+        caption_final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
+        background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
+        quality_score: Number(row[ASSET_LIBRARY_COLS.Quality_Score - 1]) || 0,
+        slot_tags:     String(row[ASSET_LIBRARY_COLS.Slot_Tags     - 1] || '')
+      };
+
+      if (rowId === String(activeAssetId)) {
+        result.active_card = cardObj;
+      } else {
+        var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
+        if (avail === 'available' || avail === 'placed') {
+          siblings.push(cardObj);
+        }
+      }
+    }
+
+    siblings.sort(function(a, b) {
+      if (b.quality_score !== a.quality_score) return b.quality_score - a.quality_score;
+      return String(a.asset_id).localeCompare(String(b.asset_id));
+    });
+    result.same_date_siblings = siblings.slice(0, SIBLING_CAP);
+
+    try {
+      var epSheet = ss.getSheetByName("Episodes");
+      if (epSheet) {
+        var epData = epSheet.getDataRange().getValues();
+        for (var j = 1; j < epData.length; j++) {
+          if (String(epData[j][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
+            result.episode.guest_name   = String(epData[j][EPISODES_COLS.Guest_Name   - 1] || '');
+            result.episode.release_date = String(epData[j][EPISODES_COLS.Release_Date - 1] || '');
+            break;
+          }
+        }
+      }
+    } catch(e2) {}
+
+    return result;
+  } catch (e) {
+    return result;
   }
 }
 

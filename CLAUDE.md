@@ -5,8 +5,8 @@
 Read in this order before doing any work in this codebase:
 
 **Always (every session):**
-1. `DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.** Points to deeper sources when needed.
-2. Most recent `DWYP_Platform_State_v*` doc
+1. `DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.**
+2. `DWYP_Platform_State.md` — Active working state. Current position, GAS file status, pipeline status, open issues.
 
 **Always for any code, UI, or design work:**
 3. `DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation)
@@ -17,8 +17,8 @@ Read in this order before doing any work in this codebase:
 - `DWYP_Publish_AI_Companion_Design.md` — when working on Publish AI features
 - `DWYP_PreFlight_Staging_Verification.md` — when handed a verification prompt
 - `DWYP_App_Structure.md` v1.3 — Phase 2 design sessions; any app structure or surface work
-- `DWYP_User_Flows.md` v1.0 — any verb-level question on a specific surface; Phase 2.1 / 2.3 / 2.4 / 3.3 design sessions
-- Other one-off `.md` files (spoke prompts, design notes) when included in the session
+- `DWYP_User_Flows.md` v1.0 — any verb-level question on a specific surface
+- Active spoke prompt — when included in the session (current: `DWYP_Spoke_Bridge_v2_Reel_Editorial.md`)
 
 If a referenced doc is not in context, ask before proceeding rather than assuming.
 
@@ -54,38 +54,34 @@ If the mode of the current session is unclear, ask.
 
 ## Architectural Patterns (Locked, Non-Negotiable)
 
-### Staging Environment
+### Deployment Model
 
-The DWYP Operations Platform runs on a two-deployment model.
+Code pushes directly to production. Staging-first cadence retired May 2026.
 
 | | URL | Sheet |
 |---|---|---|
-| **Staging** (`/dev`) | `https://script.google.com/a/macros/wiseonewithin.com/s/AKfycbwHRxyQ22Zi0TFwT3av5jf30MiPhxBtV9tjb4hMxm0/dev` | `13bXMjxEf_L-BFH69OtUGOU6ywxt6BTat1kO9ik46Swk` |
 | **Production** (`/exec`) | `https://script.google.com/macros/s/AKfycbzCed5Fmv9TNDf6ivQUcmhgUWWOyEVK4P3sxS8_KMQx7YOY6JeY7r-dh8jEw5DpecrI/exec` | `1p5ahHe4hgG6sHN4u13UyvEJWg5IwCkAfADjeqxwlTnw` |
+| **Staging** (`/dev`) | `https://script.google.com/a/macros/wiseonewithin.com/s/AKfycbwHRxyQ22Zi0TFwT3av5jf30MiPhxBtV9tjb4hMxm0/dev` | `13bXMjxEf_L-BFH69OtUGOU6ywxt6BTat1kO9ik46Swk` |
 
-Staging always serves the latest pushed code. Production serves only the version explicitly deployed via Manage Deployments → pencil → New version.
+Staging deployment exists but `STAGING_DEPLOYMENT_URL` is blanked in Governance_Config — `isStaging()` returns false everywhere, `getMasterSheetId()` always resolves production.
 
-**Routing helpers (locked architectural pattern):**
+**Routing helpers (locked):**
 
-Two helpers in `fairy_circle.js` route all sheet access by deployment:
-- `isStaging()` — compares `ScriptApp.getService().getUrl()` to `STAGING_DEPLOYMENT_URL` in Governance_Config. Exact-string match. Fails closed to production on any error.
-- `getMasterSheetId()` — returns `STAGING_SHEET_ID` from Governance_Config when `isStaging()` is true; returns `MASTER_SHEET_ID` from Script Properties otherwise.
+Two helpers in `fairy_circle.js` route all sheet access:
+- `isStaging()` — compares `ScriptApp.getService().getUrl()` to `STAGING_DEPLOYMENT_URL`. Fails closed to production on any error.
+- `getMasterSheetId()` — returns staging sheet when `isStaging()` is true; production `MASTER_SHEET_ID` otherwise.
 
 **Rules for all new code:**
 
-1. **All sheet access goes through `getMasterSheetId()`** — never read `MASTER_SHEET_ID` directly via `PropertiesService.getScriptProperties().getProperty()` in operational code.
-2. **One exception: `getGovernance()` itself.** It reads `MASTER_SHEET_ID` directly from Script Properties — this is the bootstrap that resolves the routing table. Routing it through `getMasterSheetId()` would create infinite recursion.
-3. **No hardcoded URLs or sheet IDs** — staging values live in production Governance_Config under `STAGING_DEPLOYMENT_URL` and `STAGING_SHEET_ID`.
-4. **Preservation Mandate** — never thin, rename, or simplify the helpers or any function that calls them.
+1. **All sheet access goes through `getMasterSheetId()`** — never read `MASTER_SHEET_ID` directly via `PropertiesService` in operational code.
+2. **One exception: `getGovernance()` itself.** Reads `MASTER_SHEET_ID` directly from Script Properties — the bootstrap that resolves the routing table. Routing it through `getMasterSheetId()` would create infinite recursion.
+3. **No hardcoded URLs or sheet IDs** — values live in Governance_Config.
+4. **Do not remove or rename `isStaging()` or `getMasterSheetId()`** without a hub decision. They are locked architectural artifacts.
 
-**Caveats this routing does NOT cover:**
-- **Drive folders are shared** between staging and production unless duplicated. `IMAGE_BACKGROUND_LIBRARY_ID`, `CORPUS_DRIVE_FOLDER_ID`, episode folders — all production unless explicitly remapped.
-- **External APIs are shared.** Claude API key, Vertex RAG corpus, Gemini — same endpoints, real money, real corpus deposits.
-- **Triggers always run as production.** `ScriptApp.getService().getUrl()` returns null in trigger context, so `isStaging()` returns false. Trigger-based code paths cannot be tested via staging URL routing — use `dev_tools.gs` manual invocation instead.
-
-**Testing with staging:**
-- Hit the `/dev` URL to exercise staging — no separate test deployment needed.
-- Never write code that bypasses the helper to "force production" — `isStaging()` fails closed and handles that case already.
+**What routing does NOT isolate (shared between deployments):**
+- Drive folders: `IMAGE_BACKGROUND_LIBRARY_ID`, `CORPUS_DRIVE_FOLDER_ID`, episode folders — all production.
+- External APIs: Claude API key, Vertex RAG corpus, Gemini — same endpoints, real money.
+- Triggers: `ScriptApp.getService().getUrl()` returns null in trigger context — `isStaging()` always returns false. Test trigger paths via `dev_tools.gs` manual invocation.
 
 ### Surface Principle (UI work)
 
@@ -112,17 +108,24 @@ Full spec: `DWYP_Performance_Principle.md`.
 - All new write paths must call `bumpVersion(domain, callerName)` for the affected domain.
 - All new read paths should check version via `getAllVersions()` or `getDomainVersion()` before fetching data.
 
-### Preservation Mandate (universal)
+### Code Integrity Mandate
 
-Never thin, rename, or simplify any existing function without an explicit decision captured in a hub session and reflected in State or Reference.
+Replaces the old Preservation Mandate. The original mandate existed to prevent AI rewrites from silently compressing or simplifying working code. That risk has changed — targeted edits are the default, not wholesale regeneration. The mandate now focuses on protecting code integrity during iteration.
 
-This applies to:
-- Routing helpers (`isStaging`, `getMasterSheetId`, `getGovernance`)
-- Fairy entry points and their orchestration logic
-- Anything in the `Fairy / File Architecture — Locked` table in State
-- Schema-shaped functions (anything that reads/writes specific sheet columns)
+**What is protected:**
 
-Dead code stubs are intentionally retained per past decisions. Do not remove them without confirmation.
+1. **No wholesale rewrites.** If a targeted edit achieves the goal, use it. Do not regenerate a function or file from scratch when an Edit would do.
+2. **Schema-shaped functions require care.** Anything that reads or writes specific sheet columns (by index or header name) is load-bearing. Rename or restructure only with an explicit decision.
+3. **Routing helpers are locked.** `isStaging()`, `getMasterSheetId()`, `getGovernance()` — do not rename, thin, or restructure without a hub decision.
+4. **Fairy entry points and orchestration logic** — surface back before changing signatures or moving responsibilities between files.
+5. **Dead code stubs are no longer required.** Retired code can be deleted when a decision has been made. Deletion still requires an explicit decision — but do not retain stubs by default.
+6. **History lives in git.** Implementation context and version history belong in commit messages and `git log`, not in the KB or as inline code comments.
+
+**When to surface back before acting:**
+- Before deleting anything not explicitly listed in the spoke's scope
+- Before renaming or moving a function used across multiple files
+- Before changing a function signature in a way that touches callers
+- Whenever the action feels outside the spoke's stated scope
 
 ---
 
@@ -131,7 +134,7 @@ Dead code stubs are intentionally retained per past decisions. Do not remove the
 After completing a spoke, task set, or significant session:
 1. **Offer to update Platform State.** Name the specific changes you'd make before writing.
 2. **Update the Reference doc only when** a new architectural decision is locked or schema changes — not for bug fixes or polish.
-3. **One-off `.md` files** brought to a session (prompt files, design notes) get incorporated into State when the work they describe is complete.
+3. **One-off `.md` files** brought to a session (spoke prompts, design notes) get incorporated into State when the work they describe is complete. Closed spokes are deleted, not archived.
 4. **Update the Build Playbook** when a phase or item completes — mark done, note any surface-back items that emerged, identify what's next.
 
 Do not silently proceed to the next item without confirming the State update is captured. The State doc is the contract between sessions.
@@ -141,8 +144,8 @@ Do not silently proceed to the next item without confirming the State update is 
 ## What Not to Do
 
 - Do not invent design decisions. If a UI question doesn't have a decision in foundation docs, surface it as a hub-session topic.
-- Do not "optimize" by bypassing routing helpers, schema patterns, or version-stamp invalidation once those are in place.
+- Do not bypass routing helpers, schema patterns, or version-stamp invalidation.
 - Do not expand spoke scope unilaterally. Surface tangential issues, don't fix them.
 - Do not paper over UNCERTAIN findings in verification mode.
-- Do not assume Drive folders, API keys, or external services are isolated for staging — they are not unless explicitly remapped.
+- Do not assume Drive folders, API keys, or external services are isolated between deployments — they are shared unless explicitly stated otherwise.
 - Do not promote staging to production. That's a manual Audra step (Manage Deployments → New version).

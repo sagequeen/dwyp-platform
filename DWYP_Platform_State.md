@@ -1,40 +1,21 @@
-# DWYP Operations Platform — Platform State
-**Version: 5.6 | May 2026**
-**Replaces: DWYP_Platform_State v5.5**
-**Companion documents: DWYP_Platform_Reference.md | DWYP_Studio_v1.md | DWYP_Social_Architecture_Redesign_v3.md | DWYP_Surface_Principle.md | DWYP_Performance_Principle.md | DWYP_Publish_AI_Companion_Design.md | DWYP_Help_Desk_Companion_Design.md | DWYP_App_Structure.md | DWYP_User_Flows.md | DWYP_Phase2_0_Session_Archive.md | DWYP_Build_Playbook.md | DWYP_PreFlight_Staging_Verification.md**
+﻿# DWYP Operations Platform — Platform State
+**Version: 6.5 | May 2026**
+
+**Companion documents:** DWYP_Platform_Reference.md | DWYP_Studio_v1.md | DWYP_Social_Architecture_Redesign_v3.md | DWYP_Surface_Principle.md | DWYP_Performance_Principle.md | DWYP_Publish_AI_Companion_Design.md | DWYP_Help_Desk_Companion_Design.md | DWYP_App_Structure.md | DWYP_User_Flows.md | DWYP_Build_Playbook.md | DWYP_PreFlight_Staging_Verification.md
+
+> Changelogs v6.1–v6.5 stripped. See git history for session-by-session detail.
 
 ---
-
 ## Current Position
 
-**First episode run:** Carrie Sipe (EP-260428-1928) — at review stage. Name misspelled as "Carrie Snipe" — Mending Fairy fix deferred until episode completes. Enrichment Pending path (identity unconfirmed).
+- **Active episode:** Carrie Sipe (EP-260428-1928) — at review stage. Name typo "Carrie Snipe" deferred (Mending Fairy `correctGuestName()` is the fix).
+- **Pipeline:** Tracks A/B/C all shipped and verified on David Bedrick (EP-260430-1427). `buildEpisodeIndexV2` (A), `runEditorialPass` (B), `materializeQuoteGraphicAssets` (C) — all live.
+- **v3 Wiring:** Phase 2 shipped (dual-JSON canvas, Export button, viewport fix). **Phase 3 next** — reel card expand + scheduling end-to-end.
+- **Performance Foundation:** Phase 1.1–1.5 complete and live in production.
+- **Staging retired as workflow.** Code pushes directly to production. Routing helpers preserved in codebase.
+- **Parked for hub:** Stub → real card swap on first paint (skeleton-first, closes orphaned-Card-1 race); AL row as single source of truth across surfaces (audit-first spoke before patch).
 
-**Phase 1.1–1.3 (staging complete):** Versions tab live in staging sheet. All 40 write paths across 4 files retrofitted with `bumpVersion()`. `_resolveImageLibraryVersion()` corrected — scans file modification timestamps rather than folder metadata (folder.getLastUpdated() does not update on file additions). All 11 domains verified via Phase 1 Test Protocol. Production deploy pending (manual step).
-
-**Phase 1.4–1.5 (staging complete):** Frontend version-aware loader pattern live. `getDomainsBatch()` endpoint in `dwyp_app.js`. `ACTIVE_LOADER_DOMAINS` / `TRACKED_ONLY_DOMAINS` three-bucket model — tasks/episodes/contacts version-tracked + batch-fetched; audit_trail version-tracked only (ready for Phase 4 Help Desk); asset_library/manifests out of scope. `refreshVersions()` + `loadDomain()` + `_rerenderCurrentTab()` in `dwyp_ui.html`. `loadData()` cold-start migrated to version-aware pattern (getAllVersions → getDomainsBatch, replaces getEpisodes/getTasks waterfall). `switchTab()` hooks `refreshVersions()` on every within-app tab switch. Verified on staging: cold start = 1× getAllVersions + 1× getDomainsBatch; warm tab switch with no changes = 1× getAllVersions + 0× getDomainsBatch; warm switch after change = 1× getAllVersions + 1× getDomainsBatch (stale domains only). Production deploy pending (manual step, batched with 1.1–1.3).
-
-**GAS (deployed):** Items 43–58 confirmed pushed and live. Items 59–84 written, not yet pushed.
-
-**Web app:** Dashboard live. Contacts tab live. All sorters operational. Dashboard now version-aware — tab return triggers version check, not full refetch. Revise_Reels / Revise_Images / Revise_Episode tasks have a Complete button for Audra. `checkReadyForRelease()` gates on at least one approved file existing. Dashboard "Tasks" header + red Add Task button live. **Not yet pushed (items 59–84):** Full Studio nav + Publish tab build + Spokes 3–7 backend and UI wiring + Reels Surface card layout. **Icon bug diagnosed:** `getTasks()` reads `Workflow_Step` by fixed column index rather than header name — icons won't light if sheet column order ever diverges from TASKS_COLS. Fix not yet written.
-
-**RAG Engine:** Corpus confirmed live at `projects/dwyp-rag/locations/us-south1/ragCorpora/4611686018427387904`. Corpus populated manually via GCP Console. Programmatic sync via GAS blocked — `importRagFiles` API not available in us-south1. Drive connector works via GCP Console. Manual corpus import is current operational path; Filing Fairy deposit call written but commented out pending API availability.
-
-**Studio:** Full Publish tab build written (items 59–84), not yet pushed. Full spec: `DWYP_Studio_v1.md`. Five tabs: Publish / Design / Write / Outreach / Ideas. Image Workshop fully retired — replaced by Publish canvas. Social Vert fully retired. Quick Caption retired as standalone. NotebookLM link retired — Studio is built-in.
-
-**Master Sheet:** `Asset_Library` tab confirmed created with correct 18-column schema (Reference v2.8). `Social_Assets` tab confirmed with correct 13-column slim schema. Both ready for Spoke 2 push.
-
-**Design Foundation (May 2026):** Major design session produced five foundation documents that govern all subsequent work — Surface Principle, Performance Principle, Publish AI Companion Design, Build Playbook, and Pre-Flight Staging Verification. These shift the platform from feature-by-feature growth to system-by-system construction. Component library, mobile IA, desktop chrome conventions, schedule panel UX, and visual modernization are all now applications of the foundation rather than freelance designs. **Phase 1 of the Build Playbook (Versions tab + performance foundation) is the next backend track.** See Foundation Documents section below.
-
-**Frame.io:** Fully retired.
-**Safety Fairy:** Fully retired.
-**Marcom Fairy:** Fully retired.
-**Scribe Fairy:** Retired (Reframe #8). Never deployed — seven template keys blank, Loop 2 indefinitely queued. Pipeline email events now spawn Writer email tasks (JT autonomous). Template keys migrate to Writer Email quick-start templates. Dead-code stub retained under Preservation Mandate.
-**Social Vert:** Fully retired. Image Workshop retired.
-**Image Workshop:** Fully retired. Replaced by Publish canvas in Studio.
-**Quick Caption (standalone):** Retired. Caption generation moves to Daily Pulse audio path.
-**Librarian Vert / Social Vert personas:** Retired. Claude introduces itself as Claude in Studio chat.
-
-**Next:** Phase 1.6 Blurhash thumbnails (after Phase 1.1–1.5 production deploy). Continue Reels Surface spoke push when ready. Dr. Meenakshi Aggarwal Secretary run held until Herald verified on Carrie.
+**Retired surfaces:** Frame.io, Safety Fairy, Marcom Fairy, Scribe Fairy, Social Vert, Image Workshop, Quick Caption (standalone), Librarian Vert/Social Vert personas.
 
 ### App
 - **Web app URL (production):** https://script.google.com/macros/s/AKfycbzCed5Fmv9TNDf6ivQUcmhgUWWOyEVK4P3sxS8_KMQx7YOY6JeY7r-dh8jEw5DpecrI/exec
@@ -53,6 +34,8 @@
 ## Staging Environment — Locked Architecture
 
 The platform runs on a two-deployment model. One script project, two master sheets, deployment-aware routing.
+
+**Operational change (May 2026 hub):** Staging-first cadence retired. Code pushes directly to production going forward. Staging sheet (`13bXMjxEf…`) remains available but is no longer maintained in sync. Routing helpers and architecture remain in place under Preservation Mandate — code is not removed, workflow has changed.
 
 ### Deployments
 
@@ -122,7 +105,7 @@ The Build Playbook supersedes ad hoc spoke ordering. Phase 0 housekeeping → Ph
 |---|---|---|
 | `fairy_circle.gs` | 🔶 Written, not pushed | **Loop 1 rewritten:** D-1 detection, date-aware task titles, spawns two tasks (HOST + PRODUCER). All other loops unchanged. **Null guard:** `callGeminiAPINoSearch` only sets `payload.systemInstruction` when non-null. **Spoke 3:** `callClaudeAPI(prompt, systemInstruction, callerName, history, options)` added — Anthropic Messages API. `callGeminiImageConversational(prompt, imageHistory, sourceImageBase64, sourceMimeType)` added. `callGeminiImageAPI()` removed. **Staging routing:** `isStaging()` and `getMasterSheetId()` helpers locked architectural pattern. **Phase 1.2–1.3:** `bumpVersion()` with LockService + audit_trail recursion guard. 8 write paths retrofitted. `spawnTask()`/`updateTaskStatus()` get `suppressBump` param. `dailyPulse()` bumps tasks + episodes once per run at end. Staged + verified. |
 | `secretary_fairy.gs` | ✅ Pushed | Recording Reminder spawn removed. Calendar scan switched to `Calendar.Events.list()` Advanced Service. `wrapCalendarApiEvent()` adapter. `Utilities.sleep(3000)` between events. **Phase 1.3:** `updateLastActivity()` + `createContactStub()` bump contacts. Staged + verified. |
-| `vert_fairy.gs` | 🔶 Written, not pushed | **Spoke 4 + 5:** Major rewrite. Two-pass pipeline. `MODEL_NAME` removed; `CLAUDE_MODEL`, `CLAUDE_API_KEY`, `EPISODE_SEARCH_INDEX_KEY` added. Pure Vertex RAG retrieval; Claude generation via `callClaudeAPI()`. Hook cleaning moved from Gemini to Claude. Pass 2 episode index doc creation. |
+| `vert_fairy.gs` | ✅ Pushed | **Spoke 4 + 5:** Major rewrite. Two-pass pipeline. `MODEL_NAME` removed; `CLAUDE_MODEL`, `CLAUDE_API_KEY`, `EPISODE_SEARCH_INDEX_KEY` added. Pure Vertex RAG retrieval; Claude generation via `callClaudeAPI()`. Hook cleaning moved from Gemini to Claude. Pass 2 episode index doc creation. **Track A (May 2026):** `buildEpisodeIndexV2` + marker query helpers. **Track B (May 2026):** `runEditorialPass` + `_buildEditorialPassSystemInstruction_` + `_buildEditorialPassPrompt_`. Voice authority stack: Brand Voice → Caption Supplement → Deliverables Spec → prohibitions → Master Template. **Track C (May 2026):** `_bridgeSliceSection_` + `_bridgeParseLabeledCaptions_` + `materializeQuoteGraphicAssets`. Bridge agent (audit name: Bridge_Fairy). Reads Show Notes Doc, writes 16 Asset_Library rows (10 hooks + 6 guest quotes) per episode. |
 | `herald_fairy.gs` | ✅ Saved | Fix 20: thin-data hard-stop. checkGuestIdentity() helper. Pending path live. Corrupt guard + task spawn on catches. Guest Brief two-step. spawnGuestBriefReviewForJT() exported. **Phase 1.3:** 4 write paths bump contacts. Staged + verified. |
 | `safety_fairy.gs` | ✅ Saved | **Fully retired.** Remove in Spoke 1 spring clean (already complete on main). |
 | `marcom_fairy.gs` | ✅ Saved | **Retired.** Remove in Spoke 1 spring clean (already complete on main). |
@@ -132,9 +115,9 @@ The Build Playbook supersedes ad hoc spoke ordering. Phase 0 housekeeping → Ph
 | `housekeeping.gs` | ✅ Saved | parsePipelineBlock(epUid): per-section idempotency. Corpus sync section commented out — us-south1 regional API unavailability. `test_syncCorpusFolder()` stubbed. |
 | `social_fairy.gs` | ✅ Saved | **Fully commented out.** Dead code. Remove in Spoke 1 spring clean (already complete on main). |
 | `clerk_fairy.gs` | 🔴 Rebuild queued | Owns doPost(). Routes: filing → runFilingFairy(), invite → scribeLetSchedule(). |
-| `dev_tools.gs` | 🔶 Written, not pushed | Test wrappers for Vert, Artist, Slides export, asset enrichment, batch enrichment. Batch reels trigger registered (every 30 min) — **delete trigger now that enrichment is complete**. **Phase 1.2–1.3:** Full Phase 1 test suite added (8 functions: versions endpoints, bumpVersion, LockService stress, Drive hybrid, auditTrail, recursion guard, writeVideoStatus). Staged + verified. |
-| `dwyp_app.gs` | 🔶 Written, not pushed (items 59–84) | `SOCIAL_ASSETS_COLS` 20-column map. Availability filter. Drive-fallback. Slide pairing. Reel Display_Name. v3 Publish image canvas + Hooks/Quotes. Spoke 6 `generateWithClaude()` 5-param signature. `isImageRequest()`/`isExplicitTextRequest()` heuristics. `saveBackgroundToLibrary()`. `stLoadEpisodeIndex()`. Asset enrichment functions. Reels Surface caption/title card Generate buttons. **Phase 1.2–1.3:** `getAllVersions()`, `getDomainVersion()` endpoints. 22 write paths retrofitted. `_resolveImageLibraryVersion()` corrected to scan file timestamps. Staged + verified. |
-| `dwyp_ui.html` | 🔶 Written, not pushed (items 59–84) | Studio left nav (Publish/Design/Write/Outreach/Ideas). Episode accordion, proxy player, F-4 comment submit. Reel workflow card layout (inline player). Image workflow v3 three-panel layout. Fabric.js canvas 360×450, 4:5 export 1080×1350. Spoke 7 session state, episode index loading, mode-aware tab switching. Reel card grid `minmax(0,1fr)` overflow fix. Drop shadow blur reduced. Attribution chip dark + gold + Nunito. |
+| `dev_tools.gs` | 🔶 Written, not pushed | Test wrappers for Vert, Artist, Slides export, asset enrichment, batch enrichment. Batch reels trigger registered (every 30 min) — **delete trigger now that enrichment is complete**. **Phase 1.2–1.3:** Full Phase 1 test suite added (8 functions: versions endpoints, bumpVersion, LockService stress, Drive hybrid, auditTrail, recursion guard, writeVideoStatus). Staged + verified. **Track B (May 2026):** `test_runEditorialPass` added (defaults to EP-260430-1427, force:true; no trigger). |
+| `dwyp_app.gs` | ✅ Pushed (items 59–84; item 92 Phase 1) | `SOCIAL_ASSETS_COLS` 20-column map. Availability filter. Drive-fallback. Slide pairing. Reel Display_Name. v3 Publish image canvas + Hooks/Quotes. Spoke 6 `generateWithClaude()` 5-param signature. `isImageRequest()`/`isExplicitTextRequest()` heuristics. `saveBackgroundToLibrary()`. `stLoadEpisodeIndex()`. Asset enrichment functions. Reels Surface caption/title card Generate buttons. **Phase 1.2–1.3:** `getAllVersions()`, `getDomainVersion()` endpoints. 22 write paths retrofitted. `_resolveImageLibraryVersion()` corrected to scan file timestamps. Staged + verified. **Item 92 Phase 1 (May 2026):** `_parseCaptionDraft_(raw)` — defensive parse for Caption_Draft (handles JSON-stringified array from Gemini pre-pass output; picks parsed[0] if array). `getRankedAssetLibraryCandidates(episodeUid, assetType, slotId)` — server-side ranked read: Reel delegates to `getReelsForEpisode()`; image types filter Episode_UID + Asset_Type + Availability='available', rank by tag-match (slotId in Slot_Tags) then Quality_Score DESC then Created_At ASC (null QS = 0), return top 6. `assembleSlotForegroundContext(activeAssetId, activeAssetType, episodeUid)` — written, not yet wired (Phase 4); returns {active_card, same_date_siblings (cap 4, SIBLING_CAP hardcoded — OQ-D), episode}. `getPrecompBgImages()` — reads PRECOMP_BACKGROUND_LIBRARY_ID folder; returns {fileId, name, textColor, thumbnailUrl}; textColor from `_darktext`/`_lighttext` filename suffix (#1a1714 / #ffffff); sorted by filename; limit 60. `ASSET_LIBRARY_COLS` updated: col 19 = Quality_Score, col 20 = Slot_Tags (read-only; midnight pass owns writes). **Item 92 Phase 2 (May 2026):** `exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson)` — resolves episode working folder, creates `Manual_Exports/` subfolder, writes PNG blob as `{slotId}_{assetId}_{YYYYMMDD-HHMM}.png` (JT_TIMEZONE), writes Canvas_State to AL row, logs `MANUAL_EXPORT` to Audit_Trail, returns `{url, filename, folderUrl}`. |
+| `dwyp_ui.html` | ✅ Pushed (items 59–84 + item 91) | Studio left nav (Publish/Design/Write/Outreach/Ideas). Episode accordion, proxy player, F-4 comment submit. Reel workflow card layout (inline player). Image workflow v3 three-panel layout. Fabric.js canvas 360×450, 4:5 export 1080×1350. Spoke 7 session state, episode index loading, mode-aware tab switching. Reel card grid `minmax(0,1fr)` overflow fix. Drop shadow blur reduced. Attribution chip dark + gold + Nunito. **UI polish (May 2026):** Reel trim overlay (Ouroboros SVG + `pbLogoPulse` CSS keyframe, replaces amber bar); trim state persists across day-stack nav (`pb._trimPending` + `_pbApplyPendingTrimOverlays()`). Image card stack — 4:5 thumbnail with padding, red serif title, Drive CDN stubs (`_PB_FEED_STUBS`, 6 URLs). Image editor — toolbar + caption + actions in right column; canvas-left / controls-right layout; slot header platform/why rows hidden via CSS; Back-to-cards inline in header row. Scroll padding on `.pb-ws-active`. Right-rail drag resize handle between Claude and Backgrounds panels. **v3 Center Canvas cosmetic pass (May 2026):** Left rail font/color/size fixes; urgent=red rule removed; active=gold CSS fix; rail never collapses. Reel card collapsed = 9:16 placeholder + title card + summary. Reel expanded = animated side-by-side, header click to collapse, height-capped. Image card whole-card-clickable + hint text. `pbCardNameInput` stub. `title_card` in reel stubs. SVG gradient IDs made unique per card. Urgency past-date bug fixed. **Deferred (wiring phase):** Trim deep-link to specific GCS/Vids file; Processing overlay real async trigger. **Item 92 Phases 1–2 (May 2026):** `_parseCaptionDraft(raw)` (client-side mirror). `_pbNormType(assetType)` — normalizes all bank/bankclip variants to 'reel'. `_pbPrefetchAssets(uid, schedule)` — pre-fetches image-type candidates async per assetType into `pb._alCandidateCache`; pre-fetches reels into `pb.reelCards`. `_pbFindCandidateById(assetId, assetType)` — searches candidate cache. `getRankedCandidates()` updated: reads from `pb._alCandidateCache` for image types; falls back to stub pool during async load; shows precomp bg thumbnail (by canvas index) for cards with no Drive export. `_pbHydrateCardCanvas()` — three-tier hydration: (1) restore from `pb.cardCanvases[assetId]` (in-session state); (2) restore from `c.canvas_state` (AL row JSON, undo floor locked); (3) fresh build — resolves precomp bg by `_candidateIndex % bgPool.length`, sets `pb._defaultTextColor` from bg textColor signal, calls `pbAddTextToCanvas(c.quote_text)` then `pbApplyBackground()`, locks undo floor. `pbToolAddText()` — selects existing text object for editing or creates new via `pbAddTextToCanvas('Type your text here…')`. `loadPrecompBgImages()` — async fetch; retroactively applies background + corrects text fill if canvas open during load (race-condition handling). `pbCardClick` non-reel path: snapshots outgoing card to `pb.cardCanvases[outgoingAssetId]` before dispose; calls `_pbHydrateCardCanvas()`. `pbSaveAndExit` critical identity fix: saves to `pb.cardCanvases[assetId]` (not `pb.slotCanvases[slotId]`) — each image card has independent per-assetId storage; `pbSelectSlot` always calls `pbInitCanvas()` fresh for image cards. `pb` state additions: `_alCandidateCache`, `_activeCandidateData`, `_reelCardsLoaded`, `cardCanvases`, `_defaultTextColor`, `_precompBgImages`. Caption prefill from Caption_Draft only if no localStorage caption for this slot. Phase 2 ✅ shipped (May 2026): Fix 1 — `pbSaveAndExit` strips `obj.src` for data URIs + nulls filter matrices before server call (Canvas_State now writes to AL row). Fix A — Save button retired, Export button added (calls `exportAssetToDrive`); all exit paths route through save core before teardown; three exit semantics locked. Fix B — `_pbHydrateCardCanvas` Tier 2 resets `viewportTransform` + clears `backgroundImage` before bg re-apply (eliminates coordinate drift). Fix C — dual-JSON in save-core: `fullCanvasJson` (full base64) → `pb.cardCanvases[assetId]` (synchronous Tier 1 reopen, no async race); `serverCanvasJson` (stripped src, null filters) → server. |
 
 ---
 
@@ -415,44 +398,39 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 | `raw_hooks` | housekeeping.gs | Vestigial — Social Vert retired. Remove in Spoke 1. |
 | `raw_quotes` | housekeeping.gs | Vestigial — Social Vert retired. Remove in Spoke 1. |
 | `image_prompts` | housekeeping.gs | Vestigial |
-| `show_notes` | Vert Fairy | Drive file ID of Show Notes doc. Written on Vert Fairy Pass 1. |
-| `episode_index` | Vert Fairy | Drive doc ID of Episode Index doc. Written by Pass 2 via `createEpisodeIndexDoc()`. |
+| `show_notes` | Vert Fairy (`runEditorialPass`) | Drive file ID of Show Notes doc. Track B. |
+| `episode_index` | Vert Fairy | Drive doc ID of Episode Index doc. Written by old Pass 2 via `createEpisodeIndexDoc()`. Vestigial. |
+| `episode_index_v2` | Vert Fairy (`buildEpisodeIndexV2`) | Drive file ID of Episode Index v2 doc. Track A. |
+| `quote_graphic_assets_built` | Bridge Fairy (`materializeQuoteGraphicAssets`) | Boolean. Set true after Track C writes Asset_Library rows. Track C. |
+| `quote_graphic_asset_count` | Bridge Fairy (`materializeQuoteGraphicAssets`) | Integer. Total Asset_Library rows written (hooks + quotes). Track C. |
 
 ---
 
 ## Build Sequence
 
 ### ✅ Complete
-1–84 — Master Sheet build through Reels Surface inline player + caption/title card Generate buttons (full historical sequence preserved in v5.1; condensed here for readability).
 
-85. **Design Foundation Session (May 2026)** — Hub session produced five foundation documents: `DWYP_Surface_Principle.md` (mobile = ops, desktop = creation), `DWYP_Performance_Principle.md` (show first, sync second; version-stamp invalidation), `DWYP_Publish_AI_Companion_Design.md` (per-card chat with Claude, sibling context, chips not auto-write), `DWYP_Build_Playbook.md` (sequenced runbook, dual track ownership, surface-back protocol), `DWYP_PreFlight_Staging_Verification.md` (Code verification prompt). `CLAUDE.md` updated with foundation reading protocol, mode awareness (Hub/Spoke/Verification), and architectural pattern references. Foundation establishes platform-wide design system with two principles — repositions all subsequent UI/feature work as application of foundations rather than freelance design. ✅ Captured.
-
-86. **Phase 1.1 — Versions Tab (May 2026)** — Versions tab created in both production and staging sheets. Columns: Domain, Version, Last_Modified, Modified_By. 11 domain rows: tasks, episodes, contacts, asset_library, image_library, manifests, governance_config, brand_voice, playbook, content_sensitivity, audit_trail. `setup_versionsTab()` / `setup_versionsTab_staging()` helpers in dev_tools.js bypass `getMasterSheetId()` intentionally (editor context always routes staging). ✅ Both sheets populated.
-
-87. **Phase 1.2 — bumpVersion Helper + Versions Endpoints (May 2026)** — `bumpVersion(domain, callerName)` with LockService wrapper + audit_trail recursion guard in fairy_circle.js. `getAllVersions()` and `getDomainVersion(domain)` in dwyp_app.js. Drive folder hybrid for image_library — corrected during Phase 1.3 staging verification: scans file modification timestamps rather than `folder.getLastUpdated()` (which does not update on file additions). ✅ Staged + verified.
-
-88. **Phase 1.3 — Endpoint Retrofit (May 2026)** — 40 write paths retrofitted: fairy_circle.js (8), secretary_fairy.js (2), herald_fairy.js (4), dwyp_app.js (22). `suppressBump` param on `spawnTask()`/`updateTaskStatus()` — dailyPulse() suppresses per-row bumps and fires two unconditional bumps (tasks, episodes) at end of run. All 11 domains verified via Phase 1 Test Protocol on staging. ✅ Staged + verified. Production deploy pending.
-
-89. **Phase 1.4 — Frontend Version-Aware Loader (May 2026)** — `getDomainsBatch(domains)` endpoint in `dwyp_app.js` dispatches to existing per-domain fetchers with per-domain failure isolation. Three-bucket domain model: `ACTIVE_LOADER_DOMAINS` (tasks/episodes/contacts — version-tracked + batch-fetched), `TRACKED_ONLY_DOMAINS` (audit_trail — version recorded, no fetcher, ready for Phase 4 Help Desk), excluded (asset_library/manifests — out of scope). `state.versions {}` added to state object. `refreshVersions()` — getAllVersions() → compare → batch-fetch stale → `_rerenderCurrentTab()`. `loadDomain(domain, callback)` — cache-or-fetch utility. `_coldStartComplete` flag prevents redundant getAllVersions on initial switchTab. `refreshVersions()` hooked into `switchTab()`. Staged + verified.
-
-90. **Phase 1.5 — Dashboard Migration (May 2026)** — `loadData()` cold-start waterfall (getEpisodes → getTasks) replaced with version-aware pattern (getAllVersions → getDomainsBatch). `state.versions` and `state.contactsLoaded` populated at cold start. `_rerenderCurrentTab()` wired into both refreshVersions() batch success paths. Inline `getTasks()` removed from `switchTab("dashboard")`. Verified on staging: cold start = 1× getAllVersions + 1× getDomainsBatch; warm tab switch unchanged = 1× getAllVersions + 0× getDomainsBatch; warm switch after change = stale domains only batched. Production deploy pending (batched with 1.1–1.3).
+| Item | Description | Notes |
+|---|---|---|
+| 1–84 | Master Sheet build through Reels Surface inline player | See git history for detail |
+| 85 | Design Foundation Session — five foundation docs | Surface, Performance, Publish AI, Build Playbook, PreFlight |
+| 86 | Phase 1.1 — Versions Tab | 11 domain rows in production sheet |
+| 87 | Phase 1.2 — `bumpVersion()` + version endpoints | LockService + audit_trail recursion guard |
+| 88 | Phase 1.3 — Endpoint retrofit | 40 write paths across 4 files |
+| 89 | Phase 1.4 — Frontend version-aware loader | `getDomainsBatch()`, three-bucket domain model |
+| 90 | Phase 1.5 — Dashboard migration | Version-aware cold start; tab return = 0–1 batch calls |
+| 91 | v3 Center Canvas — cosmetic pass | Left rail, reel card, image card, urgency fix |
+| Track C | Bridge — `materializeQuoteGraphicAssets` | Vert → Claude → Bridge pipeline closed; verified on David Bedrick |
+| 92 | v3 Wiring Phases 1–2 | Dual-JSON canvas, Export button, viewport fix, per-asset storage |
 
 ### ⏳ In Progress
 - **Carrie Sipe episode run** — at review stage.
+- **v3 Wiring spoke (item 92)** — Phase 1 ✅ confirmed. Phase 2 ✅ shipped (Fix 1: base64 strip; Fix A: Save→Export, exit paths unified; Fix B: viewport reset in Tier 2; Fix C: dual-JSON save-core). Phase 3 (reel card expand + scheduling) next.
 
 ### Queued — Next
 
-**Phase 0 — Pre-Flight Housekeeping (Audra)**
-- Foundation docs to project knowledge (selective: State, changelog, CLAUDE.md, Build Playbook in PK; all five foundation docs in repo).
-- State v5.2 to repo.
-- Confirm four boundary calls in Surface Principle (see Pending Decisions).
-
-**Phase 1 — Performance Foundation (Backend Track, mostly autonomous)**
-✅ 1.1 Versions Tab schema in Master Sheet — both sheets populated.
-✅ 1.2 `bumpVersion()` helper + `getAllVersions()` / `getDomainVersion()` endpoints + Drive folder file-scan hybrid.
-✅ 1.3 Existing endpoint retrofit — 40 write paths across 4 files. Staging verified. Production deploy pending.
-✅ 1.4 Frontend version-aware loader pattern. `getDomainsBatch()` endpoint + three-bucket domain model + `refreshVersions()` / `loadDomain()` / `_rerenderCurrentTab()`. Staged + verified.
-✅ 1.5 Dashboard migrated to version-aware loading. `loadData()` waterfall replaced. Tab return = 1× getAllVersions + 0–1× getDomainsBatch. Staged + verified.
+**Phase 1 — Performance Foundation**
+✅ 1.1–1.5 Complete (see Build Sequence table above).
 1.6 Blurhash thumbnails generated at filing time. **← Next**
 1.7 Pre-compute audit — identify >200ms operations.
 
@@ -482,6 +460,10 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 - C-2 — Revision Task inline checkboxes.
 - C-1 — Contacts Add/Edit (awaiting JT feedback).
 - F-2 — Reels Viewport Fit (iPhone SE) (pending device confirmation).
+
+**Parked — Hub Backlog (Item 92 Phase 2 session):**
+- Stub → real card swap on first paint: render skeleton card frames (no text, no bg) until `_pbPrefetchAssets` resolves, then single swap to real content. Skeleton-first preferred over block-until-ready — also closes orphaned-Card-1 race (click before prefetch returns → stub ID → hydration bails) as a side effect.
+- AL row as single source of truth across surfaces: every surface displaying asset content (stack card thumbnail text/bg, caption draft chip, details panel quote text) should read from AL row, not derived or cached copies. Requires audit-first spoke (map all surfaces + current vs. should-be sources), then patch spoke. Open design decisions for hub: overwrite `Quote_Text` on edit or new `Display_Text` column? Write to AL on save or derive from Canvas_State on every read? Does caption draft regenerate against edited text or stay locked to original?
 
 ### Later
 - Dr. Meenakshi Aggarwal Secretary run — held until Herald verified on Carrie
@@ -519,11 +501,12 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 | 2 | `dwyp_app.gs` | submitEpisodeComments() — Revise_Episode for Audra not yet spawned. | F-4 queued. Holding pending comment design decision. |
 | 3 | RAG Engine | `importRagFiles` API unavailable in us-south1. | Corpus sync commented out. Manual GCP Console import is operational path. Revisit when us-south1 expands. |
 | 4 | `herald_fairy.gs` / `secretary_fairy.gs` | Contact record exists but Contact Library folder missing → flags duplicate. | Fix before next new guest run. |
-| 5 | `dwyp_ui.html` | B-4: JT couldn't save/add quote card to Carrie's file. | Awaiting clarification — error, nothing, or file lost? |
 | 6 | `dwyp_ui.html` | B-5: Bottom border missing on quote card template. | Awaiting reference image from JT. |
 | 7 | `dwyp_ui.html` | B-3: Fonts not rendering correctly in Add Text. Should be Libre Baskerville / Nunito (Sofia Pro sub). | IW polish spoke (F-5). |
 | 8 | `dwyp_ui.html` | Write tab has no episode picker — `stSelectEpisode()` only fires from Design tab's dropdown. `stRagContext` stays empty in Write mode; Claude has no episode context. | Part of Write tab UI redesign (three-panel). Not a wiring bug. |
 | 9 | `dwyp_ui.html` / `dwyp_app.gs` | Loose tasks (not linked to an episode) do not appear in the app. Pre-existing bug, predates Phase 1.3. Surfaced during Phase 1 staging verification. | Investigate in a separate spoke before next JT session. |
+| 10 | `dwyp_ui.html` | Trim button opens `vids.google.com` root — needs a deep-link to the specific Drive/GCS file. | Deferred until GCS embed + Sentinel confirmed. Scope in wiring hub. |
+| 11 | `dwyp_ui.html` | Processing overlay fires immediately on Trim click — should only show while async work is in progress. | Deferred until real Trim async path is wired. |
 
 ---
 
@@ -532,18 +515,16 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 | Item | Status |
 |---|---|
 | Corpus sync schedule | Drive connector daily via GCP Console. Manual trigger after each filing. |
-| parsePipelineBlock() / housekeeping | Vestigial — Social Vert retired. Confirm removal before housekeeping spoke. |
+| `parsePipelineBlock()` / housekeeping | Vestigial — Social Vert retired. Confirm removal before housekeeping spoke. |
 | Sorter comment design | Per-asset or batch? Blocking F-4. |
 | JT's device — iPhone SE? | Determines F-2. |
 | Contacts completion signal | Bio + one social + Headshot? Not formally defined. |
 | Contacts Relationship_Type editable? | Part of C-1. Awaiting JT feedback. |
 | D-1 container architecture | User-created categories as data structure from day one. |
 | Artist Fairy post-redesign role | No longer produces quote graphics. May handle Reel thumbnails or other assets. Confirm before that spoke opens. |
-| **Asset_Library `chat_history` column (OQ-G)** | 18-col schema confirmed. Verify column 18 covers chat_history or add as column 19 before Phase 4 (Publish Companion). |
-| **Reels video hosting — implementation details** | Direction set: GCS hosting, Make mirrors Drive → GCS, native `<video>` serves GCS URL. Remaining TBD: Make scenario design, bucket structure, GCS URL pattern, `getReelStreamUrl()` update. Resolve before Reels Surface push resumes. |
+| **Asset_Library `chat_history` column (OQ-G)** | 20-col schema confirmed (Quality_Score col 19, Slot_Tags col 20). Add `chat_history` as col 21 before Phase 4 (Publish Companion). |
 | **Conversation history turn cap (OQ-E)** | N=? Decide before Phase 4 spoke. |
 | **Sibling context cap UX (OQ-D)** | What's the UX when over cap? Decide before Phase 4 spoke. |
-| **Playbook strategic logic content (OQ-F)** | Authoring lift on Audra. Required before Phase 4 — Claude only knows what's in the briefing. |
 
 ---
 
@@ -551,28 +532,14 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 
 | Item | Status |
 |---|---|
-| Deploy Phase 1.1–1.3 to production | ⏳ Staging verified — Audra manual step (Manage Deployments → New version) |
-| Add foundation docs to repo (5 files + CLAUDE.md update) | ⏳ Phase 0 |
-| Add foundation docs to project knowledge (selective per CLAUDE.md tier) | ⏳ Phase 0 |
-| Confirm Surface Principle boundary calls (4 items) | ⏳ Phase 0 |
 | Register nightly trigger for `triggerNightlyHousekeeping()` | ⏳ Not yet done |
 | After each episode files: trigger corpus sync in GCP Console | ⏳ Ongoing — manual step |
 | Set `STUDIO_LLM_MODE = claude` in Governance_Config | ⏳ Before Studio backend spoke |
-| `Asset_Library` tab created in Master Sheet (18 cols) | ✅ Done |
-| `Social_Assets` tab updated to slim 13-col schema | ✅ Done |
 | Add `ASSET_LIBRARY_TAB_NAME = Asset_Library` to Governance_Config | ⏳ Verify before Spoke 2 push |
-| Add `STUDIO_IMAGE_MODEL` to Governance_Config | ⏳ Before Studio backend spoke — confirm model name first |
 | Add `STUDIO_TOKEN_WARNING_THRESHOLD = 50000` to Governance_Config | ⏳ Before Studio backend spoke |
 | Add `PUBLISH_CHAT_HISTORY_TURN_CAP` to Governance_Config | ⏳ Before Phase 4 (Publish Companion) |
 | Delete `test_batchEnrichReels` time-based trigger (every 30 min) | ⏳ Enrichment complete — trigger no longer needed |
-| Retire `PUBLISH_LLM_MODE` from Governance_Config | ⏳ After Spoke 1 removes code references |
-| Retire `IMAGE_WORKSHOP_GEM`, `IW_EXPORT_FALLBACK_FOLDER_ID`, `NOTEBOOKLM_LINK` | ⏳ After Spoke 1 |
-| JT's reels in `Reels/Approved/` | ✅ Done |
-| `CLAUDE_API_KEY` active | ✅ Done |
-| `STAGING_DEPLOYMENT_URL` populated | ✅ Done |
-| `STAGING_SHEET_ID` populated | ✅ Done |
-| Posting_Schedule tab populated | ✅ Done |
-| `VERTEX_RAG_REGION = us-south1` in Governance_Config | ✅ Done |
+| Retire `PUBLISH_LLM_MODE`, `IMAGE_WORKSHOP_GEM`, `IW_EXPORT_FALLBACK_FOLDER_ID`, `NOTEBOOKLM_LINK` | ⏳ Pipeline cleanup spoke |
 
 ---
 
@@ -581,13 +548,13 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 **Full key list is authoritative in Governance_Config sheet.** This section tracks status only.
 
 **Populated and confirmed:**
-`GEMINI_API_KEY`, `MODEL_NAME`, `CLAUDE_API_KEY` ✅, `MASTER_SHEET_ID`, `MASTER_TEMPLATE_ID`, `STAGING_DEPLOYMENT_URL` ✅, `STAGING_SHEET_ID` ✅, `RAW_PRODUCTION`, `STAGING_DRAFTS`, `FINISHED_EPISODES`, `DWYP_CALENDAR_ID`, `CALENDAR_TRIGGER_PREFIX`, `ASSIGNEE_HOST`, `ASSIGNEE_PRODUCER`, `HOST_NAME`, `HOST_EMAIL`, `CONTACT_LIBRARY_FOLDER_ID`, `PODCAST_NAME`, `HERALD_RESEARCH_PROMPT_KEY`, `HERALD_BIO_PROMPT_KEY`, `HERALD_BRIEF_PROMPT_KEY`, `CONTENT_SENSITIVITY_ID`, `BRAND_VOICE_ID`, `NOTEBOOK_STAGING`, `ARCHIVE_FOLDER_ID`, `RELEASE_REMINDER_HOURS`, `SCRIPT_ID`, `INTAKE_NAME_KEY`, `INTAKE_EMAIL_KEY`, `INTAKE_REFERRAL_KEY`, `ARTIST_THUMBNAIL_DECK_ID`, `ARTIST_SQUARE_DECK_ID`, `ARTIST_VERTICAL_DECK_ID`, `IMAGE_BACKGROUND_LIBRARY_ID`, `STUDIO_CORPUS_ID`, `CORPUS_DRIVE_FOLDER_ID`, `VERTEX_RAG_REGION` (`us-south1`), `REELS_ARCHIVE_FOLDER_ID`, `POSTING_SCHEDULE_TAB_NAME`, `SOCIAL_ASSETS_TAB_NAME`, `STUDIO_ROOT_FOLDER_ID`, `STUDIO_CANVAS_MANIFEST_FOLDER_ID`, `STUDIO_DOCS_FOLDER_ID`, `STUDIO_SESSIONS_FOLDER_ID`, `EPISODE_SEARCH_INDEX_KEY`, `JT_TIMEZONE`, `AUDRA_TIMEZONE`, `PUBLISH_LLM_MODE` (gemini — retire after Spoke 1).
+`GEMINI_API_KEY`, `MODEL_NAME`, `CLAUDE_API_KEY` ✅, `MASTER_SHEET_ID`, `MASTER_TEMPLATE_ID`, `STAGING_DEPLOYMENT_URL` ✅, `STAGING_SHEET_ID` ✅, `RAW_PRODUCTION`, `STAGING_DRAFTS`, `FINISHED_EPISODES`, `DWYP_CALENDAR_ID`, `CALENDAR_TRIGGER_PREFIX`, `ASSIGNEE_HOST`, `ASSIGNEE_PRODUCER`, `HOST_NAME`, `HOST_EMAIL`, `CONTACT_LIBRARY_FOLDER_ID`, `PODCAST_NAME`, `HERALD_RESEARCH_PROMPT_KEY`, `HERALD_BIO_PROMPT_KEY`, `HERALD_BRIEF_PROMPT_KEY`, `CONTENT_SENSITIVITY_ID`, `BRAND_VOICE_ID`, `NOTEBOOK_STAGING`, `ARCHIVE_FOLDER_ID`, `RELEASE_REMINDER_HOURS`, `SCRIPT_ID`, `INTAKE_NAME_KEY`, `INTAKE_EMAIL_KEY`, `INTAKE_REFERRAL_KEY`, `ARTIST_THUMBNAIL_DECK_ID`, `ARTIST_SQUARE_DECK_ID`, `ARTIST_VERTICAL_DECK_ID`, `IMAGE_BACKGROUND_LIBRARY_ID`, `STUDIO_CORPUS_ID`, `CORPUS_DRIVE_FOLDER_ID`, `VERTEX_RAG_REGION` (`us-south1`), `REELS_ARCHIVE_FOLDER_ID`, `POSTING_SCHEDULE_TAB_NAME`, `SOCIAL_ASSETS_TAB_NAME`, `STUDIO_ROOT_FOLDER_ID`, `STUDIO_CANVAS_MANIFEST_FOLDER_ID`, `STUDIO_DOCS_FOLDER_ID`, `STUDIO_SESSIONS_FOLDER_ID`, `EPISODE_SEARCH_INDEX_KEY`, `JT_TIMEZONE`, `AUDRA_TIMEZONE`, `PUBLISH_LLM_MODE` (gemini — retire after Spoke 1), `PRECOMP_BACKGROUND_LIBRARY_ID` (Drive folder `1Tyw7ArpdmYiKZNL4FOQNIpA4fTXkwkh6`; currently same as IMAGE_BACKGROUND_LIBRARY_ID — curated set to be built and swapped; filename convention: `bg_NNN_darktext` / `bg_NNN_lighttext`), `STUDIO_IMAGE_MODEL` = `gemini-2.5-flash-image` (locked — hub decision May 2026), `CAPTION_VOICE_SUPPLEMENT_ID` ✅ (Track B voice authority patch), `DELIVERABLES_VOICE_SPEC_ID` ✅ (Track B voice authority patch).
 
 **Needs value set:**
 `STUDIO_LLM_MODE` → `claude` (before Studio backend spoke).
 
 **Add before Studio backend spoke:**
-`ASSET_LIBRARY_TAB_NAME` = `Asset_Library`, `STUDIO_IMAGE_MODEL` (confirm model name), `STUDIO_TOKEN_WARNING_THRESHOLD` = `50000`.
+`ASSET_LIBRARY_TAB_NAME` = `Asset_Library`, `STUDIO_TOKEN_WARNING_THRESHOLD` = `50000`.
 
 **Add before Phase 4 (Publish Companion):**
 `PUBLISH_CHAT_HISTORY_TURN_CAP` = (TBD), `PUBLISH_SIBLING_CONTEXT_CAP` = `4`.
@@ -618,7 +585,7 @@ Image Workshop is fully retired. Replaced by the Publish canvas in Studio. No bo
 | `triggerNightlyHousekeeping` time-based trigger | ⏳ Not yet registered |
 | `clerk_fairy` doPost() | ⏳ Rebuild queued |
 | Items 43–58 pushed and deployed | ✅ Done |
-| Items 59–84 pushed and deployed | ⏳ Pending push |
+| Items 59–84 + item 91 pushed and deployed | ✅ Done |
 
 ---
 
@@ -636,7 +603,21 @@ Do **not** use Drive's `/preview` URL in an embedded player. The Drive player ha
 
 **Why "anyone with link" is acceptable:** Reels are produced for public posting. Making the source file link-accessible is not a meaningful privacy exposure. `setSharing()` is idempotent — safe to call on every first-play even if already set.
 
-**Planned hosting:** Google Cloud Storage. Make scenario mirrors Drive → GCS on upload. App serves reels from GCS public URL via native `<video>` — JT's in-app review experience unchanged. `getReelStreamUrl()` will return GCS URL instead of Drive UC URL; `setSharing()` step drops. GCS bucket (`dwyp_corpus_episodes`) already exists in project. Implementation details (Make scenario, bucket structure, URL pattern) TBD before Reels Surface push.
+**Current hosting:** Drive `uc?id=` (link-accessible via `setSharing()`), served via native `<video>`. Confirmed working. **Future:** GCS migration is a separate future spoke — no Make scenario in Phase 3. GCS bucket (`dwyp_corpus_episodes`) exists and dormant.
+
+---
+
+## Canvas State Architecture — Locked Principles
+
+### Render-on-send
+Canvas_State JSON is the authored artifact. PNG is rendered at dispatch time — never stored as a pre-render that must be kept in sync. The `addToWeekAsImage` schedule-time PNG creation is a vestigial preview/backup path. `exportAssetToDrive` is the formal manual-backup channel. JT can edit canvas state until the moment of send.
+
+### Dual-JSON for canvas state
+Canvas state has two destinations with different constraints:
+- **In-memory (`pb.cardCanvases[assetId]`):** full JSON with embedded base64 background. Enables synchronous restore on reopen. No async race window.
+- **Server (`Canvas_State` cell on AL row):** stripped JSON — `obj.src` emptied for data URIs, filter matrices nulled. Fits under GAS URL-encoded payload limit and Sheets 50k char cell cap. Reload-time hydration re-applies background from precomp pool by index.
+
+`pbSaveAndExit` save-core produces both via different post-processing from one `canvas.toJSON()` call. Never collapse them into one variable — they serve different consumers with different constraints.
 
 ---
 
@@ -692,6 +673,5 @@ Do **not** use Drive's `/preview` URL in an embedded player. The Drive player ha
 
 ---
 
-*Platform State v5.6 — 2026-05-12. Phase 2.0 (action-completeness audit) closed — five sessions, saturation marker S5. `DWYP_App_Structure.md` v1.3 published: Cognitive Offloading added as third foundation principle, 13 corollaries, 3 operational principles, eight reframes refined inline. `DWYP_User_Flows.md` v1.0 published: per-surface action inventory, 11 scenario walkthroughs, cumulative gap list. `DWYP_Phase2_0_Session_Archive.md` published (reference-only, do not load by default). Foundation Documents table updated. Reading tier "When relevant" gains User_Flows v1.0. Four Surface Principle boundary calls (mobile permissions) resolved per v1.3 Reframe #3 — all four confirmed yes. Phase 2.1 / 2.3 / 2.4 / 3.3 hub sessions unblocked.*
+*Version history stripped. See git log for session-by-session detail.*
 
-*Platform State v5.5 — May 2026. Scribe Fairy retired (Reframe #8) — pipeline email events spawn Writer tasks; template keys migrate to Writer quick-starts; Loop 2 rewires to release reminder task. Phase 2.0 Action-Completeness Audit added as gate for Phase 2 design sessions. App_Structure v1.2 and Help_Desk_Companion_Design added to companion docs. Mode list retired — three surfaces: Publish / Writer / Design. Reels video hosting flagged as open pending decision.*

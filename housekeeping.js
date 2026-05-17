@@ -190,8 +190,8 @@ function parsePipelineBlock(epUid) {
   // produced content. Skip entirely if all missing sections parsed empty.
   // -------------------------------------------------------------------------
   const patch = {};
-  if (rawHooks     && rawHooks.length)     patch.raw_hooks     = rawHooks;
-  if (rawQuotes    && rawQuotes.length)    patch.raw_quotes    = rawQuotes;
+  if (rawHooks     && rawHooks.length)     patch.raw_hooks     = rawHooks.map(normalizeQuoteText);
+  if (rawQuotes    && rawQuotes.length)    patch.raw_quotes    = rawQuotes.map(normalizeQuoteText);
   if (imagePrompts && imagePrompts.length) patch.image_prompts = imagePrompts;
 
   if (!Object.keys(patch).length) {

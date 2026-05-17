@@ -1,6 +1,6 @@
-# DWYP Operations Platform — Platform Reference
-**Version: 2.9 | May 2026**
-**Replaces: DWYP_Platform_Reference_v2.8.md**
+﻿# DWYP Operations Platform — Platform Reference
+**Version: 3.1 | May 2026**
+**Replaces: DWYP_Platform_Reference_v3.0.md**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -14,6 +14,8 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 
 ## Architectural Decisions — Locked
 
+> ADs 9, 46–47, 56–58, 60–68, 70–71, 79–88 removed (fully superseded by retired features: Marcom Fairy, Safety Fairy, Image Workshop, Frame.io, old Preservation Mandate). See git history for removed text.
+
 1. **CRM-first, podcast-first UX.** Contacts is the primary object. JT's surface feels guest/podcast-first.
 2. **No emoji statuses.** Plain enums everywhere. (Emoji in task `actionTitle` freetext is technically compliant — decision pending on spirit-of-rule enforcement.)
 3. **No Evergreen_Registry.** Identity lives in Contacts tab.
@@ -22,7 +24,6 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 6. **Bootstrap pattern.** `getGovernance()` reads `MASTER_SHEET_ID` from Script Properties → `SpreadsheetApp.openById()`. Sheet-bound project.
 7. **Manifest pattern carries forward.** Jason Protocol architecturally unchanged. Folder/UID lookup remaps to Episodes tab.
 8. **Intake is a hard gate.** Signed off. No further changes without explicit design session.
-9. **Preservation Mandate.** Never simplify, rename, or thin any function. All changes through Claude only. ⚠️ *Replaced by AD #101 (intentional deletion policy).*
 10. **Prose behavior in templates, not code.** All audience-facing copy and AI prompt behavior controlled through Master Template.
 11. **PoP is legally separate from DWYP.** Contacts and financials must never be commingled. Workstream field enforces this at data level.
 12. **Safety Fairy mission statement: Truth over Sanitation.** Curse words not flagged by default. Logic lives in Content Sensitivity doc, not code.
@@ -59,8 +60,6 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 43. **Guest tab retired.** All fields migrated to Contacts tab. No Guest tab references remain in codebase.
 44. **Contacts tab is the single contact authority.** Role flags (`Is_Guest`, `Is_Sponsor`, `Is_Donor`) retired — replaced by `Relationship_Type` EnumList on Contacts tab. `Relationship_Type` describes both role and relationship state.
 45. **Headshot URL pattern.** Herald detects `_headshot` in filename in Contact Library folder, resolves Drive URL (`uc?export=view&id=FILE_ID`), writes to `Headshot_URL` on Contacts tab.
-46. **Frame.io architecture: retired.** Superseded by AD #72. All media review handled natively in the web app.
-47. **Frame.io API version: retired.** Superseded by AD #72.
 48. **Google Slides export: manual.** Audra exports via personal script, drops image files into asset subfolders. Artist Fairy unchanged.
 49. **Shadow-build is the primary frontend.** Custom HTML/JS web app deployed as GAS web app. Auth: Google OAuth. Data: Sheets API reads + `clerk_fairy doPost()` writes. AppSheet is retired.
 50. **Web app security filter.** `HOST_EMAIL` from Governance_Config. JT sees only tasks where `Assignee = HOST_EMAIL` OR `Assignee` is blank. Audra sees all tasks.
@@ -69,22 +68,8 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 53. **Non-fatal failure paths.** Integrations spawn recovery tasks when external calls fail — pipeline must not block on third-party availability.
 54. **Idempotency is a core GAS design principle.** All loops check before spawning to prevent duplicate tasks.
 55. **Drive folder IDs, not names, are load-bearing.** Folder lookups use Drive folder IDs across all fairies.
-56. **Frame.io inbound path: retired.** Superseded by AD #72. No webhook receiver built.
-57. **Make.com is the outbound integration bridge for Frame.io: retired.** Make.com Frame.io scenario deprecated. `MAKE_FRAMEIO_WEBHOOK_URL` and `FRAMEIO_WORKSPACE_ID` keys retired from Governance_Config. Make.com retained for other scenarios (PNG conversion, etc.).
-58. **Frame.io project naming convention: retired.** Superseded by AD #72.
 59. **Mending Fairy — `correctGuestName()` is the canonical fix for guest name errors.** Corrects name across: Contacts tab, Episodes tab, Tasks, Drive folder names, manifest, Production Notes. Logs all changes to Audit_Trail. Triggered manually. Build after Carrie Sipe episode completes.
-60. **Marcom copy generation is primary via Cowork + NotebookLM, with Gemini API fallback.** ⚠️ *Superseded by AD #89 (Vert Fairy / Vertex AI architecture). Marcom Fairy retired.*
-61. **Cowork timeout triggers automatic Marcom fallback — pipeline completes either way.** ⚠️ *Superseded by AD #89. Marcom Fairy retired.*
-62. **Marcom Fairy role is ingestion and routing, not generation.** ⚠️ *Superseded by AD #89. Marcom Fairy retired.*
-63. **Image Workshop is a native view in the DWYP web app, accessed from Episode Detail.** JT accesses the Image Workshop via a button on the Episode Detail view. Episode context (UID, hooks, quotes) is passed automatically — no episode re-selection required. The workshop opens as a full view (not a modal) to provide adequate layout space. A back button returns to Episode Detail. Mobile access is technically supported but desktop is the intended surface. ⚠️ *Superseded by AD #96. Image Workshop fully retired.*
-64. **Image Workshop background library is a shared Drive folder.** Pre-curated/purchased backgrounds (added by Audra occasionally) and Gemini-generated backgrounds (produced by Background Generator) both write to the same background library folder. The workshop UI displays all contents as a scrollable thumbnail grid. JT selects from the grid or uploads a one-off custom background inline. Governance key `IMAGE_BACKGROUND_LIBRARY_ID`. ⚠️ *Image Workshop retired (AD #96). Background library folder remains — now accessed via Studio Design tab.*
-65. **Image Workshop uses Fabric.js canvas for compositing.** JT selects a background, adds text layers (Headline / Normal), adjusts with handles. Export navigates to Staging/Images/ subfolder. PNG-quality output to Drive. Make.com PNG conversion path retired. ⚠️ *Superseded by AD #96. Studio Publish canvas is the active compositing surface.*
-66. **Image Workshop output exports to Staging/Images/.** Export navigates to `Staging/Images/` subfolder. Clean error if subfolder missing. Daily Pulse Loop B detects files there for Review Images task. ⚠️ *Image Workshop retired (AD #96). Export path and Loop B detection pattern carry forward — Studio canvas exports to the same location.*
-67. **Stable Diffusion on local GPU: deferred.** Superseded by AD #84 (Gemini image generation). Stable Diffusion remains available as a future enhancement but is not in the active build sequence.
-68. **Desktop is JT's primary production surface. Mobile is triage and approvals only.** NotebookLM, Image Workshop, and Episode Detail deep dives are desktop workflows. Mobile is suited for task completion, approvals, and status checks. The web app requires a desktop-optimized view. ⚠️ *Image Workshop retired (AD #96). Studio replaces it as a desktop-primary surface.*
 69. **JT is a Claude Pro subscriber.** JT has her own Claude Pro account. This enables direct Claude.ai access for creative sessions independent of the platform's API calls.
-70. **Marcom pipeline is initiated manually via "Run Marcom" button on Episode Detail.** ⚠️ *Superseded by AD #89. Marcom Fairy retired. Vert Fairy is the pipeline replacement — triggered by Daily Pulse on finished transcript detection.*
-71. **Frame.io project creation moves to Safety Fairy. Secretary no longer touches Frame.io.** Superseded by AD #72. Safety Fairy no longer creates Frame.io projects. `callMakeCreateProject()` is dead code.
 72. **Frame.io retired entirely. In-app review replaces all Frame.io workflows.** Frame.io removed from the stack. All review workflows (episodes, reels, images) handled natively in the DWYP web app. Make.com Frame.io scenario deprecated. Clerk Fairy webhook receiver not built. `Frameio_Project_ID` column on Episodes tab is retired.
 73. **Episode review uses a proxy video.** Audra exports a proxy from DaVinci Resolve and places it in `Staging/Episode/` subfolder using a `proxy_` filename prefix. Daily Pulse Loop A detects the proxy file and spawns the Review_Episode task. `getProxyFileId()` scans `Staging/Episode/` to resolve the file ID for the in-app embed.
 74. **Proxy detection is folder-watch based.** Daily Pulse Loop A watches `Staging/Episode/` subfolder for `proxy_` prefix files. Review view reads file ID to embed video via Drive iframe. Overwritten each revision cycle.
@@ -92,16 +77,6 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 76. **In-app Episode Review gate.** Review_Episode task stays open until Filing Fairy closes the episode. Timestamped comments sent by JT create or append to a Revise task for Audra. Request Revisions spawns revision task for Audra, task remains open.
 77. **Social_Assets loop in Daily Pulse: queued.** Candidate row creation on file detection — not yet built.
 78. **`Proxy_File_ID` written by Daily Pulse, not manually.** `proxy_` prefix in `Staging/Episode/` subfolder is the trigger. GAS resolves file ID and writes to Episodes tab automatically.
-79. **Episode Card is the primary Marcom output artifact.** ⚠️ *Superseded by AD #89. Vert Fairy produces Show Notes as the primary pipeline output. Episode Card format TBD when Vert Fairy spoke opens.*
-80. **Marcom architecture: two-engine pipeline.** ⚠️ *Superseded by AD #89. Marcom Fairy retired.*
-81. **Gemini is the extraction engine; Claude is the curation and voice engine.** ⚠️ *Superseded by AD #89. Vert Fairy / Vertex AI RAG Engine is the active copy pipeline.*
-82. **Gemini chunks the transcript as part of its extraction pass.** ⚠️ *Superseded by AD #89. Transcript retrieval handled by Vertex AI RAG Engine.*
-83. **Claude transcript peek is an escape valve, not a primary path.** ⚠️ *Superseded by AD #89.*
-84. **Safety Fairy generates background images via Gemini image API at transcript intake.** ⚠️ *Safety Fairy retired. Background generation is now user-triggered via Background Generator in Image Workshop. Auto-generation at transcript intake is not the active path.*
-85. **Safety Fairy hook/quote extraction writes to manifest.** ⚠️ *Safety Fairy retired. `raw_hooks` and `raw_quotes` manifest fields may become vestigial — Social Vert serves hooks/quotes on demand from corpus.*
-86. **Manifest `raw_hooks` and `raw_quotes` are overwritten by Marcom's Claude polish pass.** ⚠️ *Superseded by AD #89. Marcom Fairy retired.*
-87. **Two Claude touches on the transcript — different timing, different jobs.** ⚠️ *Superseded by AD #89. Active AI layer: Herald (Gemini API, guest research) + Vert Fairy (Vertex AI RAG, show notes pipeline) + Social Vert (Vertex AI RAG, on-demand creative surface). See AI Layer Architecture.*
-88. **Image Workshop hook/quote picker reads from manifest.** May become vestigial — Social Vert serves hooks/quotes on demand from corpus. Confirm before Image Workshop hook/quote spoke opens. ⚠️ *Image Workshop retired (AD #96). Social Vert retired (AD #97). Hooks/quotes now sourced from episode index, populated by Vert Fairy Pass 2.*
 89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Three Vertex AI roles: (1) Vert Fairy — automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript; (2) Social Vert — Image Workshop chat panel, JT queries corpus on demand; (3) Librarian Vert — Studio tab, open-ended creative surface. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
 90. **Dashboard replaces Episodes and Tasks tabs as the primary home screen.** `renderDashboard()` is the entry point. navDashboard in place, shim removed. Episodes tab and Tasks tab are retired. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
 91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
@@ -122,7 +97,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 106. **Progressive image loading adopted.** Thumbnails render first; high-res swaps in on load. Drive thumbnail URLs used for initial render.
 107. **Image caption grounding requirements (locked).** Every image caption call must include: `Quote_Text` (exact quote on canvas, from Asset_Library), `Speaker` (host or guest), `HOST_NAME` (from Governance_Config), guest name (from episode record), episode topic/emotional core (from episode record), brand voice (from `BRAND_VOICE_ID` doc). Required prompt instruction: *"Do not restate the quote. Write a caption that responds to it — what does this quote make someone feel? What does it mean for someone sitting with pain right now? Write in JT's voice. Short, punchy, direct. End with 'Link in bio.'"* Caption regenerates automatically when a new quote is placed on the canvas — not on a manual tap.
 108. **Reel caption grounding requirements (locked).** Every reel caption call must include: `Reel_Summary` (Gemini audio summary for this specific reel, from Asset_Library), guest name, episode topic (from episode record), brand voice. `Reel_Summary` must exist before caption generates — if null, show "Summarizing reel…" and trigger the summary call first. Required prompt instruction: *"Write a caption for this reel clip. Use the summary as your source — the caption should reflect what's actually in this clip, not the episode generally. Write in JT's voice. 2–3 lines maximum. End with 'Link in bio.'"*
-109. **Asset_Library row creation triggers (locked).** Reel: Daily Pulse detects reel file in Drive → row created immediately. Bank_Clip: Audra adds to bank → row created at that moment. Quote_Graphic: Claude cleanup layer generates hooks/quotes list → one row per hook or quote. Thumbnail: Artist Fairy or equivalent → one row per variant. Social_Assets row is created only on Add to Week (commit). Social_Assets row is deleted (clean delete — no cancelled status) on Unschedule.
+109. **Asset_Library row creation triggers (locked).** Reel: Daily Pulse detects reel file in Drive → row created immediately. Bank_Clip: Audra adds to bank → row created at that moment. Quote_Graphic: `materializeQuoteGraphicAssets` (Bridge Fairy, Track C) reads Show Notes Doc → one row per hook or guest quote, written in a single batch. Thumbnail: Artist Fairy or equivalent → one row per variant. Social_Assets row is created only on Add to Week (commit). Social_Assets row is deleted (clean delete — no cancelled status) on Unschedule.
 110. **Unschedule flow (locked).** (1) Social_Assets row deleted. (2) Asset_Library `Status` → `available`. (3) Asset_Library `Availability` → `available`. (4) If Quote_Graphic: find sibling row (same `Slide_Index`, same `Episode_UID`) → `Availability` → `available`. (5) Slot clears in Panel 2. Asset reappears in candidate pool.
 111. **Scribe Fairy retired. Never deployed.** Pipeline email events now spawn Writer email tasks (JT autonomous). Seven blank template keys migrate to Writer Email quick-start templates. Scribe Fairy joins Safety Fairy and Marcom Fairy as a dead-code stub under the intentional deletion policy (AD #101). `clerk_fairy.gs` AD #24 route `invite → scribeLetSchedule()` is dead — address when Clerk Fairy rebuild opens. Retirement confirmed Reframe #8, May 2026.
 
@@ -215,7 +190,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 | 8 | Resolved | Boolean | FALSE on creation. TRUE when Filing Fairy closes episode, or manually. |
 | 9 | Visible_To | Enum: both \| audra_only \| jt_only | Defaults to both. |
 
-### Asset_Library (18 columns)
+### Asset_Library (21 columns)
 
 Single source of truth for all content assets. One row per asset. Permanent — rows are never deleted. Canvas state stored for 1:1 reconstruction.
 
@@ -223,15 +198,15 @@ Single source of truth for all content assets. One row per asset. Permanent — 
 |---|---|---|---|
 | 1 | Asset_ID | String (UUID) | Primary key. System-generated. |
 | 2 | Episode_UID | String | Foreign key → Episodes. |
-| 3 | Asset_Type | Enum: Quote_Graphic \| Reel \| Thumbnail | |
+| 3 | Asset_Type | Enum: quote_graphic \| Reel \| thumbnail | All lowercase except Reel — validated by sheet data validation. Code must write exact values. |
 | 4 | Drive_File_ID | String | Exported PNG (Quote_Graphic), reel file, or thumbnail file. |
 | 5 | Display_Name | String | Human-readable name. Editable by JT (Reels). |
 | 6 | Slide_Index | Integer | Content identity key for pairing. Quote_Graphic only. |
 | 7 | Quote_Text | LongText | Hook or quote text placed on canvas. Quote_Graphic only. |
 | 8 | Reel_Summary | LongText | Gemini-generated context description. Reels only. Used by caption generation. |
 | 9 | Image_Prompt | LongText | Prompt used to generate background. Quote_Graphic only. |
-| 10 | Caption_Draft | LongText | Claude-generated draft caption. |
-| 11 | Caption_Final | LongText | JT-approved/edited caption. |
+| 10 | Caption_Draft | LongText | Claude-generated draft caption. Frozen after AI write — never overwritten. |
+| 11 | Caption_Final | LongText | JT-approved/edited caption. Source of truth for card render and Make.com post. |
 | 12 | Notes | LongText | JT scratchpad. Not posted. |
 | 13 | Background_ID | String | Drive file ID of background image from `IMAGE_BACKGROUND_LIBRARY_ID`. Quote_Graphic only. |
 | 14 | Canvas_State | LongText | Fabric.js `canvas.toJSON()` serialization. Enables 1:1 reconstruction on slot re-entry. Quote_Graphic only. |
@@ -239,6 +214,9 @@ Single source of truth for all content assets. One row per asset. Permanent — 
 | 16 | Availability | Enum: available \| placed \| paired | Controls candidate panel visibility. |
 | 17 | Created_At | Timestamp | |
 | 18 | Created_By | String | `system` for GAS rows. User email for manual rows. |
+| 19 | Quality_Score | Integer (1–5) | Populated by midnight pass. Empty until pass runs. Read-only in all wiring spokes. |
+| 20 | Slot_Tags | String | Comma-separated Posting_Schedule Slot_IDs. Populated by midnight pass. |
+| 21 | Display_Text | LongText | JT-edited card text (hook/quote as edited on canvas). Source of truth for card stack render. Null until first canvas edit saved. Quote_Graphic only. |
 
 ### Social_Assets (13 columns)
 
@@ -310,8 +288,11 @@ Fields written by GAS to the episode manifest JSON file in the Staging folder.
 | `identity_pending` | Herald | Boolean. Set true on Enrichment Pending path. |
 | `raw_hooks` | Vestigial — Social Vert retired. | Remove in Spoke 1 spring clean. |
 | `raw_quotes` | Vestigial — Social Vert retired. | Remove in Spoke 1 spring clean. |
-| `show_notes` | Vert Fairy | Drive file ID of Show Notes doc. Written on Vert Fairy Pass 1. |
-| `episode_index` | Vert Fairy | Drive doc ID of Episode Index doc. Written by Pass 2 via `createEpisodeIndexDoc()`. |
+| `show_notes` | Vert Fairy (`runEditorialPass`) | Drive file ID of Show Notes doc. Track B. |
+| `episode_index` | Vert Fairy | Drive doc ID of Episode Index doc (old Pass 2). Vestigial. |
+| `episode_index_v2` | Vert Fairy (`buildEpisodeIndexV2`) | Drive file ID of Episode Index v2 doc. Track A. |
+| `quote_graphic_assets_built` | Bridge Fairy (`materializeQuoteGraphicAssets`) | Boolean. Set true after Track C writes Asset_Library rows. |
+| `quote_graphic_asset_count` | Bridge Fairy (`materializeQuoteGraphicAssets`) | Integer. Total rows written (hooks + guest quotes). |
 | `artist_assets_complete` | Artist Fairy | Boolean. |
 | `asset_ids` | Various | IDs of generated docs and assets. |
 
@@ -400,7 +381,7 @@ IMAGE_BACKGROUND_LIBRARY_ID/         ← Shared background pool for Studio canva
 | `scribe_fairy.gs` | Guest communication touchpoints | `scribeLetSchedule()` et al. | ⛔ Retired (AD #111). Dead-code stub retained under intentional deletion policy. |
 | `housekeeping.gs` | Nightly utility jobs, Mending Fairy (future) | `triggerNightlyHousekeeping()` | ✅ Active |
 | `clerk_fairy.gs` | `doPost()` router | `doPost()` | 🔴 Rebuild queued |
-| `vert_fairy.gs` | Corpus retrieval, show notes pipeline, episode index creation | `runVertFairy()` | 🔄 Active — Spoke 4 rewrites for Claude handoff |
+| `vert_fairy.gs` | Corpus retrieval, episode index (Track A), show notes/editorial pass (Track B), quote graphic asset materialization (Track C / Bridge Fairy) | `runVertFairy()` · `buildEpisodeIndexV2()` · `runEditorialPass()` · `materializeQuoteGraphicAssets()` | ✅ Active — all three pipeline tracks live |
 | `dwyp_app.gs` | Web app server, review backend, Studio backend, Contacts | `doGet()` | ✅ Active — Spoke 1 spring clean pending |
 | `dwyp_ui.html` | Web app client | — | ✅ Active — Spoke 1 spring clean pending |
 | `dev_tools.gs` | Manual test wrappers only. Never called by production. | `test_*` prefix | ✅ Active |
@@ -529,6 +510,25 @@ Finished transcript placed manually in `Staging/Episode/` subfolder by Audra.
 
 ## Build History
 
+### v3.0 → v3.1 (May 2026)
+
+- **Track C shipped: Bridge Fairy (`materializeQuoteGraphicAssets`).** Pipeline closed — Vert → Claude → Bridge runs end to end. Verified on David Bedrick (EP-260430-1427): 16 Asset_Library rows (10 hooks + 6 guest quotes). First bridge-produced rows in Asset_Library. Quote_Text on guest quote rows includes full attribution (`"[text]" — David Bedrick`). Caption_Draft populated from label-paired STARTER CAPTIONS sections. All render-on-send fields (Drive_File_ID, Canvas_State, Background_ID, Image_Prompt) empty at creation. Status=candidate, Availability=available.
+- **AD #109 updated:** Quote_Graphic row creation trigger corrected from "Claude cleanup layer" to `materializeQuoteGraphicAssets` (Bridge Fairy, Track C).
+- **Asset_Library schema col 3 corrected:** Enum values are `quote_graphic | Reel | thumbnail` (mixed case per live sheet data validation). Code must write exact values.
+- **New governance keys confirmed active:** `CAPTION_VOICE_SUPPLEMENT_ID` (Caption Voice Supplement doc — voice authority layer in Track B system instruction), `DELIVERABLES_VOICE_SPEC_ID` (Episode Deliverables Voice Spec doc — voice authority layer in Track B system instruction). Both degrade gracefully on missing key (WARNING logged, block skipped).
+- **New foundation docs (provisional):** `DWYP_Caption_Voice_Supplement_v0` and `DWYP_Episode_Deliverables_Voice_Spec_v1` added to voice authority stack. Promote from provisional status once a second episode runs through the full pipeline and voice holds.
+- **Manifest Field Reference updated:** `show_notes` writer corrected to `runEditorialPass` (Track B); `episode_index_v2` added (Track A); `quote_graphic_assets_built` and `quote_graphic_asset_count` added (Track C).
+- **Codebase Inventory:** `vert_fairy.gs` updated to reflect all three pipeline tracks live (Track A / Track B / Track C). Bridge Fairy is an agent name (audit log actor), not a separate file — lives in `vert_fairy.gs`.
+
+---
+
+### v2.9 → v3.0 (May 2026)
+
+- Asset_Library schema updated to v2.0 (21 columns): Quality_Score (col 19) and Slot_Tags (col 20) added retrospectively (existed in code since Phase 2 wiring; absent from Reference until now). Display_Text (col 21) added — JT-edited card text; source of truth for card stack render; null until first canvas edit. Caption_Draft note updated: frozen after AI write, never overwritten. Caption_Final note updated: source of truth for card render and Make.com post.
+- Item 92 Phase 2 shipped: Fix 1 (base64 strip in save core), Fix A (Save→Export unified exit paths), Fix B (viewport reset in Tier 2 hydration), Fix C (dual-JSON save-core for synchronous Tier 1 reopen). Canvas State Architecture locked: Render-on-send and Dual-JSON patterns.
+- Item 93 shipped: Display_Text + Caption_Final persistence. `saveAssetDraft` extended with `displayText` (4th) and `captionFinal` (5th) params. Caption hydration precedence locked: AL row wins on every canvas open (Caption_Final preferred, Caption_Draft fallback). Card stack render and reel textarea updated to prefer Caption_Final. `getAssetDisplayState()` endpoint added for targeted refreshes.
+- `setup_displayTextColumn()` and `migrate_captionFinalBackfill()` added to `dev_tools.js`.
+
 ### v2.8 → v2.9 (May 2026)
 
 - AD #111 added: Scribe Fairy retired — never deployed, pipeline email events spawn Writer tasks, template keys migrate to Writer quick-starts, dead-code stub retained (joins Safety, Marcom). AD #24 dead-route note added.
@@ -622,3 +622,4 @@ Finished transcript placed manually in `Staging/Episode/` subfolder by Audra.
 - Marcom architecture locked: Cowork + NotebookLM primary, Gemini API fallback.
 - Image Workshop scoped: native web app view, Drive background library, Claude API compositing, Make.com PNG conversion.
 - JT confirmed as Claude Pro subscriber.
+

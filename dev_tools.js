@@ -27,6 +27,18 @@ function test_vertShowNotes() {
 }
 
 
+/**
+ * Manual test wrapper for buildEpisodeIndexV2.
+ * Usage: test_buildEpisodeIndexV2('EP-260430-1427', { force: true })
+ */
+function test_buildEpisodeIndexV2(epUid, opts) {
+  opts = opts || {};
+  const result = buildEpisodeIndexV2(epUid, opts);
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+
 function test_artistFairy() {
   const TEST_EP_UID = "EP-260428-1928"; // Carrie Sipe — replace with active UID if needed
   console.log("[test_artistFairy] START — " + TEST_EP_UID);
@@ -362,6 +374,93 @@ function _populateVersionsTab_(sheetId) {
 }
 
 
+// Writes "Display_Text" header to Asset_Library col 21.
+// Idempotent — skips if header already present.
+// Run setup_displayTextColumn() for production, setup_displayTextColumn_staging() for staging.
+// Both bypass getMasterSheetId() — see note on setup_versionsTab() above.
+
+function setup_displayTextColumn() {
+  var productionId = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID');
+  if (!productionId) throw new Error("setup_displayTextColumn: MASTER_SHEET_ID not set in Script Properties.");
+  _addDisplayTextHeader_(productionId);
+}
+
+function setup_displayTextColumn_staging() {
+  var stagingId = getGovernance("STAGING_SHEET_ID");
+  if (!stagingId) throw new Error("setup_displayTextColumn_staging: STAGING_SHEET_ID not found in Governance_Config.");
+  _addDisplayTextHeader_(stagingId);
+}
+
+function _addDisplayTextHeader_(sheetId) {
+  var ss     = SpreadsheetApp.openById(sheetId);
+  var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var sheet  = ss.getSheetByName(alName);
+  if (!sheet) throw new Error("_addDisplayTextHeader_: " + alName + " not found in sheet " + sheetId);
+  var col = ASSET_LIBRARY_COLS.Display_Text; // 21
+  var existing = sheet.getRange(1, col).getValue();
+  if (existing === 'Display_Text') {
+    console.log("[_addDisplayTextHeader_] Display_Text header already at col " + col + ". Skipping.");
+    return;
+  }
+  sheet.getRange(1, col).setValue('Display_Text');
+  console.log("[_addDisplayTextHeader_] Display_Text header written to col " + col + " of " + alName + " in sheet " + sheetId + ".");
+}
+
+
+// For rows where Caption_Final is empty and Caption_Draft is populated, back-fills
+// Caption_Final with the first Caption_Draft variant. Logs each row to Audit_Trail.
+// Run migrate_captionFinalBackfill() for production, migrate_captionFinalBackfill_staging() for staging.
+// Both bypass getMasterSheetId() — see note on setup_versionsTab() above.
+
+function migrate_captionFinalBackfill() {
+  var productionId = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID');
+  if (!productionId) throw new Error("migrate_captionFinalBackfill: MASTER_SHEET_ID not set in Script Properties.");
+  _runCaptionFinalBackfill_(productionId);
+}
+
+function migrate_captionFinalBackfill_staging() {
+  var stagingId = getGovernance("STAGING_SHEET_ID");
+  if (!stagingId) throw new Error("migrate_captionFinalBackfill_staging: STAGING_SHEET_ID not found in Governance_Config.");
+  _runCaptionFinalBackfill_(stagingId);
+}
+
+function _runCaptionFinalBackfill_(sheetId) {
+  var ss     = SpreadsheetApp.openById(sheetId);
+  var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var sheet  = ss.getSheetByName(alName);
+  if (!sheet) throw new Error("_runCaptionFinalBackfill_: " + alName + " not found in sheet " + sheetId);
+
+  var data       = sheet.getDataRange().getValues();
+  var backfilled = 0;
+  var skipped    = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var assetId      = String(data[i][ASSET_LIBRARY_COLS.Asset_ID      - 1] || '');
+    var captionDraft = String(data[i][ASSET_LIBRARY_COLS.Caption_Draft - 1] || '');
+    var captionFinal = String(data[i][ASSET_LIBRARY_COLS.Caption_Final - 1] || '');
+
+    if (!assetId || captionFinal !== '' || !captionDraft) { skipped++; continue; }
+
+    var firstVariant = _parseCaptionDraft_(captionDraft);
+    if (!firstVariant) { skipped++; continue; }
+
+    sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Caption_Final).setValue(firstVariant);
+    logToAuditTrail(
+      'migrate_captionFinalBackfill',
+      'schema_migration_caption_final_backfill',
+      String(data[i][ASSET_LIBRARY_COLS.Episode_UID - 1] || ''),
+      '',
+      'asset_id=' + assetId + ' — Caption_Final backfilled from Caption_Draft first variant.',
+      'INFO'
+    );
+    backfilled++;
+  }
+
+  if (backfilled > 0) bumpVersion('asset_library', 'migrate_captionFinalBackfill');
+  console.log("[_runCaptionFinalBackfill_] Done. Backfilled: " + backfilled + ". Skipped: " + skipped + ".");
+}
+
+
 // =============================================================================
 // Reels take 45-90s each — runs stop cleanly at 4.5 min and resume from where they left off.
 // Re-run until result shows timedOut:false.
@@ -391,4 +490,96 @@ function test_batchEnrichReels() {
     if (i < EPISODE_UIDS.length - 1) Utilities.sleep(5000);
   }
   console.log("[batchEnrichReels] DONE");
+}
+
+
+// =============================================================================
+// SCHEMA MIGRATION — One-time Quote_Text normalization
+// Replaces curly quotes (U+2018/2019/201C/201D) with ASCII equivalents in
+// every Asset_Library Quote_Text cell. Idempotent — only writes rows that
+// actually contain curly quotes.
+// Run migrate_quoteTextNormalize() for production,
+// migrate_quoteTextNormalize_staging() for staging.
+// Both bypass getMasterSheetId() — see note on setup_versionsTab() above.
+// =============================================================================
+
+function migrate_quoteTextNormalize() {
+  var productionId = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID');
+  if (!productionId) throw new Error("migrate_quoteTextNormalize: MASTER_SHEET_ID not set in Script Properties.");
+  _runQuoteTextNormalize_(productionId);
+}
+
+function migrate_quoteTextNormalize_staging() {
+  var stagingId = getGovernance("STAGING_SHEET_ID");
+  if (!stagingId) throw new Error("migrate_quoteTextNormalize_staging: STAGING_SHEET_ID not found in Governance_Config.");
+  _runQuoteTextNormalize_(stagingId);
+}
+
+function _runQuoteTextNormalize_(sheetId) {
+  var ss     = SpreadsheetApp.openById(sheetId);
+  var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var sheet  = ss.getSheetByName(alName);
+  if (!sheet) throw new Error("_runQuoteTextNormalize_: " + alName + " not found in sheet " + sheetId);
+
+  var data       = sheet.getDataRange().getValues();
+  var normalized = 0;
+  var skipped    = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var normType = String(data[i][ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
+    if (normType !== 'quotegraphic') { skipped++; continue; }
+
+    var current = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || '');
+    if (!current) { skipped++; continue; }
+
+    var clean = normalizeQuoteText(current);
+    if (clean === current) { skipped++; continue; }
+
+    sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Quote_Text).setValue(clean);
+    normalized++;
+  }
+
+  if (normalized > 0) bumpVersion('asset_library', 'migrate_quoteTextNormalize');
+  logToAuditTrail(
+    'schema_migration',
+    'schema_migration_quote_text_normalize',
+    null,
+    null,
+    'Normalized curly quotes to ASCII in Asset_Library.Quote_Text. Rows updated: ' + normalized + '. Skipped: ' + skipped + '.',
+    'INFO'
+  );
+  console.log("[_runQuoteTextNormalize_] Done. Normalized: " + normalized + ". Skipped: " + skipped + ".");
+}
+
+
+// =============================================================================
+// TRACK B — Editorial Pass
+// =============================================================================
+
+/**
+ * Manual test wrapper for runEditorialPass.
+ * Usage: test_runEditorialPass('EP-260430-1427', { force: true })
+ * Run from editor dropdown with no args to hit the default test episode.
+ */
+function test_runEditorialPass(epUid, opts) {
+  epUid = epUid || 'EP-260430-1427'; // David Bedrick — Index v2 already built
+  opts  = opts  || { force: true };
+  const result = runEditorialPass(epUid, opts);
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+
+// =============================================================================
+// TRACK C — Bridge
+// =============================================================================
+
+/**
+ * Manual test wrapper for materializeQuoteGraphicAssets. No trigger registration.
+ * Requires Track B to have run for this episode first (produces Show Notes Doc).
+ * Update EP UID before running.
+ */
+function test_materializeQuoteGraphicAssets() {
+  const result = materializeQuoteGraphicAssets('EP-260430-1427', { force: true });
+  Logger.log(JSON.stringify(result, null, 2));
 }

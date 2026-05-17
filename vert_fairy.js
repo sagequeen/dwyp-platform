@@ -432,6 +432,18 @@ function cleanHooksWithClaude(content, agentName, epUid) {
 function buildShowNotesSystemInstruction() {
   var podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
   var hostName    = getGovernance("HOST_NAME")    || "JT";
+  var hookCount   = parseInt(getGovernance("STUDIO_HOOK_GENERATE_COUNT"),  10) || 10;
+  var quoteCount  = parseInt(getGovernance("STUDIO_QUOTE_GENERATE_COUNT"), 10) || 10;
+
+  var hooksOutput = [];
+  for (var h = 1; h <= hookCount; h++) hooksOutput.push(h + '.');
+  var hooksOutputList = hooksOutput.join('\n');
+
+  var guestEnd   = Math.ceil(quoteCount / 2);
+  var quotesOutput = [];
+  for (var qi = 1; qi <= guestEnd; qi++) quotesOutput.push(qi + '. "..." — [Guest Name]');
+  for (var qi2 = guestEnd + 1; qi2 <= quoteCount; qi2++) quotesOutput.push(qi2 + '. "..." — ' + hostName);
+  var quotesOutputList = quotesOutput.join('\n');
 
   return `You are The Vert Fairy for "${podcastName}" — a podcast about what lives on the other side of pain, grief, and the moments that break and remake a person.
 
@@ -477,12 +489,12 @@ KEY TAKEAWAY (5 specific takeaways from this episode):
 
 PASS 2 — HOOKS AND QUOTES:
 
-HOOKS (10 total, numbered 1–10):
+HOOKS (${hookCount} total, numbered 1–${hookCount}):
 - Synthesized from the main themes in the source material. Maximum 25 words each.
 - Plain text — no "HOOK:" prefix, no quotation marks.
 
-QUOTES (10 total, numbered 1–10):
-- 1–5: Guest quotes. 6–10: ${hostName} (host) quotes.
+QUOTES (${quoteCount} total, numbered 1–${quoteCount}):
+- 1–${guestEnd}: Guest quotes. ${guestEnd + 1}–${quoteCount}: ${hostName} (host) quotes.
 - Verbatim from source material — you may remove filler words, repeated words
 - You may use ellipsis to bridge sentences if context is preserved
 - Always include attribution at end: — [Speaker Name]
@@ -514,28 +526,10 @@ KEY TAKEAWAY:
 5.
 
 HOOKS:
-1.
-2.
-3.
-4.
-5.
-6.
-7.
-8.
-9.
-10.
+${hooksOutputList}
 
 QUOTES:
-1. "..." — [Guest Name]
-2. "..." — [Guest Name]
-3. "..." — [Guest Name]
-4. "..." — [Guest Name]
-5. "..." — [Guest Name]
-6. "..." — ${hostName}
-7. "..." — ${hostName}
-8. "..." — ${hostName}
-9. "..." — ${hostName}
-10. "..." — ${hostName}
+${quotesOutputList}
 
 IMAGE PROMPTS:
 1.
@@ -773,6 +767,1059 @@ function writeShowNotesDoc(docId, content, context, agentName, epUid) {
       `writeShowNotesDoc failed: ${e.message}`, "error");
     throw e;
   }
+}
+
+
+// =============================================================================
+// EPISODE INDEX V2 — Marker-Driven Build
+// No Claude calls. No Show Notes Doc writes. No Asset_Library writes.
+// Entry: buildEpisodeIndexV2(epUid, opts)
+// Retirement of v1 passes is a separate spoke — this adds alongside, not over.
+// =============================================================================
+
+const EPISODE_INDEX_V2_MARKERS = [
+  { id: 'vulnerability',  label: 'First-Person Vulnerability',     prompt: 'Passages where the guest reveals something tender or vulnerable about themselves, speaking in first-person present tense. Moments of personal disclosure, admitted struggle, or emotional honesty about ongoing experience.' },
+  { id: 'pivot',          label: 'Narrative Pivots',               prompt: 'Moments in the conversation where the guest\'s framing shifts mid-thought, where a previously held understanding changes, or where the narrative arc turns toward unexpected insight. Verbal markers of realization or reversal.' },
+  { id: 'distinctive',    label: 'Distinctive Phrasing',           prompt: 'Memorable, quotable lines with idiosyncratic word choice or distinctive phrasing. Sentences that crystallize an idea in unusual language. Sticky statements that stand on their own outside context.' },
+  { id: 'emotional_peak', label: 'Emotional Peaks',                prompt: 'High-affect moments where strong emotion surfaces in the conversation — grief, anger, joy, fear, awe. Passages where the emotional register intensifies visibly through word choice, pacing, or admission.' },
+  { id: 'reframing',      label: 'Reframing Language',             prompt: 'Moments where the guest takes a commonly held idea, assumption, or framing and tilts it — offers a counter-frame, complicates a binary, or reveals a hidden dimension. Patterns like "actually," "but really," "what people miss."' },
+  { id: 'anecdote',       label: 'Concrete Stories and Anecdotes', prompt: 'Specific stories or anecdotes with sensory detail, named people or places, time-bound events. Narrative beats grounded in concrete experience rather than abstract reflection.' },
+  { id: 'wisdom',         label: 'Wisdom Statements',              prompt: 'Articulated insights presented as hard-won lessons or theses. Lines where the guest summarizes a learning, principle, or truth they\'ve arrived at through experience.' },
+  { id: 'turn_density',   label: 'Speaker-Turn Density Shifts',    prompt: 'Sections where speaker turn rhythm shifts noticeably — back-and-forth dialogue giving way to extended monologue, or vice versa. Moments where one speaker holds the floor uninterrupted, or where rapid exchange picks up after long stretches.' },
+  { id: 'callbacks',      label: 'Callbacks',                      prompt: 'Passages where an earlier moment, phrase, or theme is referenced again later in the conversation. Returning motifs, repeated phrases, ideas revisited with new context.' },
+  { id: 'boundaries',     label: 'Topic and Phase Boundaries',     prompt: 'Moments where the conversation transitions from one topic, theme, or phase to another. Verbal markers like "so let\'s talk about," "that brings me to," or natural shifts in subject matter.' }
+];
+
+/**
+ * Builds a permanent Episode Index v2 for the given episode.
+ * Runs 10 marker-driven Vertex RAG queries, assembles results
+ * into a structured Markdown doc in EPISODE_SEARCH_INDEX_KEY folder.
+ * Writes file ID to manifest.episode_index_v2.
+ *
+ * @param {string} epUid - Episode UID
+ * @param {object} [opts]
+ * @param {boolean} [opts.force=false] - If true, trashes existing v2 doc and rebuilds
+ * @return {object} - { status, fileId, fileName, markerCounts, sizeTokens, errors }
+ */
+function buildEpisodeIndexV2(epUid, opts) {
+  var force     = !!(opts && opts.force === true);
+  var agentName = "Vert_Fairy_IndexV2";
+  var errors    = [];
+
+  // ── 1. Read Episodes row in one pass ────────────────────────────────────────
+  var sheetId = getMasterSheetId();
+  if (!sheetId) throw new Error("buildEpisodeIndexV2: MASTER_SHEET_ID not set.");
+
+  var ss = SpreadsheetApp.openById(sheetId);
+
+  var epSheet   = ss.getSheetByName("Episodes");
+  if (!epSheet) throw new Error("buildEpisodeIndexV2: Episodes tab not found.");
+  var epData    = epSheet.getDataRange().getValues();
+  var epHeaders = epData[0];
+
+  var uidCol       = epHeaders.indexOf("Episode_UID");
+  var guestNameCol = epHeaders.indexOf("Guest_Name");
+  var relDateCol   = epHeaders.indexOf("Release_Date");
+  var contactIdCol = epHeaders.indexOf("Contact_ID");
+  var prodFolCol   = epHeaders.indexOf("Production_Folder_ID");
+
+  if (uidCol === -1 || prodFolCol === -1) {
+    throw new Error("buildEpisodeIndexV2: Episode_UID or Production_Folder_ID column missing from Episodes tab.");
+  }
+
+  var epRow   = null;
+  var allUids = [];
+  for (var i = 1; i < epData.length; i++) {
+    allUids.push(String(epData[i][uidCol]));
+    if (String(epData[i][uidCol]) === String(epUid)) { epRow = epData[i]; }
+  }
+  if (!epRow) {
+    Logger.log('DEBUG sheetId resolved: ' + getMasterSheetId());
+    Logger.log('DEBUG isStaging() returns: ' + isStaging());
+    Logger.log('DEBUG searching for epUid: "' + epUid + '" (length ' + epUid.length + ')');
+    Logger.log('DEBUG first 5 Episode_UIDs from sheet: ' + JSON.stringify(allUids.slice(0, 5)));
+    Logger.log('DEBUG total rows scanned: ' + allUids.length);
+    throw new Error("buildEpisodeIndexV2: episode not found: " + epUid);
+  }
+
+  var guestName       = guestNameCol !== -1 ? String(epRow[guestNameCol] || "")  : "";
+  var releaseDate     = relDateCol   !== -1 ? epRow[relDateCol]                  : null;
+  var contactId       = contactIdCol !== -1 ? String(epRow[contactIdCol] || "")  : "";
+  var stagingFolderId = String(epRow[prodFolCol] || "");
+
+  if (!stagingFolderId) {
+    return { status: "skipped_no_transcript", errors: ["Production_Folder_ID not set for " + epUid] };
+  }
+
+  // ── 2. Manifest + idempotency check ─────────────────────────────────────────
+  var manifest     = getManifest(stagingFolderId);
+  var existingV2Id = manifest && manifest.episode_index_v2;
+
+  if (existingV2Id) {
+    // Verify file still exists and is not trashed
+    var fileExists = false;
+    try {
+      var checkFile = DriveApp.getFileById(existingV2Id);
+      fileExists = !checkFile.isTrashed();
+    } catch (e) { /* file not found */ }
+
+    if (!fileExists) {
+      // Manifest points to a missing file — repair and rebuild
+      logToAuditTrail(agentName, "state_change", epUid, null,
+        "EPISODE_INDEX_V2_MANIFEST_REPAIR: file " + existingV2Id + " missing in Drive. Rebuilding.", "warning");
+      patchManifest(stagingFolderId, { episode_index_v2: null });
+      existingV2Id = null;
+    } else if (!force) {
+      return { status: "skipped_exists", fileId: existingV2Id };
+    } else {
+      // Force path — trash existing, clear manifest, continue
+      try {
+        DriveApp.getFileById(existingV2Id).setTrashed(true);
+      } catch (e) { /* already gone */ }
+      patchManifest(stagingFolderId, { episode_index_v2: null });
+      logToAuditTrail(agentName, "state_change", epUid, null,
+        "EPISODE_INDEX_V2_FORCE_DELETE: trashed " + existingV2Id, "info");
+    }
+  }
+
+  // ── 3. Transcript file ID (for doc header) ───────────────────────────────────
+  // Primary: Staging/Episode/ subfolder. Fallback: Raw folder (Production_Folder_ID sibling).
+  var transcriptFileId = "—";
+  try {
+    var _transcriptMimeMatch = function(mime, name) {
+      return mime === MimeType.PLAIN_TEXT || mime === MimeType.GOOGLE_DOCS || name.endsWith(".txt");
+    };
+    var _scanFolderForTranscript = function(folder) {
+      var it = folder.getFiles();
+      while (it.hasNext()) {
+        var f = it.next(); var fn = f.getName().toLowerCase(); var fm = f.getMimeType();
+        if (fn.startsWith("proxy_")) continue;
+        if (fn.includes("transcript") && _transcriptMimeMatch(fm, fn)) return f.getId();
+      }
+      return null;
+    };
+
+    // Primary: Staging/Episode/
+    var stagingFolder = DriveApp.getFolderById(stagingFolderId);
+    var epFolderIt    = stagingFolder.getFoldersByName("Episode");
+    if (epFolderIt.hasNext()) {
+      transcriptFileId = _scanFolderForTranscript(epFolderIt.next()) || "—";
+    }
+
+    // Fallback: Raw folder
+    if (transcriptFileId === "—") {
+      var rawFolderId = getRawFolderIdByUid(epUid);
+      if (rawFolderId) {
+        transcriptFileId = _scanFolderForTranscript(DriveApp.getFolderById(rawFolderId)) || "—";
+      }
+    }
+  } catch (e) {
+    errors.push("Transcript file scan failed: " + e.message);
+  }
+
+  if (transcriptFileId === "—") {
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "buildEpisodeIndexV2: No transcript found in Staging/Episode/ or Raw folder. Corpus queries run whole-corpus.", "warning");
+  }
+
+  // ── 4. Influence_Tier from Contacts ─────────────────────────────────────────
+  var influenceTier = "—";
+  if (contactId) {
+    try {
+      var cSheet = ss.getSheetByName("Contacts");
+      if (cSheet) {
+        var cData    = cSheet.getDataRange().getValues();
+        var cHeaders = cData[0];
+        var cIdCol   = cHeaders.indexOf("Contact_ID");
+        var cTierCol = cHeaders.indexOf("Influence_Tier");
+        if (cIdCol !== -1 && cTierCol !== -1) {
+          for (var ci = 1; ci < cData.length; ci++) {
+            if (String(cData[ci][cIdCol]) === contactId) {
+              influenceTier = String(cData[ci][cTierCol] || "") || "—";
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      errors.push("Influence_Tier lookup failed: " + e.message);
+    }
+  }
+
+  // ── 5. Vertex RAG config ────────────────────────────────────────────────────
+  var corpusName = getGovernance("STUDIO_CORPUS_ID");
+  if (!corpusName) throw new Error("buildEpisodeIndexV2: STUDIO_CORPUS_ID not configured.");
+
+  // VERTEX_RAG_REGION governance key — falls back to hardcoded region until key is populated.
+  var region  = getGovernance("VERTEX_RAG_REGION") || "us-south1";
+  var project = corpusName.split("/")[1];
+  var token   = ScriptApp.getOAuthToken();
+
+  // ── 6. Run 10 marker queries (Pattern A — guest name + epUid prefix) ─────────
+  // Prefix biases corpus retrieval toward this episode's speaker labels without
+  // embedding opener-transcript content (which would penalize mid-episode peaks).
+  var buckets      = {};  // markerID → [{text, score}] after truncation
+  var markerCounts = {};
+
+  for (var mi = 0; mi < EPISODE_INDEX_V2_MARKERS.length; mi++) {
+    var marker    = EPISODE_INDEX_V2_MARKERS[mi];
+    var queryText = "[Episode: " + guestName + " (" + epUid + ")] " + marker.prompt;
+    var chunks    = _vertexMarkerQuery_(queryText, corpusName, project, region, token, 15, agentName, epUid);
+
+    if (chunks === null) {
+      errors.push("Marker query returned null: " + marker.id);
+      buckets[marker.id] = [];
+    } else {
+      // Sort by similarity score descending; fall back to response order if score absent
+      chunks.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
+
+      // Truncate to 8000 estimated tokens per bucket
+      var kept        = [];
+      var accumulated = 0;
+      for (var ki = 0; ki < chunks.length; ki++) {
+        var est = _estimateTokens_(chunks[ki].text);
+        if (accumulated + est > 8000) break;
+        kept.push(chunks[ki]);
+        accumulated += est;
+      }
+      buckets[marker.id] = kept;
+    }
+    markerCounts[marker.id] = buckets[marker.id].length;
+  }
+
+  // If every marker came back empty, abort — no doc written, no manifest update
+  var anySuccess = EPISODE_INDEX_V2_MARKERS.some(function(m) {
+    return buckets[m.id] && buckets[m.id].length > 0;
+  });
+  if (!anySuccess) {
+    throw new Error("buildEpisodeIndexV2: all 10 marker queries returned empty. No doc written for " + epUid);
+  }
+
+  // ── 7. Assemble markdown ────────────────────────────────────────────────────
+  var releaseDateStr = "—";
+  if (releaseDate) {
+    releaseDateStr = (releaseDate instanceof Date)
+      ? releaseDate.toISOString().slice(0, 10)
+      : String(releaseDate).slice(0, 10);
+  }
+  var indexCreated = new Date().toISOString().slice(0, 10);
+  var guestSlug    = guestName.toLowerCase()
+                      .replace(/[^a-z0-9]+/g, "-")
+                      .replace(/^-+|-+$/g, "")
+                      .slice(0, 30);
+
+  var md = [];
+
+  // Header
+  md.push("# Episode Index v2 — " + epUid);
+  md.push("");
+  md.push("**Guest:** " + (guestName || "—"));
+  md.push("**Release Date:** " + releaseDateStr);
+  md.push("**Influence Tier:** " + influenceTier);
+  md.push("**Index Created:** " + indexCreated);
+  md.push("**Index Version:** 2.0");
+  md.push("**Transcript Source:** " + transcriptFileId);
+  md.push("");
+  md.push("---");
+  md.push("");
+
+  // Annotated TOC — driven by the boundaries marker bucket
+  md.push("## Annotated Table of Contents");
+  md.push("");
+  md.push("*Conversation phase boundaries with marker presence per window.*");
+  md.push("");
+
+  var boundaryChunks = buckets["boundaries"] || [];
+  if (!boundaryChunks.length) {
+    md.push("TOC unavailable — boundaries marker returned no results.");
+    md.push("");
+  } else {
+    // Sort chronologically by parsed timestamp
+    var sortedBoundaries = boundaryChunks.slice().sort(function(a, b) {
+      return _parseTimestampSecs_(a.text) - _parseTimestampSecs_(b.text);
+    });
+
+    sortedBoundaries.forEach(function(bc) {
+      var bTs   = _parseTimestamp_(bc.text);
+      var bSecs = _parseTimestampSecs_(bc.text);
+      var brief = _extractFirstSentence_(bc.text);
+
+      // Scan the other 9 markers for chunks within ±60 seconds of this boundary
+      var nearby = [];
+      EPISODE_INDEX_V2_MARKERS.forEach(function(m) {
+        if (m.id === "boundaries") return;
+        var hit = (buckets[m.id] || []).some(function(mc) {
+          return Math.abs(_parseTimestampSecs_(mc.text) - bSecs) <= 60;
+        });
+        if (hit) nearby.push(m.label);
+      });
+
+      md.push("### [" + bTs + "] — " + brief);
+      md.push("Markers present in this window: " + (nearby.length ? nearby.join(", ") : "none"));
+      md.push("");
+    });
+  }
+
+  md.push("---");
+  md.push("");
+
+  // Marker Buckets — first 9 in spec order (boundaries drives TOC only)
+  md.push("## Marker Buckets");
+  md.push("");
+
+  EPISODE_INDEX_V2_MARKERS.forEach(function(marker) {
+    if (marker.id === "boundaries") return;
+    md.push("### " + marker.label);
+    md.push("");
+    var mChunks = buckets[marker.id] || [];
+    if (!mChunks.length) {
+      md.push("*No chunks matched this marker for this episode.*");
+      md.push("");
+    } else {
+      mChunks.forEach(function(c) {
+        var ts      = _parseTimestamp_(c.text);
+        var speaker = _parseSpeaker_(c.text);
+        var body    = (c.text || "").trim();
+        md.push("**[" + ts + "]** " + speaker + ": " + body);
+        md.push("");
+      });
+    }
+  });
+
+  // Reel Descriptions stub — Daily Pulse owns this section
+  md.push("---");
+  md.push("");
+  md.push("## Reel Descriptions");
+  md.push("");
+  md.push("*Managed by Daily Pulse — updated when reels are added or removed.*");
+  md.push("");
+  md.push("**Last Reel Sync:** —");
+  md.push("");
+  md.push("---");
+  md.push("");
+  md.push("*Reel sections appended here by Daily Pulse. Do not edit manually.*");
+
+  var markdownContent = md.join("\n");
+
+  // ── 8. Write to Drive ───────────────────────────────────────────────────────
+  var indexFolderId = getGovernance("EPISODE_SEARCH_INDEX_KEY");
+  if (!indexFolderId) throw new Error("buildEpisodeIndexV2: EPISODE_SEARCH_INDEX_KEY not configured.");
+
+  var fileName    = "Episode_Index_v2_" + epUid + "_" + guestSlug + ".md";
+  var indexFolder = DriveApp.getFolderById(indexFolderId);
+  var newFile     = indexFolder.createFile(fileName, markdownContent, "text/markdown");
+  var newFileId   = newFile.getId();
+
+  // ── 9. Patch manifest ───────────────────────────────────────────────────────
+  patchManifest(stagingFolderId, { episode_index_v2: newFileId });
+
+  // ── 10. Audit log + return ──────────────────────────────────────────────────
+  var totalTokens = EPISODE_INDEX_V2_MARKERS.reduce(function(sum, m) {
+    return sum + (buckets[m.id] || []).reduce(function(s, c) {
+      return s + _estimateTokens_(c.text);
+    }, 0);
+  }, 0);
+
+  logToAuditTrail(agentName, "state_change", epUid, null,
+    "EPISODE_INDEX_V2_BUILT: fileId=" + newFileId + " fileName=" + fileName +
+    " sizeTokens=" + totalTokens + " markerCounts=" + JSON.stringify(markerCounts) +
+    (errors.length ? " errors=" + JSON.stringify(errors) : ""), "info");
+
+  return {
+    status:       "built",
+    fileId:       newFileId,
+    fileName:     fileName,
+    markerCounts: markerCounts,
+    sizeTokens:   totalTokens,
+    errors:       errors
+  };
+}
+
+/**
+ * Runs one Vertex RAG marker query. Returns [{text, score}] or null on fatal failure.
+ */
+function _vertexMarkerQuery_(queryText, corpusName, project, region, token, topK, agentName, epUid) {
+  var url = "https://" + region + "-aiplatform.googleapis.com/v1beta1/projects/" + project +
+            "/locations/" + region + ":retrieveContexts";
+  var payload = {
+    vertexRagStore: { ragResources: [{ ragCorpus: corpusName }] },
+    query: { text: queryText, similarityTopK: topK }
+  };
+  try {
+    var resp = UrlFetchApp.fetch(url, {
+      method:             "post",
+      contentType:        "application/json",
+      headers:            { Authorization: "Bearer " + token },
+      payload:            JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    var body = resp.getContentText();
+    if (code !== 200) {
+      logToAuditTrail(agentName, "state_change", epUid, null,
+        "_vertexMarkerQuery_ HTTP " + code + ": " + body.substring(0, 200), "warning");
+      return null;
+    }
+    var json     = JSON.parse(body);
+    var contexts = (json.contexts && json.contexts.contexts) || [];
+    return contexts.map(function(c) { return { text: c.text || "", score: c.score || 0 }; });
+  } catch (e) {
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "_vertexMarkerQuery_ threw: " + e.message, "warning");
+    return null;
+  }
+}
+
+/** Extracts [HH:MM:SS] or HH:MM:SS from chunk text. Returns "HH:MM:SS" or "--:--:--". */
+function _parseTimestamp_(text) {
+  var m = (text || "").match(/\[?(\d{1,2}:\d{2}:\d{2})\]?/);
+  return m ? m[1] : "--:--:--";
+}
+
+/** Returns timestamp as total seconds for numeric comparison. */
+function _parseTimestampSecs_(text) {
+  var m = (text || "").match(/\[?(\d{1,2}):(\d{2}):(\d{2})\]?/);
+  if (!m) return 0;
+  return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
+}
+
+/** Extracts speaker name from chunk text. Expects "SPEAKER: text" or "[HH:MM:SS] SPEAKER: text". */
+function _parseSpeaker_(text) {
+  var m = (text || "").match(/^\[?[\d:]+\]?\s*([A-Z][A-Za-z\s\-'.]+?):/);
+  return m ? m[1].trim() : "Unknown";
+}
+
+/** Returns first sentence of chunk text for use as a TOC brief phrase. */
+function _extractFirstSentence_(text) {
+  // Strip timestamp + speaker prefix, then take first sentence
+  var clean = (text || "").replace(/^\[?[\d:]+\]?\s*[A-Za-z][A-Za-z\s\-'.]+?:\s*/, "").trim();
+  var m     = clean.match(/^(.{10,80}[.!?])/);
+  return m ? m[1] : (clean.slice(0, 60) + (clean.length > 60 ? "…" : ""));
+}
+
+function _estimateTokens_(text) {
+  return Math.ceil((text || "").length / 4);
+}
+
+
+// =============================================================================
+// EDITORIAL PASS (Track B)
+// Entry: runEditorialPass(epUid, opts)
+// Reads Episode Index v2, calls Claude with Master Template v2.1 structure,
+// writes complete Show Notes Doc to the episode's Staging folder.
+// No transcript reads. No Vertex calls. No Asset_Library writes.
+// Retirement of old Vert passes is a separate spoke — this adds alongside, not over.
+// =============================================================================
+
+/**
+ * Reads Episode Index v2, calls Claude with Master Template v2.1 structure,
+ * writes complete Show Notes Doc to the episode's Staging folder. Writes file ID
+ * to manifest.show_notes.
+ *
+ * @param {string} epUid - Episode UID
+ * @param {object} [opts]
+ * @param {boolean} [opts.force=false] - If true, trashes existing Show Notes Doc and rewrites
+ * @return {object} - { status, fileId, fileName, sizeChars, claudeMs }
+ */
+function runEditorialPass(epUid, opts) {
+  var force     = !!(opts && opts.force === true);
+  var agentName = "Vert_Fairy_Editorial";
+
+  // ── 1. Read Episodes row ─────────────────────────────────────────────────────
+  var sheetId = getMasterSheetId();
+  if (!sheetId) throw new Error("runEditorialPass: MASTER_SHEET_ID not set.");
+
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var epSheet = ss.getSheetByName("Episodes");
+  if (!epSheet) throw new Error("runEditorialPass: Episodes tab not found.");
+
+  var epData    = epSheet.getDataRange().getValues();
+  var epHeaders = epData[0];
+
+  var uidCol       = epHeaders.indexOf("Episode_UID");
+  var guestNameCol = epHeaders.indexOf("Guest_Name");
+  var relDateCol   = epHeaders.indexOf("Release_Date");
+  var contactIdCol = epHeaders.indexOf("Contact_ID");
+  var prodFolCol   = epHeaders.indexOf("Production_Folder_ID");
+
+  if (uidCol === -1 || prodFolCol === -1) {
+    throw new Error("runEditorialPass: Episode_UID or Production_Folder_ID column missing from Episodes tab.");
+  }
+
+  var epRow = null;
+  for (var i = 1; i < epData.length; i++) {
+    if (String(epData[i][uidCol]) === String(epUid)) { epRow = epData[i]; break; }
+  }
+  if (!epRow) throw new Error("runEditorialPass: episode not found: " + epUid);
+
+  var guestName       = guestNameCol !== -1 ? String(epRow[guestNameCol] || "")  : "";
+  var releaseDate     = relDateCol   !== -1 ? epRow[relDateCol]                  : null;
+  var contactId       = contactIdCol !== -1 ? String(epRow[contactIdCol] || "")  : "";
+  var stagingFolderId = String(epRow[prodFolCol] || "");
+
+  if (!stagingFolderId) {
+    throw new Error("runEditorialPass: Production_Folder_ID not set for " + epUid);
+  }
+
+  // ── 2. Manifest + idempotency check ─────────────────────────────────────────
+  var manifest            = getManifest(stagingFolderId);
+  var existingShowNotesId = manifest ? (manifest.show_notes || null) : null;
+  var indexV2Id           = manifest ? (manifest.episode_index_v2 || null) : null;
+
+  if (existingShowNotesId) {
+    var fileExists = false;
+    try {
+      var checkFile = DriveApp.getFileById(existingShowNotesId);
+      fileExists = !checkFile.isTrashed();
+    } catch (e) { /* file not found */ }
+
+    if (!fileExists) {
+      logToAuditTrail(agentName, "state_change", epUid, null,
+        "SHOW_NOTES_MANIFEST_REPAIR: file " + existingShowNotesId + " missing in Drive. Rebuilding.", "warning");
+      patchManifest(stagingFolderId, { show_notes: null });
+    } else if (!force) {
+      return { status: "skipped_exists", fileId: existingShowNotesId };
+    } else {
+      try { DriveApp.getFileById(existingShowNotesId).setTrashed(true); } catch (e) { /* already gone */ }
+      patchManifest(stagingFolderId, { show_notes: null });
+      logToAuditTrail(agentName, "state_change", epUid, null,
+        "SHOW_NOTES_FORCE_DELETE: trashed " + existingShowNotesId, "info");
+    }
+  }
+
+  // ── 3. Verify Index v2 ───────────────────────────────────────────────────────
+  if (!indexV2Id) {
+    throw new Error("runEditorialPass: Episode Index v2 not built — run buildEpisodeIndexV2 first");
+  }
+
+  // ── 4. Read inputs ───────────────────────────────────────────────────────────
+
+  // Episode Index v2 — plain markdown file written by buildEpisodeIndexV2
+  var episodeIndexV2Text;
+  try {
+    episodeIndexV2Text = DriveApp.getFileById(indexV2Id).getBlob().getDataAsString();
+  } catch (e) {
+    throw new Error("runEditorialPass: Could not read Episode Index v2 (" + indexV2Id + "): " + e.message);
+  }
+
+  // Brand Voice doc
+  var brandVoiceText = "";
+  try {
+    var brandVoiceId = getGovernance("BRAND_VOICE_ID");
+    if (brandVoiceId) brandVoiceText = DocumentApp.openById(brandVoiceId).getBody().getText();
+  } catch (e) {
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "runEditorialPass: Brand Voice doc unreadable: " + e.message + ". Continuing without.", "warning");
+  }
+
+  // Content Sensitivity doc
+  var contentSensitivityText = "";
+  try {
+    var contentSensId = getGovernance("CONTENT_SENSITIVITY_ID");
+    if (contentSensId) contentSensitivityText = DocumentApp.openById(contentSensId).getBody().getText();
+  } catch (e) {
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "runEditorialPass: Content Sensitivity doc unreadable: " + e.message + ". Continuing without.", "warning");
+  }
+
+  // Guest Brief — best effort via Contact Library
+  var guestBriefText = "";
+  try {
+    if (contactId) {
+      var contactLibraryFolderId = getContactLibraryFolderIdByContactId(contactId);
+      if (contactLibraryFolderId) {
+        guestBriefText = findGuestBriefInContactLibrary(contactLibraryFolderId, epUid, agentName) || "";
+      } else {
+        logToAuditTrail(agentName, "state_change", epUid, contactId,
+          "Contact_Library_Folder_ID not found. Guest Brief unavailable.", "warning");
+      }
+    }
+  } catch (e) {
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "runEditorialPass: Guest Brief lookup failed: " + e.message + ". Continuing without.", "warning");
+  }
+
+  // Master Template — full doc body (extractPrompt requires #-prefixed headings;
+  // the Google Doc uses styled headings, so read body directly instead)
+  var masterTemplateStructure = "";
+  try {
+    var templateId = getGovernance("MASTER_TEMPLATE_ID");
+    if (!templateId) throw new Error("MASTER_TEMPLATE_ID not in Governance_Config.");
+    masterTemplateStructure = DocumentApp.openById(templateId).getBody().getText().trim();
+  } catch (e) {
+    throw new Error("runEditorialPass: Master Template not accessible: " + e.message);
+  }
+  if (!masterTemplateStructure) {
+    throw new Error("runEditorialPass: Master Template not accessible");
+  }
+
+  // ── 5. Release date string ───────────────────────────────────────────────────
+  var releaseDateStr = "TBD";
+  if (releaseDate) {
+    releaseDateStr = (releaseDate instanceof Date)
+      ? releaseDate.toISOString().slice(0, 10)
+      : String(releaseDate).slice(0, 10);
+  }
+
+  // ── 6. Build prompt ──────────────────────────────────────────────────────────
+  var systemInstruction = _buildEditorialPassSystemInstruction_(brandVoiceText, masterTemplateStructure);
+  var userPrompt        = _buildEditorialPassPrompt_(
+    epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text
+  );
+
+  // ── 7. Call Claude ───────────────────────────────────────────────────────────
+  var claudeStart  = Date.now();
+  var claudeResult = callClaudeAPI(userPrompt, systemInstruction, agentName, null, { maxTokens: 16384 });
+  var claudeMs     = Date.now() - claudeStart;
+
+  if (!claudeResult) throw new Error("runEditorialPass: Claude returned empty content.");
+
+  // ── 8. Write Show Notes Doc ──────────────────────────────────────────────────
+  var guestSlug = guestName.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 30);
+  var fileName = "Show_Notes_v2_" + epUid + "_" + guestSlug;
+
+  var doc = DocumentApp.create(fileName);
+  DriveApp.getFileById(doc.getId()).moveTo(DriveApp.getFolderById(stagingFolderId));
+
+  var docBody = doc.getBody();
+  docBody.clear();
+  docBody.appendParagraph("SHOW NOTES — v2 (Editorial Pass)")
+    .setHeading(DocumentApp.ParagraphHeading.HEADING1);
+  docBody.appendParagraph(
+    "Episode UID: " + epUid + " | Guest: " + guestName + " | Generated: " + new Date().toDateString()
+  );
+  docBody.appendParagraph("");
+  claudeResult.split("\n").forEach(function(line) { docBody.appendParagraph(line); });
+  doc.saveAndClose();
+
+  var newDocId  = doc.getId();
+  var sizeChars = claudeResult.length;
+
+  // ── 9. Manifest write ────────────────────────────────────────────────────────
+  patchManifest(stagingFolderId, { show_notes: newDocId });
+
+  // ── 10. Audit log ────────────────────────────────────────────────────────────
+  logToAuditTrail(agentName, "state_change", epUid, null,
+    "SHOW_NOTES_GENERATED_V2: fileId=" + newDocId + " fileName=" + fileName +
+    " sizeChars=" + sizeChars + " claudeMs=" + claudeMs, "info");
+
+  // ── 11. Return ───────────────────────────────────────────────────────────────
+  return { status: "generated", fileId: newDocId, fileName: fileName, sizeChars: sizeChars, claudeMs: claudeMs };
+}
+
+
+/**
+ * Builds the system instruction for the editorial pass.
+ * Uses Brand Voice doc as voice authority when available; falls back to a short default.
+ * Voice prohibitions match the existing pipeline — do not redesign.
+ * Master Template structure inserted verbatim from extractPrompt output.
+ */
+function _buildEditorialPassSystemInstruction_(brandVoiceText, masterTemplateStructure) {
+  var podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
+
+  var voiceBlock = brandVoiceText
+    ? "BRAND VOICE AUTHORITY (this is the highest-trust document for all voice decisions):\n" + brandVoiceText
+    : "You are writing for \"" + podcastName + "\" — a podcast about what lives on the other side of pain, grief, and the moments that break and remake a person. Everything you write must sound like it came from inside this show — not from a podcast content template.";
+
+  // Caption Voice Supplement
+  var captionSupplement = "";
+  try {
+    var captionSupplementId = getGovernance("CAPTION_VOICE_SUPPLEMENT_ID");
+    if (captionSupplementId) {
+      captionSupplement = DocumentApp.openById(captionSupplementId).getBody().getText();
+    } else {
+      logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
+        "_buildEditorialPassSystemInstruction_: CAPTION_VOICE_SUPPLEMENT_ID not set — Caption Supplement skipped.", "warning");
+    }
+  } catch (e) {
+    logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
+      "_buildEditorialPassSystemInstruction_: Caption Voice Supplement unreadable: " + e.message + ". Continuing without.", "warning");
+  }
+
+  // Episode Deliverables Voice Spec
+  var deliverablesSpec = "";
+  try {
+    var deliverablesSpecId = getGovernance("DELIVERABLES_VOICE_SPEC_ID");
+    if (deliverablesSpecId) {
+      deliverablesSpec = DocumentApp.openById(deliverablesSpecId).getBody().getText();
+    } else {
+      logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
+        "_buildEditorialPassSystemInstruction_: DELIVERABLES_VOICE_SPEC_ID not set — Deliverables Spec skipped.", "warning");
+    }
+  } catch (e) {
+    logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
+      "_buildEditorialPassSystemInstruction_: Episode Deliverables Voice Spec unreadable: " + e.message + ". Continuing without.", "warning");
+  }
+
+  var captionBlock = captionSupplement
+    ? "\n\n=== CAPTION VOICE MECHANICS (companion to Brand Voice) ===\n" + captionSupplement
+    : "";
+
+  var deliverablesBlock = deliverablesSpec
+    ? "\n\n=== EPISODE DELIVERABLES VOICE SPEC (drift patterns observed in past runs) ===\nWhen the per-section instructions in the Master Template conflict with the rules below, prefer the rules below.\n" + deliverablesSpec
+    : "";
+
+  return voiceBlock + captionBlock + deliverablesBlock + "\n\n" +
+    "VOICE PROHIBITIONS — these are automatic failures. If any appear in your output, rewrite before returning:\n" +
+    "- Forbidden phrases: \"heart-centered,\" \"transformative journey,\" \"profound exploration,\" \"safe space,\" \"deeply moving,\" \"inspires us to,\" \"in a world where,\" \"sit with,\" \"holds space,\" \"unpacks,\" \"dives deep,\" \"game-changer,\" \"paradigm shift,\" \"on this journey,\" \"resonates,\" \"impactful,\" \"journey,\" \"faith-based\"\n" +
+    "- This show is never to be described or categorized as faith-based. Do not imply it.\n" +
+    "- Forbidden register: wellness-poster language, inspirational-calendar tone, Goop newsletter aesthetics, church bulletin\n" +
+    "- Forbidden patterns: opening with a rhetorical question, bullet points that restate the same idea in different words, CTAs that use the word \"tune in\"\n\n" +
+    "WHAT THIS SHOW SOUNDS LIKE:\n" +
+    "- Short declarative sentences that land like a fist\n" +
+    "- Specificity over generality — name the pain, do not describe it from a distance\n" +
+    "- Darkness and humor are allowed to coexist\n" +
+    "- The listener should feel seen, not inspired\n" +
+    "- If a sentence could appear on a motivational poster, kill it\n\n" +
+    "REQUIRED EPISODE CARD STRUCTURE (this is your exact required output format — not a suggestion):\n" +
+    masterTemplateStructure + "\n\n" +
+    "CRITICAL OUTPUT RULES:\n" +
+    "- The template above is your exact required structure. It is not a suggestion.\n" +
+    "- Every ALL CAPS line ending in a colon is a required section heading. Output it verbatim, then complete that section per its instructions.\n" +
+    "- Work through every section in order. Do not skip any. Do not add any sections not in the template.\n" +
+    "- Write in plain prose. No JSON. No markdown. No asterisks. No code fences.\n" +
+    "- This output will be written directly to a Google Doc. Do not add preamble, sign-off, or commentary.\n" +
+    "- Start immediately with the first section heading.";
+}
+
+
+/**
+ * Builds the user-facing prompt for the editorial pass.
+ * Full Episode Index v2 sent without truncation — it is curated and within budget.
+ */
+function _buildEditorialPassPrompt_(epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text) {
+  return "Build the complete audience-facing content package for this episode.\n\n" +
+    "GUEST: " + guestName + "\n" +
+    "EPISODE UID: " + epUid + "\n" +
+    "RELEASE DATE: " + releaseDateStr + "\n\n" +
+    "GUEST BRIEF (Concierge Research):\n" +
+    (guestBriefText || "Not available — work from the Episode Index.") + "\n\n" +
+    "CONTENT SENSITIVITY GUIDE:\n" +
+    (contentSensitivityText || "Not available.") + "\n\n" +
+    "EPISODE INDEX V2:\n" +
+    episodeIndexV2Text + "\n\n" +
+    "You are reading a curated Episode Index, not a raw transcript. The Index has been organized by editorial markers — vulnerability, narrative pivots, distinctive phrasing, emotional peaks, reframing language, concrete anecdotes, wisdom statements, speaker dynamics, callbacks, and topic boundaries. Use it. Trust the markers. Find the moments that will make someone stop what they are doing and listen.\n\n" +
+    "Surface the Medicine. Write copy that earns trust, not clicks. Complete every section.";
+}
+
+
+// =============================================================================
+// BRIDGE (Track C)
+// Entry: materializeQuoteGraphicAssets(epUid, opts)
+// Reads Show Notes Doc (manifest.show_notes) written by runEditorialPass (Track B).
+// Parses HOOKS, GUEST QUOTES, STARTER CAPTIONS — HOOKS, STARTER CAPTIONS — GUEST QUOTES.
+// Writes one Asset_Library row per hook and per guest quote.
+// No Claude/Gemini/Vert calls. No PNG creation. No image prompts.
+// Render-on-send: Drive_File_ID, Canvas_State, Background_ID left empty at creation.
+// Midnight pass owns Quality_Score, Slot_Tags. Manual trigger only.
+// =============================================================================
+
+/**
+ * Slices a section out of full doc text by exact header strings.
+ * Returns content between startHeader (exclusive) and endHeader (exclusive),
+ * or to end of text if endHeader not found or not provided.
+ * Returns '' if startHeader not found.
+ */
+function _bridgeSliceSection_(fullText, startHeader, endHeader) {
+  var startIdx = fullText.indexOf(startHeader);
+  if (startIdx === -1) return '';
+  var contentStart = startIdx + startHeader.length;
+  if (!endHeader) return fullText.slice(contentStart);
+  var endIdx = fullText.indexOf(endHeader, contentStart);
+  return endIdx === -1 ? fullText.slice(contentStart) : fullText.slice(contentStart, endIdx);
+}
+
+/**
+ * Parses a STARTER CAPTIONS block into a Map of label-number → caption body.
+ * The caption body is everything between the entry's label line and the next
+ * entry's label line (or end of block), trimmed.
+ *
+ * @param {string} block       — extracted section content
+ * @param {string} labelPrefix — 'Hook' or 'Guest Quote'
+ * @returns {Map<number, string>}
+ */
+function _bridgeParseLabeledCaptions_(block, labelPrefix) {
+  var result     = new Map();
+  var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):.*$', 'gm');
+  var matches    = Array.from(block.matchAll(labelRegex));
+  for (var i = 0; i < matches.length; i++) {
+    var m        = matches[i];
+    var num      = parseInt(m[1], 10);
+    var bodyStart = m.index + m[0].length;
+    var bodyEnd   = (i + 1 < matches.length) ? matches[i + 1].index : block.length;
+    result.set(num, block.slice(bodyStart, bodyEnd).trim());
+  }
+  return result;
+}
+
+/**
+ * Reads Show Notes Doc (manifest.show_notes), parses HOOKS + GUEST QUOTES + labeled
+ * STARTER CAPTIONS, writes one Asset_Library row per hook and per guest quote.
+ * Caption_Draft is the label-paired starter caption.
+ * Render-on-send: Drive_File_ID, Canvas_State, Background_ID, Image_Prompt left empty.
+ * Midnight pass owns Quality_Score, Slot_Tags — both left empty.
+ *
+ * @param {string} epUid
+ * @param {Object} opts        — { force?: boolean }
+ *                                force=true: existing rows where Created_By='system'
+ *                                AND Canvas_State='' AND Caption_Final=''
+ *                                are flipped to Status='rejected', Availability='rejected'
+ *                                (preserved under "rows are never deleted"),
+ *                                then fresh rows are written.
+ *                                Rows JT has touched (Canvas_State non-empty
+ *                                OR Caption_Final non-empty) are preserved untouched.
+ * @returns {Object}           — { status: 'created' | 'skipped' | 'rebuilt' | 'error',
+ *                                  hookCount, quoteCount, totalRows, errors }
+ */
+function materializeQuoteGraphicAssets(epUid, opts) {
+  var force     = !!(opts && opts.force === true);
+  var agentName = 'Bridge_Fairy';
+  var errors    = [];
+
+  // Section header delimiters — em-dash is U+2014, verbatim from Master Template v2.1.
+  // HEADER_HOST_INSTAGRAM_CAPTIONS is the end-of-block sentinel for STARTER CAPTIONS — GUEST QUOTES.
+  var HEADER_HOOKS                   = 'HOOKS:';
+  var HEADER_GUEST_QUOTES            = 'GUEST QUOTES:';
+  var HEADER_STARTER_CAPTIONS_HOOKS  = 'STARTER CAPTIONS — HOOKS:';
+  var HEADER_STARTER_CAPTIONS_QUOTES = 'STARTER CAPTIONS — GUEST QUOTES:';
+  var HEADER_HOST_INSTAGRAM_CAPTIONS = 'HOST INSTAGRAM CAPTIONS:';
+
+  logToAuditTrail(agentName, 'state_change', epUid, null,
+    'materializeQuoteGraphicAssets START force=' + force, 'INFO');
+
+  // ── 1. Resolve manifest + show notes doc ────────────────────────────────────
+  var stagingFolderId = getStagingFolderIdByUid(epUid);
+  if (!stagingFolderId) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'SHOW_NOTES_MISSING: staging folder not found for ' + epUid, 'ERROR');
+    return { status: 'error', errors: ['staging folder not found'] };
+  }
+
+  var manifest = getManifest(stagingFolderId);
+  if (!manifest) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'SHOW_NOTES_MISSING: manifest not found in staging folder', 'ERROR');
+    return { status: 'error', errors: ['manifest not found'] };
+  }
+
+  var showNotesId = manifest.show_notes;
+  if (!showNotesId) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'SHOW_NOTES_MISSING: manifest.show_notes is empty — Track B must run first', 'ERROR');
+    return { status: 'error', errors: ['show_notes missing — Track B must run first'] };
+  }
+
+  // ── 2. Idempotency check ────────────────────────────────────────────────────
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var alSheet = ss.getSheetByName(alName);
+  if (!alSheet) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'Asset_Library tab not found', 'ERROR');
+    return { status: 'error', errors: ['Asset_Library tab not found'] };
+  }
+
+  var alData       = alSheet.getDataRange().getValues();
+  var existingRows = [];
+  for (var r = 1; r < alData.length; r++) {
+    if (String(alData[r][ASSET_LIBRARY_COLS.Episode_UID - 1]) === String(epUid) &&
+        String(alData[r][ASSET_LIBRARY_COLS.Asset_Type  - 1]) === 'quote_graphic') {
+      existingRows.push({ rowNum: r + 1, row: alData[r] });
+    }
+  }
+
+  if (existingRows.length > 0) {
+    if (!force) {
+      logToAuditTrail(agentName, 'state_change', epUid, null,
+        'BRIDGE_SKIPPED: ' + existingRows.length + ' existing Quote_Graphic rows found', 'INFO');
+      return { status: 'skipped', existingCount: existingRows.length };
+    }
+
+    // force path: flip system-untouched rows; preserve rows JT has touched
+    var flippedCount   = 0;
+    var protectedCount = 0;
+    for (var ei = 0; ei < existingRows.length; ei++) {
+      var er           = existingRows[ei];
+      var createdBy    = String(er.row[ASSET_LIBRARY_COLS.Created_By    - 1] || '');
+      var canvasState  = String(er.row[ASSET_LIBRARY_COLS.Canvas_State  - 1] || '');
+      var captionFinal = String(er.row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '');
+      if (createdBy === 'system' && canvasState === '' && captionFinal === '') {
+        alSheet.getRange(er.rowNum, ASSET_LIBRARY_COLS.Status).setValue('rejected');
+        alSheet.getRange(er.rowNum, ASSET_LIBRARY_COLS.Availability).setValue('rejected');
+        flippedCount++;
+      } else {
+        protectedCount++;
+      }
+    }
+    logToAuditTrail(agentName, 'state_change', epUid, null,
+      'BRIDGE_REBUILD: flipped=' + flippedCount + ' protected=' + protectedCount, 'INFO');
+  }
+
+  // ── 3. Parse Show Notes Doc ─────────────────────────────────────────────────
+  var docText;
+  try {
+    docText = DocumentApp.openById(showNotesId).getBody().getText();
+  } catch (e) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'Cannot read Show Notes Doc (' + showNotesId + '): ' + e.message, 'ERROR');
+    return { status: 'error', errors: ['Cannot read Show Notes Doc: ' + e.message] };
+  }
+
+  // Slice sections using precise header string boundaries — avoids extractSectionFromProse
+  // regex limitations with em-dash headings and Note: false-terminators.
+  var hooksBlock         = _bridgeSliceSection_(docText, HEADER_HOOKS,                   HEADER_GUEST_QUOTES);
+  var quotesBlock        = _bridgeSliceSection_(docText, HEADER_GUEST_QUOTES,            HEADER_STARTER_CAPTIONS_HOOKS);
+  var hookCaptionsBlock  = _bridgeSliceSection_(docText, HEADER_STARTER_CAPTIONS_HOOKS,  HEADER_STARTER_CAPTIONS_QUOTES);
+  var quoteCaptionsBlock = _bridgeSliceSection_(docText, HEADER_STARTER_CAPTIONS_QUOTES, HEADER_HOST_INSTAGRAM_CAPTIONS);
+
+  if (!hooksBlock)         logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] HOOKS section not found in Show Notes Doc', 'WARNING');
+  if (!quotesBlock)        logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
+  if (!hookCaptionsBlock)  logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — HOOKS section not found in Show Notes Doc', 'WARNING');
+  if (!quoteCaptionsBlock) logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
+
+  // HOOKS: split by newline, trim, drop blanks. Each line is the full hook text.
+  var hooks = hooksBlock
+    ? hooksBlock.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; })
+    : [];
+
+  // GUEST QUOTES: filter to lines starting with straight or curly open quote.
+  // Drops the hook reprint on the label line, Note: paragraphs, and blank lines.
+  var quotes = quotesBlock
+    ? quotesBlock.split('\n').map(function(l) { return l.trim(); })
+        .filter(function(l) { return l.charAt(0) === '"' || l.charAt(0) === '“'; })
+    : [];
+
+  // STARTER CAPTIONS: multi-line body parser. Returns Map<number, string> where
+  // the value is everything between the label line and the next label line, trimmed.
+  var hookCaptions  = _bridgeParseLabeledCaptions_(hookCaptionsBlock  || '', 'Hook');
+  var quoteCaptions = _bridgeParseLabeledCaptions_(quoteCaptionsBlock || '', 'Guest Quote');
+
+  // ── 4. Validate parsed counts ───────────────────────────────────────────────
+  var hookCaptionCount  = hookCaptions.size;
+  var quoteCaptionCount = quoteCaptions.size;
+
+  if (hooks.length !== 10) {
+    var msg = 'Expected 10 hooks, got ' + hooks.length;
+    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
+    errors.push(msg);
+  }
+  if (quotes.length !== 6) {
+    var msg = 'Expected 6 guest quotes, got ' + quotes.length;
+    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
+    errors.push(msg);
+  }
+  if (hookCaptionCount !== 10) {
+    var msg = 'Expected 10 hook captions, got ' + hookCaptionCount;
+    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
+    errors.push(msg);
+  }
+  if (quoteCaptionCount !== 6) {
+    var msg = 'Expected 6 quote captions, got ' + quoteCaptionCount;
+    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
+    errors.push(msg);
+  }
+
+  if (hooks.length === 0 && quotes.length === 0) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'No hooks or quotes parsed from Show Notes Doc ' + showNotesId, 'ERROR');
+    return { status: 'error', hookCount: 0, quoteCount: 0, totalRows: 0,
+             errors: ['no hooks or quotes parsed from Show Notes Doc'] };
+  }
+
+  // ── 5. Build Asset_Library row array ────────────────────────────────────────
+  // Row width matched to actual sheet column count — guards against ASSET_LIBRARY_COLS
+  // having more entries than the live sheet has columns.
+  var numCols = alSheet.getLastColumn();
+  var rows    = [];
+  var now     = new Date();
+
+  for (var i = 0; i < hooks.length; i++) {
+    var hookRow = new Array(numCols).fill('');
+    hookRow[ASSET_LIBRARY_COLS.Asset_ID      - 1] = Utilities.getUuid();
+    hookRow[ASSET_LIBRARY_COLS.Episode_UID   - 1] = epUid;
+    hookRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
+    hookRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = 'Hook ' + (i + 1);
+    hookRow[ASSET_LIBRARY_COLS.Slide_Index   - 1] = i + 1;
+    hookRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = hooks[i];
+    hookRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = hookCaptions.get(i + 1) || '';
+    hookRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Canvas_State  - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Status        - 1] = 'candidate';
+    hookRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
+    hookRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
+    hookRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
+    hookRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
+    rows.push(hookRow);
+  }
+
+  for (var j = 0; j < quotes.length; j++) {
+    var quoteRow = new Array(numCols).fill('');
+    quoteRow[ASSET_LIBRARY_COLS.Asset_ID      - 1] = Utilities.getUuid();
+    quoteRow[ASSET_LIBRARY_COLS.Episode_UID   - 1] = epUid;
+    quoteRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
+    quoteRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = 'Guest Quote ' + (j + 1);
+    quoteRow[ASSET_LIBRARY_COLS.Slide_Index   - 1] = hooks.length + j + 1;
+    quoteRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = quotes[j];
+    quoteRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = quoteCaptions.get(j + 1) || '';
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Canvas_State  - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Status        - 1] = 'candidate';
+    quoteRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
+    quoteRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
+    quoteRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
+    quoteRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
+    rows.push(quoteRow);
+  }
+
+  // ── 6. Write batch to Asset_Library ────────────────────────────────────────
+  var totalRows = rows.length;
+  try {
+    var lastRow = alSheet.getLastRow();
+    alSheet.getRange(lastRow + 1, 1, rows.length, numCols).setValues(rows);
+    bumpVersion('asset_library', 'materializeQuoteGraphicAssets');
+  } catch (e) {
+    logToAuditTrail(agentName, 'error', epUid, null,
+      'Asset_Library write failed: ' + e.message, 'ERROR');
+    errors.push(e.message);
+    return { status: 'error', hookCount: hooks.length, quoteCount: quotes.length,
+             totalRows: 0, errors: errors };
+  }
+
+  // ── 7. Patch manifest ───────────────────────────────────────────────────────
+  patchManifest(stagingFolderId, {
+    quote_graphic_assets_built: true,
+    quote_graphic_asset_count:  hooks.length + quotes.length
+  });
+
+  // ── 8. Audit log on completion ──────────────────────────────────────────────
+  logToAuditTrail(agentName, 'state_change', epUid, null,
+    'QUOTE_GRAPHIC_ASSETS_MATERIALIZED: Created ' + totalRows + ' rows — ' +
+    hooks.length + ' hooks + ' + quotes.length + ' quotes', 'INFO');
+
+  // ── 9. Return summary ───────────────────────────────────────────────────────
+  return {
+    status:     existingRows.length > 0 ? 'rebuilt' : 'created',
+    hookCount:  hooks.length,
+    quoteCount: quotes.length,
+    totalRows:  totalRows,
+    errors:     errors
+  };
 }
 
 

@@ -1,24 +1,38 @@
-# CLAUDE.md — Repo Instructions for Claude (Code and Cowork)
+# CLAUDE.md — Operating Canon
+
+**Audience:** Hub Claude and Claude Code. Not Audra.
+**Role:** Single source of truth for reading order, mode behavior, mandates, and locked architectural patterns. Supersedes any reading-tier guidance elsewhere in the docs.
+
+---
 
 ## Session Start Protocol
 
-Read in this order before doing any work in this codebase:
+Load in tier order. Do not pre-load Tier 3 unless triggered.
 
-**Always (every session):**
-1. `docs/DWYP_Operating_Model.md` — Spine doc. Compression of principles + chrome + companion model + slot model + cardinal rules. **Read first on any new session.**
-2. `docs/DWYP_Platform_State.md` — Active working state. Current position, GAS file status, pipeline status, open issues.
+### Tier 1 — Always loaded (every session)
 
-**Always for any code, UI, or design work:**
-3. `docs/DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation)
-4. `docs/DWYP_Performance_Principle.md` — how things feel (show first, sync second; version-stamp invalidation)
+1. `CLAUDE.md` — this doc.
+2. `docs/DWYP_Operating_Model.md` — spine. Compression of principles, chrome, companion model, slot model, cardinal rules.
+3. `docs/DWYP_Platform_State.md` — active working state.
+4. `docs/DWYP_Platform_Reference.md` — locked architectural decisions, authoritative schema.
+   - **Hub:** always loaded.
+   - **Code:** load when schema, ADs, or governance are in scope.
 
-**When relevant to the current task:**
-- `docs/DWYP_Build_Playbook.md` — when picking next work or sequencing dependencies
-- `docs/DWYP_Publish_AI_Companion_Design.md` — when working on Publish AI features
-- `docs/DWYP_PreFlight_Staging_Verification.md` — when handed a verification prompt
-- `docs/DWYP_App_Structure.md` v1.3 — Phase 2 design sessions; any app structure or surface work
-- `docs/DWYP_User_Flows.md` v1.0 — any verb-level question on a specific surface
-- Active spoke prompt — when included in the session (no active spoke)
+### Tier 2 — Always for code, UI, or design work
+
+5. `docs/DWYP_Surface_Principle.md` — where things live (mobile = ops, desktop = creation).
+6. `docs/DWYP_Performance_Principle.md` — how things feel (show first, sync second; version-stamp invalidation).
+
+### Tier 3 — Situational, load when triggered
+
+| Doc | Load when |
+|---|---|
+| `docs/DWYP_App_Structure.md` | App-structure or surface-design work |
+| `docs/DWYP_User_Flows.md` | Verb-level question on a specific surface |
+| `docs/DWYP_Codebase_Map.md` | Entering a new file area; orienting on code architecture |
+| `docs/DWYP_Build_Playbook.md` | Picking next work; sequencing dependencies |
+| `docs/DWYP_PreFlight_Staging_Verification.md` | Routing-integrity check before any sheet-writing spoke |
+| Active spec doc | Referenced in session or in State |
 
 If a referenced doc is not in context, ask before proceeding rather than assuming.
 
@@ -26,29 +40,54 @@ If a referenced doc is not in context, ask before proceeding rather than assumin
 
 ## Mode Awareness
 
-Audra works in three modes. Each has different rules.
+Three modes. Each has different rules. If the mode is unclear, ask.
 
 ### Hub mode
-Big-picture context, design decisions, documentation. Audra leads, Claude reasons and captures.
-- **No code is written in Hub threads.** Surface implementation questions but don't generate code.
+Big-picture context, design decisions, documentation. Audra leads; Claude reasons and captures.
+- **No code is written in Hub threads.** Surface implementation questions; do not generate code.
 - Output is structured markdown (handoff docs, design specs, playbook updates).
 - Decisions get locked, then handed off to Spoke threads.
+- **Spoke prompts authored by Hub include:** Code Integrity Mandate reference, scope statement (in/out), explicit clasp push checkpoints, and fully self-contained context. Audra works intermittently between recording sessions — spokes that omit these slip scope or stall.
 
 ### Spoke mode
-One focused unit of implementation work. Spoke prompt provides the scope; Claude executes.
+One focused unit of implementation work. Spoke prompt provides scope; Claude executes.
 - Read the spoke prompt fully before writing anything.
-- Stay within the scope of the spoke. If something tangential appears, surface it — don't expand the spoke unilaterally.
+- Stay within scope. Surface tangential issues — do not expand the spoke unilaterally.
 - Multi-file patches are fine when files are tightly coupled.
-- Surface back at push checkpoints, before moving to the next item.
+- Surface back at push checkpoints before moving to the next item.
 
 ### Verification mode
-Explicit static-analysis check (e.g., pre-flight staging verification).
+Explicit static-analysis check (e.g., pre-flight verification).
 - **Do not modify code. Do not propose fixes.** Report findings only.
-- Mark UNCERTAIN where ambiguous; don't paper over.
+- Mark UNCERTAIN where ambiguous; do not paper over.
 - Use the structured reporting format the verification prompt specifies.
 - This mode is the antidote to "helpful" — be deliberate.
 
-If the mode of the current session is unclear, ask.
+---
+
+## Doc Inventory — Canonical
+
+Permanent docs only. Anything in repo or project knowledge not on this list is an open spoke prompt, a one-shot artifact, or cruft to retire — surface before treating as authoritative.
+
+| Doc | Tier | Owner |
+|---|---|---|
+| `CLAUDE.md` | 1 | Hub |
+| `DWYP_Operating_Model.md` | 1 | Hub |
+| `DWYP_Platform_State.md` | 1 | Hub + Code |
+| `DWYP_Platform_Reference.md` | 1 | Hub (append-only) |
+| `DWYP_Surface_Principle.md` | 2 | Hub |
+| `DWYP_Performance_Principle.md` | 2 | Hub |
+| `DWYP_App_Structure.md` | 3 | Hub |
+| `DWYP_User_Flows.md` | 3 | Hub |
+| `DWYP_Codebase_Map.md` | 3 | Code |
+| `DWYP_Build_Playbook.md` | 3 | Hub + Code |
+| `DWYP_PreFlight_Staging_Verification.md` | 3 | Hub |
+
+**Active specs (temporary, deleted on incorporation):**
+- `DWYP_Outstanding_Build_Items.md` — Phase 3 prioritization inventory. Retires when items are sequenced into Build Playbook.
+- `DWYP_Index_Audit_Design.md` — pre-execution design doc. Becomes spoke prompt when picked up; deleted after incorporation.
+- `SPOKE_B_Display_Review_View.md` — spoke prompt for Display Review view (item A2). Deleted on execution.
+- `DWYP_Spoke_Reels_Surface.md` — in-flight spoke (items 83–84). Uses pre-consolidation terminology (`Caption_Draft`/`Caption_Final`, "Preservation Mandate", "Reference v2.9"). Refresh to current canon before resuming work. Delete on completion.
 
 ---
 
@@ -85,14 +124,13 @@ Two helpers in `fairy_circle.js` route all sheet access:
 
 ### Surface Principle (UI work)
 
-When designing or building any UI surface, apply the test:
-
+Test:
 > Is this a *decision, approval, or awareness*? → **Mobile.**
 > Is this *composition, creation, or sustained focus work*? → **Desktop.**
 
 Mobile is operations-only. Desktop is the creation layer. No graceful degradation — if a mobile user taps a desktop-only surface, the response is a hard wall ("open on desktop"), not a read-only mobile view.
 
-Full spec: `docs/DWYP_Surface_Principle.md`. Surface decisions that conflict with this principle should be flagged, not silently resolved.
+Full spec: `DWYP_Surface_Principle.md`. Surface decisions that conflict with this principle should be flagged, not silently resolved.
 
 ### Performance Principle (any new feature)
 
@@ -102,40 +140,64 @@ Three pillars apply to every new feature:
 2. **Optimistic UI by default.** User actions apply to local state immediately, backend writes happen async, failures surface visibly with rollback.
 3. **Progressive loading.** Skeleton → low-fi → high-fi. Never block on the heaviest asset.
 
-Full spec: `docs/DWYP_Performance_Principle.md`.
+Full spec: `DWYP_Performance_Principle.md`.
 
 **Versioning pattern (live as of Phase 1.2):**
 - All new write paths must call `bumpVersion(domain, callerName)` for the affected domain.
 - All new read paths should check version via `getAllVersions()` or `getDomainVersion()` before fetching data.
 
+---
+
+## Mandates
+
 ### Code Integrity Mandate
 
-Replaces the old Preservation Mandate. The original mandate existed to prevent AI rewrites from silently compressing or simplifying working code. That risk has changed — targeted edits are the default, not wholesale regeneration. The mandate now focuses on protecting code integrity during iteration.
+Targeted edits are the default, not wholesale regeneration.
 
-**What is protected:**
+**Protected:**
 
 1. **No wholesale rewrites.** If a targeted edit achieves the goal, use it. Do not regenerate a function or file from scratch when an Edit would do.
 2. **Schema-shaped functions require care.** Anything that reads or writes specific sheet columns (by index or header name) is load-bearing. Rename or restructure only with an explicit decision.
 3. **Routing helpers are locked.** `isStaging()`, `getMasterSheetId()`, `getGovernance()` — do not rename, thin, or restructure without a hub decision.
 4. **Fairy entry points and orchestration logic** — surface back before changing signatures or moving responsibilities between files.
-5. **Dead code stubs are no longer required.** Retired code can be deleted when a decision has been made. Deletion still requires an explicit decision — but do not retain stubs by default.
+5. **Dead code stubs are not required.** Retired code can be deleted when a decision has been made. Deletion still requires an explicit decision — but do not retain stubs by default.
 6. **History lives in git.** Implementation context and version history belong in commit messages and `git log`, not in the KB or as inline code comments.
 
-**When to surface back before acting:**
-- Before deleting anything not explicitly listed in the spoke's scope
-- Before renaming or moving a function used across multiple files
-- Before changing a function signature in a way that touches callers
-- Whenever the action feels outside the spoke's stated scope
+**Surface back before acting when:**
+- Deleting anything not explicitly listed in the spoke's scope
+- Renaming or moving a function used across multiple files
+- Changing a function signature in a way that touches callers
+- The action feels outside the spoke's stated scope
+
+### Documentation Integrity Mandate
+
+Documentation is forward-looking, not technical history. Project knowledge is read by AI for retrieval — optimize for precision, not narrative.
+
+**Protected:**
+
+1. **Forward-looking only.** Capture what's useful for operating, extending, or troubleshooting the system — not what changed, when, or why a previous approach was dropped.
+2. **Single source of truth per fact.** When the same fact would appear in two docs, one is canonical and the other points at it. No silent duplication.
+3. **No supersede notices, no "what this displaces" tables, no version-trail prose.** History lives in git. If a doc replaces another, the replaced doc is deleted in the same commit.
+4. **Cross-reference drift is a bug.** If doc X says "see Y v2.9" and Y is now v3.1, fix the reference at the source. Do not add a "still applies despite version" note.
+5. **Closed spokes get incorporated.** Spoke design docs and prompts are rolled into permanent docs at completion, then deleted. They are not archived.
+6. **AI audience.** Tables, bullets, terse phrasing. No narrative throat-clearing. No prose flourishes that don't survive retrieval chunking.
+
+**Surface back before acting when:**
+- A change would create overlapping content between two permanent docs
+- A doc you'd write doesn't fit any tier in the inventory above
+- A retired doc has content that isn't yet routed into a permanent doc
 
 ---
 
 ## State Update Protocol
 
 After completing a spoke, task set, or significant session:
-1. **Offer to update Platform State.** Name the specific changes you'd make before writing.
-2. **Update the Reference doc only when** a new architectural decision is locked or schema changes — not for bug fixes or polish.
-3. **One-off `.md` files** brought to a session (spoke prompts, design notes) get incorporated into State when the work they describe is complete. Closed spokes are deleted, not archived.
-4. **Update the Build Playbook** when a phase or item completes — mark done, note any surface-back items that emerged, identify what's next.
+
+1. **Offer to update Platform State.** Name the specific changes before writing.
+2. **Update Platform Reference only when** a new architectural decision is locked or schema changes — not for bug fixes or polish. Reference is append-only.
+3. **One-off `.md` files** brought to a session (spoke prompts, design notes) get incorporated into permanent docs when the work they describe is complete. Closed spokes are deleted, not archived.
+4. **Update Build Playbook** when a phase or item completes — mark done, note any surface-back items, identify next.
+5. **Codebase Map** updated by Code when responsibility-level changes happen (new file, deleted file, function moved between files). Implementation-detail changes do not trigger an update.
 
 Do not silently proceed to the next item without confirming the State update is captured. The State doc is the contract between sessions.
 
@@ -145,7 +207,9 @@ Do not silently proceed to the next item without confirming the State update is 
 
 - Do not invent design decisions. If a UI question doesn't have a decision in foundation docs, surface it as a hub-session topic.
 - Do not bypass routing helpers, schema patterns, or version-stamp invalidation.
-- Do not expand spoke scope unilaterally. Surface tangential issues, don't fix them.
+- Do not expand spoke scope unilaterally. Surface tangential issues; do not fix them.
 - Do not paper over UNCERTAIN findings in verification mode.
 - Do not assume Drive folders, API keys, or external services are isolated between deployments — they are shared unless explicitly stated otherwise.
-- Do not promote staging to production. That's a manual Audra step (Manage Deployments → New version).
+- Do not promote staging to production. That is a manual Audra step (Manage Deployments → New version).
+- Do not write supersede notices, what-this-displaces tables, or version-trail prose in any doc. See Documentation Integrity Mandate.
+- Do not load Tier 3 docs pre-emptively. Trigger-load only.

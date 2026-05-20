@@ -90,7 +90,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 99. **Asset Library is the single source of truth for all content assets.** `Social_Assets` tab handles scheduling and Make integration only. Asset Library stores: asset metadata, content text, Drive file ID, canvas state JSON (Fabric.js serialization for 1:1 reconstruction), background reference, captions, reel summaries. One row per asset. Permanent — rows are never deleted.
 100. **Canvas state serialized to Asset Library on Add to Week.** `canvas.toJSON()` stored in `Canvas_State` column. `canvas.loadFromJSON()` rebuilds exact editable state on slot re-entry. Enables 1:1 reconstruction and episode switching without loss.
 101. **Preservation Mandate replaced with intentional deletion policy.** Original mandate ("never simplify, rename, or thin any function") was a guardrail against Gemini's aggressive pruning. Replaced with: nothing gets removed without an explicit decision. Renames and dead code removal require explicit approval. Active function behavior is never changed without a confirmed design decision.
-102. **Studio tab structure (locked May 2026).** Five tabs: Publish / Design / Write / Outreach / Ideas. Old mode list (Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Brainstorm) retired — replaced by tab structure. Full spec: `DWYP_Studio_v1.md`.
+102. **Studio tab structure (locked May 2026).** Five tabs: Publish / Design / Write / Outreach / Ideas. Old mode list (Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Brainstorm) retired — replaced by tab structure. Episode Index data model: see § AI Layer Architecture in this doc.
 103. **Episode index created by Vert on Daily Pulse trigger.** Index is a permanent markdown document per episode stored in `EPISODE_SEARCH_INDEX_KEY` Drive folder. Vert retrieves corpus context; Claude writes the index content (episode summary, hooks, quotes, image prompts, starter captions, transcript map). Reel descriptions are the only living section — updated by Daily Pulse on reel add/remove. Template: `DWYP_Episode_Index_Template.md`.
 104. **Quick Caption retired as standalone feature.** Caption generation moves to Daily Pulse audio extraction path: reel upload detected → audio extracted → transcription → episode index reel descriptions → Studio surfaces captions pre-populated.
 105. **Optimistic UI pattern adopted for approve/save/place actions.** UI updates immediately; GAS writes async. On GAS failure: UI reverts, toast shown, failure logged to Audit_Trail.
@@ -238,6 +238,38 @@ Scheduling and Make integration only. Foreign key to Asset_Library. One row per 
 | 12 | Created_At | Timestamp | |
 | 13 | Created_By | String | |
 
+### Posting_Schedule (7 columns)
+
+Drives the week accordion template. One row per slot. Static — lock after entry.
+
+| Col | Field | Type | Notes |
+|---|---|---|---|
+| 1 | Slot_ID | String | Primary key (e.g., `SLOT-TUE-01`) |
+| 2 | Day | Enum | Monday–Saturday |
+| 3 | Asset_Type | Enum | Quote_Graphic / Reel / Thumbnail / Bank_Clip |
+| 4 | Platform | String | Instagram / Facebook / LinkedIn / YouTube / TikTok (multi-platform allowed) |
+| 5 | Why | String | One-line description shown in slot |
+| 6 | Sort_Order | Integer | Display order within day |
+| 7 | Ratio | Enum | 1:1 / 4:5 / 9:16 / 16:9 / null |
+
+**Make handles time logic.** No time-of-day picker in UI. DWYP writes the day target; Make determines optimal post time.
+
+### Audit_Trail (7 columns)
+
+Append-only event log. All mutating operations, AI calls, and gate transitions write here.
+
+| Col | Field | Type | Notes |
+|---|---|---|---|
+| 1 | Timestamp | DateTime | Event time |
+| 2 | Event_Category | String | Originator (e.g., `Studio_ImageGen`, `Mending_Fairy`, `Schedule_Reel`) |
+| 3 | Actor | String | User_ID or system identifier |
+| 4 | Episode_UID | String | Foreign key — nullable |
+| 5 | Contact_ID | String | Foreign key — nullable |
+| 6 | Detail | String | Event payload — free-text or structured |
+| 7 | Level | Enum | INFO / WARNING / ERROR |
+
+**Write path:** `logToAuditTrail(category, eventType, foreignKey, level, detail)`. Help Desk Companion reads a recent slice (configurable window, default 7 days).
+
 ### User_Registry (3 columns)
 
 | # | Field | Notes |
@@ -325,6 +357,75 @@ Fields written by GAS to the episode manifest JSON file in the Staging folder.
 - Studio canvas export lands in Staging/Images/ folder.
 - Daily Pulse Social_Assets loop (queued — not yet built) creates candidate rows in Asset_Library.
 - JT reviews via `Review_Social_Assets` task.
+
+---
+
+## Episode Review — Comments & Revise Sync
+
+Two-way sync between JT's video review comments and Audra's Revise task. One Revise task per episode. Checkboxes populated automatically from JT's comments.
+
+### Comment Card Fields
+
+- Author (JT / Audra)
+- Timestamp
+- Video timecode (if commented during proxy playback — click jumps player to moment)
+- Comment text
+- Resolved / Unresolved toggle
+- Delete (small, requires confirm)
+
+### Comment States
+
+| State | Meaning |
+|---|---|
+| Active | Unresolved — JT still wants it addressed |
+| Resolved | Audra checked it off via Revise task. JT sees it dimmed. |
+| Struck through | JT deleted or retracted. Still readable in Audra's task. Never gone. |
+| JT self-resolved | She decided it was fine. No action needed from Audra. |
+
+### Two-Way Sync Flow
+
+1. JT comment → appears unresolved in panel.
+2. Audra opens Revise task → comment surfaces as checkbox, timecode included.
+3. Audra checks item → comment auto-resolves in JT's view.
+4. JT edits comment → checkbox updates. Task never stale.
+5. JT deletes comment → checkbox goes strikethrough in Audra's task. Permanent log.
+
+### Schema Hook
+
+Comments table needs `task_item_id` field linking to specific Revise task checkbox. Drives sync.
+
+### Views
+
+- **Active (default):** Unresolved comments full size. Resolved collapsed behind "Show resolved" toggle.
+- **All:** Everything visible. Full audit trail.
+
+---
+
+## Design ↔ Publish Asset Travel
+
+Design and Publish share the same Fabric.js canvas. Assets move between them with context preserved.
+
+### Round Trip: Publish → Design → Publish
+
+- Edit button in Publish navigates to Design with asset loaded. Context held: `publish_origin: { episode_uid, slot_id }`.
+- In Design, two save actions when origin is held:
+  - **Save & Stay** — saves, remains in Design.
+  - **Save & Return** — saves, returns to correct Publish slot. Updated asset in place.
+
+### Context Awareness
+
+| Entry path | Save actions |
+|---|---|
+| Direct from nav | Save & Stay only |
+| Via Edit from Publish | Save & Stay + Save & Return |
+
+### Continue Card (Design canvas state)
+
+- Design autosaves to a single manifest per episode on every debounced pause.
+- On open, side panel shows Continue card with thumbnail + timestamp of last unsaved session.
+- Tap to restore. Ignore to start fresh.
+- Card clears on explicit Save or Save & Return.
+- Cleared canvas = done. Continue card present = unfinished. No ambiguity.
 
 ---
 
@@ -428,11 +529,49 @@ Clean four-layer model. Vert retrieves. Claude generates. GAS orchestrates. Gemi
 | Studio — Ideas tab | Brainstorm, interview prep | Vertex-first, on demand |
 | Studio — chat | General creative generation | Episode index + Vertex as needed |
 
+### Image Generation Models
+
+| Model | Status |
+|---|---|
+| `gemini-2.5-flash-image` | ✅ Current production model |
+| `gemini-3-pro-image-preview` (Nano Banana Pro) | ⚠️ Available. Requires thought-signature preservation across API calls — store full response `parts` arrays verbatim. |
+| `gemini-2.0-flash-preview-image-generation` | ⛔ Retired |
+| Imagen 3 | ⛔ Deprecated June 30, 2026 |
+
+**Web search responsibility:** Gemini permanently. Vertex RAG cannot meet the web-search requirement.
+
+**Claude API key:** stored as `CLAUDE_API_KEY` in `Governance_Config`.
+
+### Episode Index — Studio's Knowledge Layer
+
+Permanent markdown document, one per episode, stored in a dedicated Drive folder. Written by Vert Fairy during the show notes run. Studio reads it on open.
+
+| Section | Source | Living? |
+|---|---|---|
+| Episode summary | Vert Fairy Pass 2 | No — evergreen |
+| Guest profile snapshot | Herald + Secretary (intake) | No — evergreen |
+| Hooks & quotes (transcript-sourced) | Vert Fairy Pass 2 | No — evergreen |
+| Social asset seeds (image prompts + caption seeds) | Vert Fairy Pass 2 | No — evergreen |
+| Key themes | Vert Fairy Pass 2 | No — evergreen |
+| Transcript map (landmark-dense) | Vert Fairy Pass 2 | No — evergreen |
+| Reel descriptions | Daily Pulse / Mending Fairy | Yes — updated on reel add/remove |
+
+**Index folder:** Dedicated Drive folder, separate from episode asset folders. Governance key: `EPISODE_SEARCH_INDEX_KEY`.
+
+**Retrieval strategy by surface:**
+
+| Surface | Retrieval | Latency |
+|---|---|---|
+| Publish | Index-first; Vertex only if insufficient | Fast — pre-populated |
+| Write | Vertex-first, cross-episode | Moderate — on demand |
+| Studio chat (Claude) | Vertex-first | Moderate — on demand |
+
 ### Vertex AI RAG Engine — Setup (Complete April 2026)
 
 - **GCP project:** DWYP RAG (`309883149140`)
 - **Region:** us-south1 (Dallas) — us-central1, us-east1, us-east4 are restricted for new projects (allowlisted only)
 - **Corpus:** `dwyp-studio-corpus`, `text-embedding-005`, **Spanner** vector backend
+- **Parser:** Gemini 2.5 Pro (LLM parser for ingest)
 - **Corpus resource path:** confirm in `STUDIO_CORPUS_ID` governance key — reflects us-south1 path
 - **Auth:** `ScriptApp.getOAuthToken()` → RAG Engine direct call (200 confirmed)
 - **Import pattern:** `ragFiles:import` POST, `resourceType: 2` (integer enum, not string)
@@ -459,6 +598,18 @@ Clean four-layer model. Vert retrieves. Claude generates. GAS orchestrates. Gemi
 | Riverside transcripts | ⛔ Never — hallucination risk |
 
 Finished transcript placed manually in `Staging/Episode/` subfolder by Audra.
+
+---
+
+## Content Generation — Prompt Design Principles
+
+Locked principles for prompts targeting Claude. Apply across all generation work — show notes, hooks, quotes, captions, chat.
+
+- **Definition-first, not rules-first.** A section needs a clear definition of what it produces before rules are added. Adding rules to a section without a clear definition compounds drift; it does not fix it.
+- **Hooks are synthesis, not recap.** A hook captures a universal or hidden truth drawn from the source material — not a summary of what the guest said. Address: collective "you," not third-person guest.
+- **Five hook stances** (Claim, Paradox, Permission, Reframe, Statement of Cost) function as a jungle gym, not a cage. Internal orientation for Claude — does not surface in output.
+- **Guardrails, not handcuffs.** Minimal, precise constraints outperform prescriptive rule stacks.
+- **Surface internal contradictions; do not silently resolve.** Contradictions in the prompt (e.g., em-dash prohibition vs. attribution format) require explicit carve-outs — flag before resolving.
 
 ---
 

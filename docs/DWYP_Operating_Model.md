@@ -2,7 +2,7 @@
 **Version:** 1.1 | May 2026
 **Replaces:** DWYP_Operating_Model.md v1.0
 **Status:** Synthesis doc. Code-portable spine. Replaces nothing; compresses everything.
-**Sources synthesized:** `DWYP_App_Structure.md` v1.3 · `DWYP_User_Flows.md` v1.0 · `DWYP_Studio_v3_Design.md` v0.1 · `DWYP_Studio_v1.md` v1.1 · `DWYP_Social_Architecture_Redesign_v3.md` v3.2 · `DWYP_Surface_Principle.md` · `DWYP_Performance_Principle.md` · `DWYP_Publish_AI_Companion_Design.md` · `DWYP_Help_Desk_Companion_Design.md` · `DWYP_Phase2_0_Session_Archive.md` · `DWYP_Platform_Reference.md` · `DWYP_BrandVoice_v1.md`
+
 
 ---
 
@@ -22,7 +22,7 @@ This doc does not introduce new design. Anything still being decided is named in
 
 ## 1. Who and Why
 
-**JT** — podcast host. ADHD, intuition-driven, reels-focused, design-involved, not systems-oriented. Primary user of the creative surfaces.
+**JT** — podcast host. ADHD, intuition-driven, design-involved, extremely not tech-savvy. Talent role only: reviews, uses Publish, hosts. Avoids Drive. Primary user of creative surfaces. Trust is built through polished output, not system explanations.
 
 **Audra** — platform architect, producer, developer. Also a user: episode review, revision queue, ops drawer. Audra-as-architect builds; Audra-as-user works inside.
 
@@ -277,6 +277,8 @@ Three companions, three lanes. Same chip primitive, different LLMs, different sc
 
 **Why Gemini for Help Desk:** ~10× cheaper, doesn't need brand voice or reasoning — just "given this data, answer the question." Already wired (`callGeminiAPI()` from Herald). Lane preservation: Claude for human-facing creative copy; Gemini for grunt work.
 
+**Help Desk tone — direct, no padding.** Functional Q&A, not conversational rapport. System prompt enforces concise, factual register: "Three open tasks: Review Reels (Carrie), Guest Brief Enrich (Aggarwal)…" — not "Sure! Let me check that for you." Out-of-scope requests (mutations, corpus search, creative work) get graceful redirects with navigation chips where applicable.
+
 ### Claude's Posture (Creative Companions)
 
 From JT's own words (captured S1):
@@ -312,6 +314,8 @@ What each companion sees per call:
 **Persistent + contextual — both true.** Claude *is* always in the rail; what she *sees* depends on what's foregrounded. Same conversation thread per episode tab; refreshed context per slot.
 
 **No cross-session memory at the LLM layer.** Asset-attached `chat_history` is the per-asset durable thread (Publish). Session-scoped clears for Writer and Help Desk. Feedback loop is *Audra-tuned via `Why` cells*, not auto-learned.
+
+**Publish Companion hard exclusions.** Past closed episodes, full corpus search, other platform tabs (Tasks/Contacts/Dashboard), and production status (review gating, proxy approvals) are out of scope. When JT asks Publish-scope Claude something corpus-shaped, graceful handoff: "I can see this week's content. For full archive search, Studio is your tool."
 
 ### Chip Routing — How Claude Acts On The Canvas
 
@@ -433,6 +437,17 @@ Pre-compose is not uniform across asset types:
 
 **Playbook-as-Engine handles refinement of options, not asset sourcing.** Reel sourcing remains JT-driven and won't be automated.
 
+### Reels — Two Asset Types
+
+Reels carry two distinct generation contexts:
+
+| Type | Purpose | Generation context |
+|---|---|---|
+| **Title card** | On-image text overlay | Short, hook-energy, voice-driven |
+| **Caption** | Post copy on social | Guest name, episode topic, brand voice, CTA structure, audio-grounded summary |
+
+Each gets its own system prompt and chip suggestions. Audio summary requirement for captions remains locked (Gemini audio extraction prerequisite — `GAS_AUDIO_CEILING_35MB` unresolved risk).
+
 ### Pending Canvas (When Slot Has No Available Asset)
 
 Two buttons. No narration.
@@ -458,7 +473,7 @@ One card expanded = Claude's working context. **Slot-level prompts** are legal w
 
 ### Publish Surface — 4-Panel Layout (v2 Authoritative; v3 Remodeling)
 
-The current Publish surface as locked in `DWYP_Social_Architecture_Redesign_v3.md` v3.2:
+The current Publish surface (v2 layout):
 
 1. **Panel 1 — Nav (far left).** Collapsible icon navigation. Peer of other Studio tabs.
 2. **Panel 2 — Week accordion.** Episode entry + Monday–Saturday days + slots. Slots gold (playbook) or crimson (custom). Filled slot taps reload canvas. Finalize button locked until all slots decided.
@@ -467,7 +482,7 @@ The current Publish surface as locked in `DWYP_Social_Architecture_Redesign_v3.m
 
 **Canvas:** Fabric.js 360×450 display, exports 1080×1350 PNG (4:5). Text always `fontStyle: normal`. Toolbar: Undo / Redo / Center / Logo.
 
-**v3 in-flight remodel** (per `DWYP_Studio_v3_Design.md` v0.1 + active hub sessions): Hooks & Quotes panel migrating to Claude chip routing in the right rail; Background tools migrating to Library | Generate toggle in the right rail. Panels 3 and 4 partially collapse into the right rail; center pane becomes day-stack with Accordion-as-Focus at the slot level. See §11 for current open items.
+**v3 in-flight remodel:** Hooks & Quotes panel migrating to Claude chip routing in the right rail; Background tools migrating to Library | Generate toggle in the right rail. Panels 3 and 4 partially collapse into the right rail; center pane becomes day-stack with Accordion-as-Focus at the slot level. See §11 for current open items.
 
 ### Design Tab — Save & Stay / Save & Return / Continue Card
 
@@ -574,21 +589,13 @@ When this synthesis is insufficient:
 
 | Need | Source |
 |---|---|
-| Principles + reframes + corollaries (authoritative) | `DWYP_App_Structure.md` v1.3 |
+| Doc inventory + reading order + mode rules + mandates | `CLAUDE.md` |
 | Mobile/desktop boundary calls | `DWYP_Surface_Principle.md` |
 | Version stamps + optimistic UI patterns + bumpVersion mechanics | `DWYP_Performance_Principle.md` |
-| Per-surface action inventory | `DWYP_User_Flows.md` v1.0 |
-| Studio architecture (5 tabs, AI layer, episode index, Design Save & Stay) | `DWYP_Studio_v1.md` v1.1 |
-| Studio v3 design decisions (in flight — Publish remodel) | `DWYP_Studio_v3_Design.md` v0.1 |
-| Publish surface mechanics (canvas dimensions, panel layout, slot logic) | `DWYP_Social_Architecture_Redesign_v3.md` v3.2 (note partial supersede banner) |
-| Publish AI Companion (per-card chat, sibling context, chip patterns) | `DWYP_Publish_AI_Companion_Design.md` |
-| Help Desk Companion (Gemini, navigation chips, ops Q&A) | `DWYP_Help_Desk_Companion_Design.md` |
-| Right rail build spec | `SPOKE_Publish_Right_Rail.md` |
-| AI layer architecture (Vert / Claude / GAS / GenGem) | `DWYP_Platform_Reference.md` § AI Layer Architecture |
-| Voice constraints for Claude's system instruction | `DWYP_BrandVoice_v1.md` |
-| Scenario archive (last resort for traceability) | `DWYP_Phase2_0_Session_Archive.md` |
-| Current build state (what's pushed vs. written vs. pending) | `DWYP_Platform_State.md` |
-
----
-
-*DWYP Operating Model v1.1 — May 2026. Compression doc. Reads in ~7 minutes. Replaces nothing; points to everything. If anything here drifts from its source, the source wins — update this doc.*
+| Principles + reframes + corollaries (authoritative) | `DWYP_App_Structure.md` |
+| Per-surface action inventory + scenario walkthroughs | `DWYP_User_Flows.md` |
+| Schema, ADs, AI Layer Architecture, Episode Index, Comment System, Design ↔ Publish travel | `DWYP_Platform_Reference.md` |
+| Code architecture, file ownership, function locations | `DWYP_Codebase_Map.md` |
+| Current build state | `DWYP_Platform_State.md` |
+| Phase sequencing + future spokes queue | `DWYP_Build_Playbook.md` |
+| Voice constraints for Claude's system instruction (Drive corpus doc, runtime reference — not a repo doc) | `DWYP_BrandVoice_v1.md` |

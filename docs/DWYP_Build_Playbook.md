@@ -6,11 +6,12 @@
 - `DWYP_Surface_Principle.md` — where things live
 - `DWYP_Performance_Principle.md` — how things feel
 - `DWYP_App_Structure.md` — eight reframes + Phase 2.0 gate; input to all Phase 2 sessions
-- `DWYP_Publish_AI_Companion_Design.md` — per-card chat in Publish (Claude)
-- `DWYP_Help_Desk_Companion_Design.md` — informational ops chat (Gemini)
+- `DWYP_Operating_Model.md` § 8 — Companion Model (Publish + Help Desk + Writer architectural decisions)
 - `DWYP_PreFlight_Staging_Verification.md` — Code verification prompt for staging
 
 **Purpose:** Sequence the work, specify ownership, define surface-back protocol. Each item points to a future spoke prompt — this document is not a spoke prompt itself.
+
+**Sequencing authority:** This Playbook supersedes ad hoc spoke ordering. Phase 0 housekeeping → Phase 1 (versioning + perf foundation) parallel with Phase 2 (design system) → Phase 3 (application) → Phase 4 (Publish Companion).
 
 ---
 
@@ -224,6 +225,19 @@ Both run simultaneously. They converge at Phase 3.
 - **Note:** Reuses chip parser pattern from 4.4 if 4.4 ships first. Worth running 4.4 → 4.5 in sequence to capture pattern reuse.
 
 **Phase 4 done state:** Both AI companions live. JT can chat with Claude per Publish card. Both users can ask Help Desk questions across all surfaces. Each companion stays in its lane.
+
+---
+
+## Phase 5: Future Spokes (Queued)
+
+Items confirmed but not yet sequenced. Pick up after Phase 4 stabilizes.
+
+- **SupoClip evaluation** — open-source Reels clipping tool flagged for assessment.
+- **NF-1 Quotes Dedup Review** — surface and resolve duplicate quote candidates.
+- **NF-2 Reel Identity & Comment Portability** — reel-identity scheme that survives re-edits, preserves comments across reel iterations.
+- **NF-3 AI Video Review (END ALL)** — speculative future: AI-assisted episode review pass.
+- **Comment System + Revise Sync implementation** — per Reference architecture (see Episode Review — Comments & Revise Sync section in Platform Reference).
+- **Design ↔ Publish asset travel implementation** — per Reference architecture (see Design ↔ Publish Asset Travel section in Platform Reference).
 
 ---
 

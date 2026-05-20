@@ -32,7 +32,7 @@ Both run simultaneously. They converge at Phase 3.
 **Universal surface-back triggers (apply to all Claude Code work):**
 - Schema decisions never assumed — surface back
 - Naming conventions ambiguous — surface back
-- Preservation Mandate uncomfortable — surface back
+- Code Integrity Mandate uncomfortable — surface back
 - Two reasonable approaches exist — surface back
 - After every push, before next item — surface back
 - Existing code pattern conflicts with new requirement — surface back
@@ -271,7 +271,7 @@ When chipping away autonomously, surface back at:
 - Existing code pattern would need to change
 
 **Risk-shaped:**
-- Preservation Mandate gets uncomfortable
+- Code Integrity Mandate gets uncomfortable
 - Action would touch a domain outside the spoke's scope
 - Tests reveal unexpected current behavior
 - Push would deploy partial functionality
@@ -304,7 +304,7 @@ When chipping away autonomously, surface back at:
 **Was:** Queued indefinitely — autonomous email sender for pipeline communication events (guest invite, scheduling confirm, follow-ups, release announcements).
 **Cancelled:** Reframe #8. Was never deployed; seven template keys blank; Daily Pulse Loop 2 indefinitely queued.
 **What replaces it:** Pipeline email events spawn Writer email tasks that JT completes autonomously. Templates migrate to Writer Email quick-start templates (the seven blank Scribe keys finally have a home). Daily Pulse Loop 2 rewires to spawn a release reminder task rather than a Scribe send.
-**Stub:** `scribe_fairy.gs` retained as dead-code stub under Preservation Mandate (joins `safety_fairy.gs`, `marcom_fairy.gs`). No new GAS wiring needed — trigger logic in Secretary and Daily Pulse already knows when events should fire.
+**Stub:** `scribe_fairy.gs` retained as dead-code stub (joins `safety_fairy.gs`, `marcom_fairy.gs` — pre-CIM exception, explicit retention). No new GAS wiring needed — trigger logic in Secretary and Daily Pulse already knows when events should fire.
 
 ---
 

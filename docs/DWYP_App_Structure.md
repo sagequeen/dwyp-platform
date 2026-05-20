@@ -262,7 +262,7 @@ Known relationships (guest brief from `CONTACT_LIBRARY/{contact_id}/`, transcrip
 
 Scribe Fairy as an autonomous sender retires. Pipeline communication events (guest invite, scheduling confirm, follow-ups, etc.) spawn **tasks** that, when tapped, open Writer with the right email template pre-seeded and date variables resolved. JT or Audra reviews, edits, sends.
 
-Scribe was never deployed — seven template keys blank, Daily Pulse Loop 2 indefinitely queued — so this cancels a planned build rather than retiring a live system. Scribe Fairy joins Safety and Marcom as a dead-code stub under the Preservation Mandate.
+Scribe was never deployed — seven template keys blank, Daily Pulse Loop 2 indefinitely queued — so this cancels a planned build rather than retiring a live system. Scribe Fairy joins Safety and Marcom as a retained dead-code stub (pre-CIM exception).
 
 **What survives from Scribe's plan:**
 - Trigger logic (Secretary, Daily Pulse) that already knows *when* pipeline emails should happen. Now spawns tasks instead of teeing up sends.
@@ -438,7 +438,7 @@ Cost note: image generation per slot × options × episodes is a real API spend 
 
 ### Scribe Fairy
 - Retires as autonomous sender (was never deployed)
-- Dead-code stub retained under Preservation Mandate (joins Safety, Marcom)
+- Dead-code stub retained (joins Safety, Marcom — pre-CIM exception)
 - Trigger logic that already exists in Secretary and Daily Pulse rewires to spawn email tasks instead of teeing up Scribe sends
 - Seven blank Scribe template keys (`SCRIBE_INVITE_KEY` et al.) migrate to Writer Email quick-start templates
 
@@ -553,7 +553,7 @@ This document remains input to Phase 2 work. Specifically:
 
 Build Playbook v5 sequencing otherwise unchanged. Phase 1 (perf foundation) and Phase 0 (housekeeping) are unaffected.
 
-**Scribe spoke (cancelled v1.1):** Confirmed. Triggers rewire to spawn Writer email tasks. Templates migrate to Writer quick-starts. Scribe Fairy stub stays per Preservation Mandate.
+**Scribe spoke (cancelled v1.1):** Confirmed. Triggers rewire to spawn Writer email tasks. Templates migrate to Writer quick-starts. Scribe Fairy stub stays (pre-CIM exception — explicit retention decision).
 
 ---
 

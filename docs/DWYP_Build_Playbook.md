@@ -232,6 +232,8 @@ Both run simultaneously. They converge at Phase 3.
 
 Items confirmed but not yet sequenced. Pick up after Phase 4 stabilizes.
 
+- **B6 #3 — QUOTE-block parser spoke (next content pipeline).** New `ATTRIBUTION:`-line quote format + `_bridgeParseRankedItems_` / `materializeQuoteGraphicAssets` parser. Ships on live v2.5; hard pre-Meenakshi requirement. Depends on: Master Template v3.0 QUOTE-block section (available in v3.0 draft).
+- **B6 #2 — `extractPrompt` consolidation spoke.** Rewires section-extraction so Guest Brief / AI Search Index get brand voice from in-template sections; retires `${brandVoice}` full-text injection. "v3.0 fully live" = paste + this spoke. Depends on: B6 #3 shipped; v3.0 pasted by Audra.
 - **SupoClip evaluation** — open-source Reels clipping tool flagged for assessment.
 - **NF-1 Quotes Dedup Review** — surface and resolve duplicate quote candidates.
 - **NF-2 Reel Identity & Comment Portability** — reel-identity scheme that survives re-edits, preserves comments across reel iterations.

@@ -1605,6 +1605,17 @@ function _bridgeParseRankedItems_(sectionText, labelPrefix) {
     var blockEnd   = (i + 1 < matches.length) ? matches[i + 1].index : sectionText.length;
     var block      = sectionText.slice(blockStart, blockEnd);
 
+    // ATTRIBUTION (QUOTE blocks only — v3.0 format: separate labeled line)
+    if (labelPrefix === 'QUOTE') {
+      var attrMatch = block.match(/^ATTRIBUTION:\s*(.+)$/m);
+      if (attrMatch) {
+        text = text + ' — ' + attrMatch[1].trim();
+      } else {
+        logToAuditTrail(agentName, 'state_change', '', null,
+          '_bridgeParseRankedItems_: ATTRIBUTION missing for QUOTE ' + index + ' — using bare quote text', 'WARNING');
+      }
+    }
+
     // SLOT_TAGS
     var slotTagsMatch = block.match(/^SLOT_TAGS:\s*(.+)$/m);
     var slot_tags;
@@ -1653,19 +1664,18 @@ function _bridgeParseRankedItems_(sectionText, labelPrefix) {
 /**
  * Reads Show Notes Doc (manifest.show_notes), parses HOOKS + GUEST QUOTES + labeled
  * STARTER CAPTIONS, writes one Asset_Library row per hook and per guest quote.
- * Caption_Draft is the label-paired starter caption.
+ * Caption_Host is the label-paired starter caption.
  * Render-on-send: Drive_File_ID, Canvas_State, Background_ID, Image_Prompt left empty.
  * Midnight pass owns Quality_Score, Slot_Tags — both left empty.
  *
  * @param {string} epUid
  * @param {Object} opts        — { force?: boolean }
  *                                force=true: existing rows where Created_By='system'
- *                                AND Canvas_State='' AND Caption_Final=''
- *                                are flipped to Status='rejected', Availability='rejected'
- *                                (preserved under "rows are never deleted"),
- *                                then fresh rows are written.
- *                                Rows JT has touched (Canvas_State non-empty
- *                                OR Caption_Final non-empty) are preserved untouched.
+ *                                AND Canvas_State='' are flipped to Status='rejected',
+ *                                Availability='rejected' (preserved under "rows are never
+ *                                deleted"), then fresh rows are written.
+ *                                Rows JT has touched (Canvas_State non-empty)
+ *                                are preserved untouched.
  * @returns {Object}           — { status: 'created' | 'skipped' | 'rebuilt' | 'error',
  *                                  hookCount, quoteCount, totalRows, errors }
  */
@@ -1741,8 +1751,7 @@ function materializeQuoteGraphicAssets(epUid, opts) {
       var er           = existingRows[ei];
       var createdBy    = String(er.row[ASSET_LIBRARY_COLS.Created_By    - 1] || '');
       var canvasState  = String(er.row[ASSET_LIBRARY_COLS.Canvas_State  - 1] || '');
-      var captionFinal = String(er.row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '');
-      if (createdBy === 'system' && canvasState === '' && captionFinal === '') {
+      if (createdBy === 'system' && canvasState === '') {
         alSheet.getRange(er.rowNum, ASSET_LIBRARY_COLS.Status).setValue('rejected');
         alSheet.getRange(er.rowNum, ASSET_LIBRARY_COLS.Availability).setValue('rejected');
         flippedCount++;
@@ -1839,8 +1848,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     hookRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = hooks[i];
     hookRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    hookRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = _appendCaptionSignoff_(hookCaptions.get(i + 1) || '');
-    hookRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = _appendCaptionSignoff_(hookCaptions.get(i + 1) || '');
+    hookRow[ASSET_LIBRARY_COLS.Caption_Guest - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Canvas_State  - 1] = '';
@@ -1864,8 +1873,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     quoteRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = quotes[j];
     quoteRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    quoteRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = _appendCaptionSignoff_(quoteCaptions.get(j + 1) || '');
-    quoteRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = _appendCaptionSignoff_(quoteCaptions.get(j + 1) || '');
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Guest - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Canvas_State  - 1] = '';

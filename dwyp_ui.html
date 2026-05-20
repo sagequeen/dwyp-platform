@@ -5534,7 +5534,6 @@ body.studio-open .app-header { display: none; }
                   <div class="pb-caption-variants" id="pbCaptionVariants"></div>
                   <div class="pb-caption-footer">
                     <span class="pb-caption-hint">Click to edit · Click away to save</span>
-                    <button class="pb-caption-regen" onclick="pbRegenCaption()">Regenerate</button>
                   </div>
                 </div>
                 <div class="pb-canvas-exit-row">
@@ -5577,7 +5576,6 @@ body.studio-open .app-header { display: none; }
                   <div class="pb-caption-variants" id="pbReelCaptionVariants"></div>
                   <div class="pb-caption-footer">
                     <span class="pb-caption-hint">Click to edit · Click away to save</span>
-                    <button class="pb-caption-regen" onclick="pbRegenCaption()">Regenerate</button>
                   </div>
                 </div>
                 <!-- Title card: short text hook for editorial use in DaVinci -->
@@ -7057,7 +7055,7 @@ function _pbRenderQuotePool(sec, dayKey) {
     if (isExported) html += '<span class="pb-quote-card__exported">&#10003;</span>';
     html += '<button class="pb-quote-card__star' + (isStarred ? ' starred' : '') + '" ' +
       'onclick=\'pbToggleCardStar(' + JSON.stringify(c.asset_id) + ',this,event)\' title="Star">&#9733;</button>';
-    var captionText = (typeof c.caption_draft === 'string' && c.caption_draft.trim() !== '[]') ? c.caption_draft.trim() : '';
+    var captionText = (typeof c.caption_host === 'string' && c.caption_host.trim() !== '[]') ? c.caption_host.trim() : '';
     html += '<div class="pb-quote-card__header">' + esc(c.display_text || c.quote_text || c.preview_text || '') + '</div>';
     if (captionText) {
       html += '<div class="pb-quote-card__sep"></div>';
@@ -7107,16 +7105,6 @@ function _makeStubThumb(text, idx, isReel) {
     return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   }
   // Image-type branch removed (pare-down May 2026 — quote pool uses text cards, not stub thumbnails)
-}
-
-// Defensive parse: Caption_Draft may be JSON-stringified array (pre-midnight-pass Gemini output).
-function _parseCaptionDraft(raw) {
-  var s = String(raw || '');
-  try {
-    var p = JSON.parse(s);
-    if (Array.isArray(p) && p.length > 0) return String(p[0]);
-  } catch (e) {}
-  return s;
 }
 
 // ── RANKED CANDIDATES ────────────────────────────────────────────────────────
@@ -7178,7 +7166,7 @@ function getRankedCandidates(episodeUid, assetType, slotWhy) {
         tags: [TAGS[i % TAGS.length], TAGS[(i + 2) % TAGS.length]],
         thumb_url: _makeStubThumb(QUOTES[i], i, false),
         preview_text: QUOTES[i],
-        caption_draft: 'This week on Don\'t Waste Your Pain — ' + QUOTES[i].slice(0, 55) + '… #DWYP #podcast',
+        caption_host: 'This week on Don\'t Waste Your Pain — ' + QUOTES[i].slice(0, 55) + '… #DWYP #podcast',
         background_id: STUB_BGS[i % STUB_BGS.length],
         canvas_state: null
       });
@@ -7214,8 +7202,8 @@ function getRankedCandidates(episodeUid, assetType, slotWhy) {
           preview_text: preview,
           display_text: null,
           title_card: r.Quote_Text || r.Display_Name || '',
-          caption_draft: _parseCaptionDraft(r.Caption_Draft || ''),
-          caption_final: r.Caption_Final || '',
+          caption_host:  String(r.Caption_Host  || ''),
+          caption_guest: r.Caption_Guest || '',
           background_id: null,
           canvas_state: null,
           _driveFileId: r.Drive_File_ID || ''
@@ -7231,7 +7219,7 @@ function getRankedCandidates(episodeUid, assetType, slotWhy) {
           thumb_url: _makeStubThumb(REEL_PREVIEWS[j] || 'Reel clip', j, true),
           preview_text: REEL_PREVIEWS[j] || 'Reel clip',
           title_card: REEL_PREVIEWS[j] ? REEL_PREVIEWS[j].split(' ').slice(0, 7).join(' ') : 'Reel clip',
-          caption_draft: '',
+          caption_host: '',
           background_id: null,
           canvas_state: null,
           _driveFileId: ''
@@ -7257,7 +7245,7 @@ function getRankedCandidates(episodeUid, assetType, slotWhy) {
         tags: [TAGS[k % TAGS.length]],
         thumb_url: _makeStubThumb(guest + ' — ' + (THUMB_TITLES[k] || 'Option ' + (k + 1)), k, false),
         preview_text: guest + ' — "' + (THUMB_TITLES[k] || 'Option ' + (k + 1)) + '"',
-        caption_draft: '',
+        caption_host: '',
         background_id: STUB_BGS[k % STUB_BGS.length],
         canvas_state: null
       });
@@ -7272,7 +7260,7 @@ function getRankedCandidates(episodeUid, assetType, slotWhy) {
         tags: [],
         thumb_url: '',
         preview_text: 'Option ' + (m + 1),
-        caption_draft: '',
+        caption_host: '',
         background_id: null,
         canvas_state: null
       });
@@ -7483,7 +7471,7 @@ function pbRenderDayStack(dayKey) {
           ' placeholder="Caption for this reel…" rows="7"' +
           ' onclick="event.stopPropagation()"' +
           ' oninput=\'pbCardCaptionInput(' + JSON.stringify(c.asset_id) + ',this)\'>' +
-          esc(c.caption_final || c.caption_draft || '') + '</textarea>';
+          esc(c.caption_host || '') + '</textarea>';
         html += '</div>';
 
         html += '<div>';
@@ -7772,13 +7760,14 @@ function _pbHydrateCardCanvas() {
   pbUpdateUnschedBtn();
   if (!c || !pb.canvas) return;
 
+  var imgBtn = document.getElementById('pbScheduleBtn');
+  if (imgBtn) imgBtn.disabled = false;
+
   var slotId = pb.activeSlotId;
 
   // Caption: AL row is source of truth on every open — overwrites localStorage.
-  // Caption_Final preferred; Caption_Draft fallback.
-  var _alCaption = (c.caption_final && c.caption_final !== '')
-    ? c.caption_final
-    : _parseCaptionDraft(c.caption_draft || '');
+  // Caption_Host is sole source of truth; keep '[]' guard for transitional JSON-array rows.
+  var _alCaption = String(c.caption_host || '');
   if (_alCaption) {
     pb.caption = _alCaption;
     var capEl = document.getElementById('pbCaptionText');
@@ -7971,7 +7960,7 @@ function pbSaveCanvasNow() {
   if (serverCanvasJson) {
     google.script.run
       .withFailureHandler(function() {})
-      .saveAssetDraft(assetId, serverCanvasJson, caption, _displayText, caption);
+      .saveAssetDraft(assetId, serverCanvasJson, caption, _displayText, null);
   }
 }
 
@@ -8830,18 +8819,14 @@ function pbSelectReel(postId) {
       .getOrGenerateReelSummary(postId, pb.episodeUid);
   }
 
-  // Caption — prefer localStorage, then AL Caption_Draft variants, then raw Caption
+  // Caption — prefer localStorage, then Caption_Host (plain string; keep JSON guard for transitional rows)
   var storedReelCap = pbLsGet(pbLsKey('caption', pb.activeSlotId));
   if (storedReelCap) {
     pb.caption = storedReelCap;
     pb.captionVariants = [];
   } else if (asset.Caption) {
-    // Caption_Draft may be a JSON array of variants
-    var capVariants = [];
-    try { capVariants = JSON.parse(asset.Caption); } catch (e) { capVariants = [asset.Caption]; }
-    if (!Array.isArray(capVariants)) capVariants = [asset.Caption];
-    pb.caption = capVariants[0] || '';
-    pb.captionVariants = capVariants;
+    pb.caption = String(asset.Caption || '');
+    pb.captionVariants = [];
   } else {
     pb.caption = '';
     pb.captionVariants = [];
@@ -8931,14 +8916,9 @@ function pbUnlockReelName(tile, e) {
 // ── REELS SURFACE — Card list ─────────────────────────────────────────────────
 
 function pbReelCaption(reel) {
-  // Returns clean caption text for a reel card (parses JSON-array Caption_Draft)
+  // Returns clean caption text for a reel card; keep JSON guard for transitional rows
   if (!reel) return '';
-  if (reel.Caption_Final) return reel.Caption_Final;
-  var raw = reel.Caption_Draft || '';
-  if (raw && raw.charAt(0) === '[') {
-    try { var p = JSON.parse(raw); if (Array.isArray(p) && p.length) { var s = p[0]; return (s.length > 1 && s[0] === '"' && s[s.length-1] === '"') ? s.slice(1,-1) : s; } } catch(e) {}
-  }
-  return raw;
+  return String(reel.Caption_Host || '');
 }
 
 function pbReelSummaryClean(raw) {
@@ -8980,7 +8960,7 @@ function pbRenderReelCardList() {
                    : ((r.Display_Name && r.Display_Name !== 'undefined' && r.Display_Name !== '')
                       ? r.Display_Name : (r.Asset_Type || 'Reel'));
     var caption  = pbReelCaption(r);
-    var hasFinal = !!r.Caption_Final;
+    var hasFinal = !!r.Caption_Host;
     var summary  = pbReelSummaryClean(r.Reel_Summary);
     var status   = (r.Status || '').toLowerCase();
     var starred  = pbIsStarred(id);
@@ -9032,7 +9012,6 @@ function pbRenderReelCardList() {
             '<div class="pb-reel-content-box">' +
               '<div class="pb-reel-content-hdr">' +
                 '<span class="pb-reel-content-lbl">Caption</span>' +
-                '<button class="pb-reel-content-regen" onclick="pbGenerateCaption(\'' + esc(id) + '\',event)">Generate</button>' +
               '</div>' +
               '<div class="pb-reel-card-caption' + (hasFinal ? ' has-final' : '') + '"' +
                   ' id="pbRcCap-' + esc(id) + '"' +
@@ -9188,7 +9167,7 @@ function pbCardCaptionBlur(assetId, el) {
   var text = el.textContent.trim();
   // Update in-memory
   var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
-  if (reel) { reel.Caption_Final = text; el.classList.toggle('has-final', !!text); }
+  if (reel) { reel.Caption_Host = text; el.classList.toggle('has-final', !!text); }
   // Debounced write
   clearTimeout(_pbCaptionDebounce[assetId]);
   _pbCaptionDebounce[assetId] = setTimeout(function() {
@@ -9198,30 +9177,6 @@ function pbCardCaptionBlur(assetId, el) {
   }, 1500);
 }
 
-function pbGenerateCaption(assetId, e) {
-  if (e) e.stopPropagation();
-  var reel = pb.reelCards.find(function(r) { return r.Asset_ID === assetId; });
-  if (!reel) return;
-  var el = document.getElementById('pbRcCap-' + assetId);
-  if (el) { el.contentEditable = 'false'; el.textContent = 'Generating…'; el.classList.remove('has-final'); }
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.caption) {
-        if (el) { el.textContent = res.caption; }
-        reel.Caption_Draft = res.draft || res.caption;
-        reel.Caption_Final = '';
-        clearTimeout(_pbCaptionDebounce[assetId]);
-      } else {
-        if (el) el.textContent = pbReelCaption(reel);
-        showToast('Caption generation failed.');
-      }
-    })
-    .withFailureHandler(function() {
-      if (el) el.textContent = pbReelCaption(reel);
-      showToast('Caption generation failed.');
-    })
-    .generateReelCaption(assetId, pb.episodeUid);
-}
 
 function pbUnlockCardTc(assetId, e) {
   if (e) e.stopPropagation();
@@ -9675,44 +9630,6 @@ function pbCaptionBlur(el) {
   if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), pb.caption);
 }
 
-function pbRegenCaption() {
-  var isReel    = pb.activeSlotIsReel;
-  var capTextEl = document.getElementById(isReel ? 'pbReelCaptionText' : 'pbCaptionText');
-  if (!capTextEl) return;
-
-  var contentText = '';
-  if (!isReel && pb.canvas) {
-    pb.canvas.getObjects().forEach(function(o) {
-      if (o._isText && o.text) contentText = (contentText ? contentText + ' ' : '') + o.text;
-    });
-  } else if (isReel) {
-    pb.candidates.forEach(function(c) {
-      if (c.Post_ID === pb.selectedPostId) contentText = c.Display_Name || c.Post_ID || '';
-    });
-    if (pb.reelSummary) contentText += '\n\nClip summary: ' + pb.reelSummary;
-  }
-
-  var origText = capTextEl.textContent;
-  capTextEl.setAttribute('contenteditable', 'false');
-  capTextEl.textContent = 'Generating…';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.success && res.text) {
-        capTextEl.textContent = res.text.trim();
-        pb.caption = res.text.trim();
-        if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), pb.caption);
-      } else {
-        capTextEl.textContent = origText;
-        showToast('Caption generation failed.');
-      }
-    })
-    .withFailureHandler(function() {
-      capTextEl.textContent = origText;
-      showToast('Caption generation error.');
-    })
-    .generatePublishCaption(pb.episodeUid, pb.activeSlotPlatform || '', contentText);
-}
 
 // ── PUBLISH V3 — Canvas ──────────────────────────────────────────────────────
 
@@ -9846,6 +9763,8 @@ function pbDisposeCanvas() {
     pb.canvas.dispose();
     pb.canvas = null;
   }
+  var imgBtn = document.getElementById('pbScheduleBtn');
+  if (imgBtn) imgBtn.disabled = true;
 }
 
 function pbSaveCanvasState() {
@@ -10493,44 +10412,44 @@ function pbRenderHqPanel() {
   var usedTexts = {};
   Object.keys(pb.slotContent).forEach(function(sid) { usedTexts[pb.slotContent[sid]] = sid; });
 
-  function hqItemHtml(text, assetId, captionDraft) {
+  function hqItemHtml(text, assetId, captionHost) {
     var slotId  = usedTexts[text];
     var used    = !!slotId;
     var cls     = 'pb-hq-item' + (used ? ' used' : '');
     var badge   = used ? '<span class="pb-hq-used-badge">' + esc(slotId.replace(/^.*?-([^-]+)$/, '$1')) + '</span>' : '';
     var safeTxt = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     var safeId  = assetId ? String(assetId).replace(/"/g,'&quot;') : '';
-    var safeCap = captionDraft ? captionDraft.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
-    return '<div class="' + cls + '" data-hq-text="' + safeTxt + '" data-asset-id="' + safeId + '" data-caption-draft="' + safeCap + '">' + esc(text) + badge + '</div>';
+    var safeCap = captionHost ? captionHost.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
+    return '<div class="' + cls + '" data-hq-text="' + safeTxt + '" data-asset-id="' + safeId + '" data-caption-host="' + safeCap + '">' + esc(text) + badge + '</div>';
   }
 
   var html = '';
   if (hooks.length) {
     html += '<div class="pb-hq-section">Hooks</div>';
     hooks.forEach(function(h) {
-      var text         = (typeof h === 'string') ? h : (h.text || h.hook || String(h));
-      var assetId      = (typeof h === 'object' && h.assetId)      ? h.assetId      : null;
-      var captionDraft = (typeof h === 'object' && h.captionDraft) ? h.captionDraft : null;
-      html += hqItemHtml(text, assetId, captionDraft);
+      var text        = (typeof h === 'string') ? h : (h.text || h.hook || String(h));
+      var assetId     = (typeof h === 'object' && h.assetId)     ? h.assetId     : null;
+      var captionHost = (typeof h === 'object' && h.captionHost) ? h.captionHost : null;
+      html += hqItemHtml(text, assetId, captionHost);
     });
   }
   if (quotes.length) {
     html += '<div class="pb-hq-section">Quotes</div>';
     quotes.forEach(function(q) {
-      var text         = (typeof q === 'string') ? q : (q.text || q.quote || String(q));
-      var assetId      = (typeof q === 'object' && q.assetId)      ? q.assetId      : null;
-      var captionDraft = (typeof q === 'object' && q.captionDraft) ? q.captionDraft : null;
-      html += hqItemHtml(text, assetId, captionDraft);
+      var text        = (typeof q === 'string') ? q : (q.text || q.quote || String(q));
+      var assetId     = (typeof q === 'object' && q.assetId)     ? q.assetId     : null;
+      var captionHost = (typeof q === 'object' && q.captionHost) ? q.captionHost : null;
+      html += hqItemHtml(text, assetId, captionHost);
     });
   }
   panel.innerHTML = html;
 
   // Attach click handlers via JS — avoids HTML attribute quoting bugs
   panel.querySelectorAll('.pb-hq-item[data-hq-text]').forEach(function(el) {
-    var text         = el.getAttribute('data-hq-text');
-    var assetId      = el.getAttribute('data-asset-id')    || null;
-    var captionDraft = el.getAttribute('data-caption-draft') || null;
-    el.addEventListener('click', function() { pbDropText(text, assetId, captionDraft); });
+    var text        = el.getAttribute('data-hq-text');
+    var assetId     = el.getAttribute('data-asset-id')   || null;
+    var captionHost = el.getAttribute('data-caption-host') || null;
+    el.addEventListener('click', function() { pbDropText(text, assetId, captionHost); });
   });
 }
 
@@ -10560,34 +10479,27 @@ function pbUseSuggestion(text) {
   if (el) el.value = text;
 }
 
-function pbDropText(text, assetId, captionDraft) {
+function pbDropText(text, assetId, captionHost) {
   pb.activeAssetId = assetId || null;
   var attribution = pb.guestName ? '— ' + pb.guestName : null;
   pbAddTextToCanvas(text, attribution);
   if (pb.activeSlotId) {
     pb.slotContent[pb.activeSlotId] = text;
     pbMarkHqUsed();
-    if (!pb.activeSlotIsReel) {
-      if (captionDraft) {
-        pbSetCaptionFromDraft(captionDraft, false);
-      } else {
-        pbRegenCaption();
-      }
+    if (!pb.activeSlotIsReel && captionHost) {
+      pbSetCaptionFromDraft(captionHost, false);
     }
   }
 }
 
-function pbSetCaptionFromDraft(captionJson, isReel) {
+function pbSetCaptionFromDraft(captionHost, isReel) {
   var capTextEl = document.getElementById(isReel ? 'pbReelCaptionText' : 'pbCaptionText');
   if (!capTextEl) return;
-  var variants = [];
-  try { variants = JSON.parse(captionJson); } catch (e) { variants = [captionJson]; }
-  if (!Array.isArray(variants) || !variants.length) { variants = [captionJson]; }
-  var primary = variants[0] || '';
-  capTextEl.textContent = primary;
-  pb.caption = primary;
-  if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), primary);
-  pb.captionVariants = variants;
+  var text = String(captionHost || '');
+  capTextEl.textContent = text;
+  pb.caption = text;
+  if (pb.activeSlotId) pbLsSet(pbLsKey('caption', pb.activeSlotId), text);
+  pb.captionVariants = [];
   pbRenderCaptionVariants(isReel);
 }
 
@@ -10678,7 +10590,6 @@ function stSaveAndReturn() {
 }
 
 function pbAddToSlot() {
-  return; // Scheduling disabled — troubleshooting in progress
   if (!pb.activeSlotId || !pb.episodeUid) return;
   var isReel = pb.activeSlotIsReel;
 

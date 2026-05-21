@@ -194,7 +194,7 @@ Both run simultaneously. They converge at Phase 3.
 
 ### 4.1 Confirm Asset_Library Schema (Publish Companion prerequisite)
 - **Owner:** Audra
-- **Done:** Reference v2.8 reviewed. `chat_history` column either present (note its position) or added as column 19. Reference v2.9 published if added.
+- **Done:** `chat_history` column confirmed present in Asset_Library schema (note column position) or added and schema updated in Platform Reference.
 - **Surface back:** N/A.
 
 ### 4.2 Playbook Strategic Content (Publish Companion prerequisite)

@@ -20,7 +20,7 @@ function test_checkCalendarForInterviews() {
 
 
 function test_vertShowNotes() {
-  const TEST_EP_UID = "EP-260428-1928"; // Carrie Sipe — replace with active UID if needed
+  const TEST_EP_UID = "EP-260504-0736"; // Dr. Meenakshi Aggarwal — replace with active UID if needed
   console.log("[test_vertShowNotes] START — " + TEST_EP_UID);
   runVertFairy(TEST_EP_UID);
   console.log("[test_vertShowNotes] END");
@@ -32,10 +32,67 @@ function test_vertShowNotes() {
  * Usage: test_buildEpisodeIndexV2('EP-260430-1427', { force: true })
  */
 function test_buildEpisodeIndexV2(epUid, opts) {
-  opts = opts || {};
+  epUid = epUid || 'EP-260504-0736'; // Dr. Meenakshi Aggarwal — replace with active UID if needed
+  opts  = opts  || { force: true };
   const result = buildEpisodeIndexV2(epUid, opts);
   Logger.log(JSON.stringify(result, null, 2));
   return result;
+}
+
+
+function test_extractPromptDiagnostic() {
+  const templateId = getGovernance("MASTER_TEMPLATE_ID");
+  const body = DocumentApp.openById(templateId).getBody();
+  const text = body.getText();
+
+  // Search for "Host Voice" anywhere, case-insensitive
+  const idx = text.toLowerCase().indexOf("host voice");
+  if (idx === -1) {
+    Logger.log("[diag] 'host voice' not found anywhere in template text");
+    return;
+  }
+
+  // Log the 30 chars before and after to see exactly what surrounds it
+  const snippet = text.slice(Math.max(0, idx - 30), idx + 40);
+  Logger.log("[diag] Found 'host voice' at index " + idx);
+  Logger.log("[diag] Snippet: " + JSON.stringify(snippet));
+
+  // Log char codes of the characters just before the phrase
+  const before = text.slice(Math.max(0, idx - 5), idx);
+  Logger.log("[diag] Char codes before 'host voice': " +
+    before.split("").map(function(c) { return c.charCodeAt(0); }).join(", "));
+
+  // Also check what extractPrompt's line-split sees for this line
+  const lines = text.split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].toLowerCase().indexOf("host voice") !== -1) {
+      var line = lines[i];
+      Logger.log("[diag] Line " + i + ": " + JSON.stringify(line));
+      Logger.log("[diag] line.trim(): " + JSON.stringify(line.trim()));
+      Logger.log("[diag] isHeading: " + /^#+\s/.test(line.trim()));
+      Logger.log("[diag] lineText: " + JSON.stringify(line.replace(/^#+\s*/, "").trim().toLowerCase()));
+      break;
+    }
+  }
+}
+
+
+function test_extractPromptSmokeTest() {
+  const keys = [
+    "# Host Voice",
+    "# Caption Mechanics",
+    "# Show Philosophy",
+    "# Pillars",
+    "# Peer Shows"
+  ];
+  let allPassed = true;
+  keys.forEach(function(key) {
+    const result = extractPrompt(key);
+    const status = result ? "OK (" + result.length + " chars)" : "EMPTY — key not matched";
+    Logger.log("[smoke] " + key + " → " + status);
+    if (!result) allPassed = false;
+  });
+  Logger.log("[smoke] Result: " + (allPassed ? "ALL PASS" : "FAILURES — check keys above"));
 }
 
 
@@ -57,48 +114,6 @@ function test_exportSlidesToPng() {
 // test_syncCorpusFolder disabled — syncCorpusFolder is commented out (corpus sync blocked in us-south1)
 // function test_syncCorpusFolder() { ... }
 
-
-function test_enrichQuoteAssets() {
-  const EP_UID = "EP-260428-1928"; // Carrie Sipe — replace with target episode UID
-  console.log("[test_enrichQuoteAssets] START — " + EP_UID);
-  var result = enrichQuoteAssetsFromTranscript(EP_UID);
-  console.log("[test_enrichQuoteAssets] RESULT:", JSON.stringify(result));
-}
-
-
-function test_enrichReels() {
-  const EP_UID = "EP-260428-1928"; // Carrie Sipe — replace with target episode UID
-  console.log("[test_enrichReels] START — " + EP_UID);
-  var result = enrichReelsForEpisode(EP_UID);
-  console.log("[test_enrichReels] RESULT:", JSON.stringify(result));
-}
-
-
-// Fill in episode UIDs below, then run. Re-run until all show created:0 / backfilled:0.
-// Each transcript takes ~15s — 5-6 episodes fit comfortably in one run.
-function test_batchEnrichTranscripts() {
-  var EPISODE_UIDS = [
-    "EP-260428-1928", // Carrie Sipe
-    "EP-260430-1427", // David Bedrick
-    "EP-260504-0736", // Dr Meenakshi Aggarwal
-    "EP-260430-1458", // Mai Vo
-    "EP-260430-1505", // Dr. Buck Blodgett
-    "EP-260501-1953", // Becky Yee
-    "EP-260501-1955", // Kyla Mitsunaga
-    "EP-260501-1957", // Elizabeth Husserl
-    "EP-260501-1959", // Adam Meyer
-    "EP-260501-2001", // Marta Kagan
-    "EP-260501-2003", // Derek Peterson
-  ];
-  for (var i = 0; i < EPISODE_UIDS.length; i++) {
-    var uid = EPISODE_UIDS[i];
-    console.log("[batchEnrichTranscripts] (" + (i + 1) + "/" + EPISODE_UIDS.length + ") " + uid);
-    var result = enrichQuoteAssetsFromTranscript(uid);
-    console.log("[batchEnrichTranscripts] RESULT:", JSON.stringify(result));
-    if (i < EPISODE_UIDS.length - 1) Utilities.sleep(5000); // breathe between episodes
-  }
-  console.log("[batchEnrichTranscripts] DONE");
-}
 
 
 // =============================================================================
@@ -406,91 +421,6 @@ function _addDisplayTextHeader_(sheetId) {
   console.log("[_addDisplayTextHeader_] Display_Text header written to col " + col + " of " + alName + " in sheet " + sheetId + ".");
 }
 
-
-// For rows where Caption_Final is empty and Caption_Draft is populated, back-fills
-// Caption_Final with the first Caption_Draft variant. Logs each row to Audit_Trail.
-// Run migrate_captionFinalBackfill() for production, migrate_captionFinalBackfill_staging() for staging.
-// Both bypass getMasterSheetId() — see note on setup_versionsTab() above.
-
-function migrate_captionFinalBackfill() {
-  var productionId = PropertiesService.getScriptProperties().getProperty('MASTER_SHEET_ID');
-  if (!productionId) throw new Error("migrate_captionFinalBackfill: MASTER_SHEET_ID not set in Script Properties.");
-  _runCaptionFinalBackfill_(productionId);
-}
-
-function migrate_captionFinalBackfill_staging() {
-  var stagingId = getGovernance("STAGING_SHEET_ID");
-  if (!stagingId) throw new Error("migrate_captionFinalBackfill_staging: STAGING_SHEET_ID not found in Governance_Config.");
-  _runCaptionFinalBackfill_(stagingId);
-}
-
-function _runCaptionFinalBackfill_(sheetId) {
-  var ss     = SpreadsheetApp.openById(sheetId);
-  var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
-  var sheet  = ss.getSheetByName(alName);
-  if (!sheet) throw new Error("_runCaptionFinalBackfill_: " + alName + " not found in sheet " + sheetId);
-
-  var data       = sheet.getDataRange().getValues();
-  var backfilled = 0;
-  var skipped    = 0;
-
-  for (var i = 1; i < data.length; i++) {
-    var assetId      = String(data[i][ASSET_LIBRARY_COLS.Asset_ID      - 1] || '');
-    var captionDraft = String(data[i][ASSET_LIBRARY_COLS.Caption_Draft - 1] || '');
-    var captionFinal = String(data[i][ASSET_LIBRARY_COLS.Caption_Final - 1] || '');
-
-    if (!assetId || captionFinal !== '' || !captionDraft) { skipped++; continue; }
-
-    var firstVariant = _parseCaptionDraft_(captionDraft);
-    if (!firstVariant) { skipped++; continue; }
-
-    sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Caption_Final).setValue(firstVariant);
-    logToAuditTrail(
-      'migrate_captionFinalBackfill',
-      'schema_migration_caption_final_backfill',
-      String(data[i][ASSET_LIBRARY_COLS.Episode_UID - 1] || ''),
-      '',
-      'asset_id=' + assetId + ' — Caption_Final backfilled from Caption_Draft first variant.',
-      'INFO'
-    );
-    backfilled++;
-  }
-
-  if (backfilled > 0) bumpVersion('asset_library', 'migrate_captionFinalBackfill');
-  console.log("[_runCaptionFinalBackfill_] Done. Backfilled: " + backfilled + ". Skipped: " + skipped + ".");
-}
-
-
-// =============================================================================
-// Reels take 45-90s each — runs stop cleanly at 4.5 min and resume from where they left off.
-// Re-run until result shows timedOut:false.
-function test_batchEnrichReels() {
-  var EPISODE_UIDS = [
-    "EP-260428-1928", // Carrie Sipe
-    "EP-260430-1427", // David Bedrick
-    "EP-260504-0736", // Dr Meenakshi Aggarwal
-    "EP-260430-1458", // Mai Vo
-    "EP-260430-1505", // Dr. Buck Blodgett
-    "EP-260501-1953", // Becky Yee
-    "EP-260501-1955", // Kyla Mitsunaga
-    "EP-260501-1957", // Elizabeth Husserl
-    "EP-260501-1959", // Adam Meyer
-    "EP-260501-2001", // Marta Kagan
-    "EP-260501-2003", // Derek Peterson
-  ];
-  for (var i = 0; i < EPISODE_UIDS.length; i++) {
-    var uid = EPISODE_UIDS[i];
-    console.log("[batchEnrichReels] (" + (i + 1) + "/" + EPISODE_UIDS.length + ") " + uid);
-    var result = enrichReelsForEpisode(uid);
-    console.log("[batchEnrichReels] RESULT:", JSON.stringify(result));
-    if (result.timedOut) {
-      console.log("[batchEnrichReels] Timed out mid-episode — re-run to continue.");
-      break;
-    }
-    if (i < EPISODE_UIDS.length - 1) Utilities.sleep(5000);
-  }
-  console.log("[batchEnrichReels] DONE");
-}
 
 
 // =============================================================================

@@ -17,14 +17,14 @@
   --red-light:  #f5e6e6;
   --gold:       #FAB016;
   --gold-deep:  #B87200;
-  --gold-light: #fef6e4;
-  --bg:         #F7F5F2;
+  --gold-light: #EDF3FB;
+  --bg:         #F4F6FA;
   --surface:    #FFFFFF;
-  --surface-2:  #F2EFEB;
-  --border:     #E8E3DC;
+  --surface-2:  #EBEEF5;
+  --border:     #D8DDE8;
   --text:       #1A1714;
-  --text-2:     #6B6460;
-  --text-3:     #A09890;
+  --text-2:     #5D6470;
+  --text-3:     #909AAA;
   --radius:     12px;
   --radius-sm:  8px;
   --shadow:     0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
@@ -1479,6 +1479,21 @@ body.workshop-open .bottom-nav { display: none; }
 .iw-color-dot.active { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2); transform: scale(1.1); }
 .iw-color-dot[data-color="#0D0A0A"] { border-color: #999; }
 .iw-color-dot[data-color="#FFFFFF"] { border-color: #CCC; }
+.iw-color-dot[data-color="#CBCBD4"] { border-color: #AAA; }
+.st-color-pick-wrap { position: relative; display: flex; align-items: center; }
+.st-color-cur {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+  cursor: pointer; padding: 0; flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18); transition: border-color 0.15s;
+}
+.st-color-cur:hover { border-color: var(--text-2); }
+.st-color-popover {
+  position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; z-index: 200; box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+  flex-direction: column; gap: 6px;
+}
+.st-color-row { display: flex; gap: 6px; }
 .iw-tool-btn {
   padding: 8px 14px;
   font-size: 13px;
@@ -1868,7 +1883,7 @@ body.workshop-open .bottom-nav { display: none; }
 .iw-prompt-send:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Generated thumbnail strip */
-.iw-gen-scroll { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.iw-gen-scroll { flex: 1; overflow-y: auto; padding: 6px 0; display: flex; flex-direction: column; gap: 8px; }
 .iw-gen-thumb {
   position: relative;
   width: 100%;
@@ -2580,7 +2595,7 @@ body.studio-open .app-header { display: none; }
 /* Mode column */
 .st-mode-col {
   width: 148px; flex-shrink: 0;
-  background: var(--surface); border-right: 1px solid var(--border);
+  background: #111; border-right: 1px solid rgba(255,255,255,0.08);
   display: flex; flex-direction: column; overflow: hidden;
   transition: width 0.2s ease;
 }
@@ -2628,6 +2643,63 @@ body.studio-open .app-header { display: none; }
 .st-mode-col.collapsed .st-mode-btn { justify-content: center; padding: 9px 0; gap: 0; }
 .st-mode-col.collapsed .st-mode-icon { width: 18px; height: 18px; }
 
+/* ── Rail accordion ────────────────────────────────────────── */
+.st-rail-accordion { display: flex; flex-direction: column; flex: 1; overflow-y: auto; padding: 6px 0; }
+.st-acc-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 12px; cursor: pointer; user-select: none;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(255,255,255,0.38); transition: color 0.15s;
+}
+.st-acc-hdr:hover { color: rgba(255,255,255,0.55); }
+.st-acc-hdr.open {
+  background: linear-gradient(135deg, var(--red), var(--gold));
+  color: rgba(255,255,255,0.95); border-radius: 4px; margin: 1px 6px;
+}
+.st-acc-caret { font-size: 10px; transition: transform 0.18s; display: inline-block; }
+.st-acc-hdr.open .st-acc-caret { transform: rotate(90deg); }
+.st-acc-body { display: none; }
+.st-acc-body.open { display: flex; flex-direction: column; }
+.st-acc-item {
+  padding: 6px 14px 6px 18px; font-size: 11px; color: rgba(255,255,255,0.55);
+  cursor: pointer; border-radius: var(--radius-sm); transition: background 0.12s, color 0.12s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-acc-item:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.85); }
+.st-acc-item.active { background: rgba(255,255,255,0.08); color: var(--gold); }
+.st-acc-stub { padding: 6px 14px 6px 18px; font-size: 11px; color: rgba(255,255,255,0.22); font-style: italic; }
+
+/* ── Images | Reels mode segmented toggle (in chat col) ────── */
+.st-seg-row {
+  display: flex; gap: 3px; padding: 8px 10px 6px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border); background: transparent;
+}
+.st-seg-btn {
+  flex: 1; padding: 5px 0; font-size: 11px; font-weight: 700;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-3);
+  cursor: pointer; transition: all 0.12s; text-align: center;
+}
+.st-seg-btn:hover { color: var(--text); border-color: var(--text-2); }
+.st-seg-btn.active { background: var(--gold); border-color: var(--gold); color: #0D0A0A; }
+
+/* ── H&Q collapsible tray (in chat col) ─────────────────────── */
+.st-hq-tray { display: flex; flex-direction: column; flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.st-hq-tray-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px; cursor: pointer; user-select: none;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(255,255,255,0.38); transition: color 0.15s; flex-shrink: 0;
+}
+.st-hq-tray-hdr:hover { color: rgba(255,255,255,0.65); }
+.st-hq-tray-caret { font-size: 10px; transition: transform 0.18s; }
+.st-hq-tray.open .st-hq-tray-caret { transform: rotate(90deg); }
+.st-hq-panel {
+  flex: 1; overflow-y: auto; max-height: none;
+  display: flex; flex-direction: column;
+}
+.st-hq-tray:not(.open) .st-hq-panel { display: none; }
+
 /* How-to accordion */
 .st-howto {
   border-top: 1px solid var(--border); flex-shrink: 0; overflow: hidden;
@@ -2668,6 +2740,57 @@ body.studio-open .app-header { display: none; }
   background: var(--surface); border-right: 1px solid var(--border);
   display: flex; flex-direction: column; overflow: hidden;
 }
+/* Brand gradient header — top of companion column in Design */
+.st-chat-brand-hdr {
+  flex-shrink: 0; height: 36px; display: flex; align-items: center; padding: 0 14px;
+  background: linear-gradient(120deg, #D12026 0%, #d4652a 50%, #FEBE18 100%);
+}
+.st-chat-brand-lbl {
+  font-family: var(--font-display); font-style: italic; font-size: 13px;
+  color: #fff; letter-spacing: 0.01em;
+}
+/* Caption region — top half of companion (resizable via draggable divider) */
+.st-caption-wrap {
+  flex: 0 0 40%; overflow: hidden; padding: 8px 12px 6px;
+  display: flex; flex-direction: column; min-height: 60px;
+}
+.st-caption-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: .08em;
+  color: var(--text-3); text-transform: uppercase; margin-bottom: 4px;
+}
+.st-caption-field {
+  font-size: 12px; color: var(--text); line-height: 1.6;
+  flex: 1; overflow-y: auto; outline: none; caret-color: var(--gold);
+}
+.st-caption-field:empty::before {
+  content: attr(data-ph); color: var(--text-3);
+}
+/* Title Card — compact single-entry above Caption */
+.st-title-card-field {
+  font-size: 12px; color: var(--text); line-height: 1.5;
+  min-height: 28px; max-height: 60px; overflow-y: auto; outline: none;
+  caret-color: var(--gold); border-bottom: 1px solid var(--border); padding-bottom: 4px;
+}
+.st-title-card-field:empty::before {
+  content: attr(data-ph); color: var(--text-3);
+}
+/* Reels-mode companion fields */
+.st-reels-fields {
+  flex-shrink: 0; padding: 8px 12px 6px;
+  border-bottom: 1px solid var(--border);
+}
+/* Reel card enhancements */
+.st-reel-card-thumb {
+  width: 100%; aspect-ratio: 9/16; object-fit: cover;
+  border-radius: 4px; margin-bottom: 6px; display: block;
+}
+.st-reel-card-summary {
+  font-size: 10px; color: rgba(255,255,255,0.4); line-height: 1.4; margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* Chat hist — light column */
+.st-chat-hist { color: var(--text); }
+.st-chat-hist:empty::after { color: var(--text-3); }
 .st-chat-header {
   display: flex; align-items: center;
   padding: 0 14px; height: 40px;
@@ -2803,14 +2926,16 @@ body.studio-open .app-header { display: none; }
 }
 .st-chat-input-wrap {
   padding: 9px 10px 20px; border-top: 1px solid var(--border);
-  display: flex; gap: 6px; align-items: flex-end; flex-shrink: 0; background: var(--surface);
+  display: flex; gap: 6px; align-items: flex-end; flex-shrink: 0; background: transparent;
 }
 .st-chat-input {
   flex: 1; background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 7px 10px;
   font-family: var(--font-body); font-size: 14px; color: var(--text);
   resize: none; outline: none; min-height: 56px; max-height: 240px; overflow-y: auto;
+  caret-color: var(--gold);
 }
+.st-chat-input::placeholder { color: var(--text-3); }
 .st-chat-input:focus { border-color: var(--gold); }
 .st-send-btn {
   background: var(--red); border: none; border-radius: var(--radius-sm);
@@ -4164,6 +4289,161 @@ body.studio-open .app-header { display: none; }
 .pb-hq-manual-btn:hover { opacity: 0.85; }
 .pb-hq-empty { font-size: 11px; color: var(--text-3); padding: 12px 10px; line-height: 1.5; }
 
+/* ── DESIGN TAB — subheader tabs (Quote Graphics / Reels) ───── */
+.st-design-subhdr {
+  display: flex; gap: 1px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2); flex-shrink: 0;
+}
+.st-sub-tab {
+  flex: 1; padding: 8px 0; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3);
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.st-sub-tab:hover { color: var(--text); }
+.st-sub-tab.active { color: var(--text); background: var(--surface); border-bottom-color: var(--gold); }
+
+/* ── DESIGN TAB — export row (day picker + Export button) ───── */
+.st-design-export-row {
+  display: flex; align-items: center; gap: 5px; padding: 6px 10px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface);
+}
+.st-day-pill {
+  padding: 3px 7px; font-size: 10px; font-weight: 700; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-3);
+  cursor: pointer; transition: all 0.12s;
+}
+.st-day-pill:hover { border-color: var(--gold); color: var(--text); }
+.st-day-pill.active { background: var(--gold); border-color: var(--gold); color: #0D0A0A; }
+.st-export-spacer { flex: 1; }
+
+/* ── DESIGN TAB — H&Q chips panel (right rail, light bg) ─────── */
+.st-hq-panel {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  border-top: 1px solid var(--border); min-height: 0; max-height: none;
+}
+.st-hq-section-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-3); padding: 10px 12px 5px; border-top: 1px solid var(--border);
+  margin-top: 4px; flex-shrink: 0;
+}
+.st-hq-section-lbl:first-child { border-top: none; margin-top: 0; }
+.st-hq-item {
+  font-size: 11px; color: var(--text); padding: 8px 12px 8px 14px; cursor: pointer;
+  border-radius: 3px; line-height: 1.5; transition: background 0.12s, color 0.12s;
+  border-left: 3px solid transparent;
+}
+.st-hq-item:hover { background: var(--surface-2); color: var(--text); }
+.st-hq-item.hook { border-left-color: var(--red); }
+.st-hq-item.quote { border-left-color: var(--gold); }
+
+/* H&Q rail pane */
+.st-hq-rail-pane { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+.st-hq-panel { flex: 1; overflow-y: auto; display: flex; flex-direction: column; max-height: none; }
+
+/* Backgrounds pane — single pool */
+#stBgPane { padding: 0; display: flex; flex-direction: column; }
+#stBgPane .iw-prompt-area { padding: 0 8px 4px; }
+.st-bg-pool { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; padding: 0 8px 8px; }
+.st-bg-actions {
+  display: flex; gap: 6px; padding: 8px; flex-shrink: 0;
+}
+.st-bg-action-btn {
+  flex: 1; padding: 6px 0; font-size: 11px; font-weight: 600; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); cursor: pointer; transition: all 0.12s; text-align: center;
+  font-family: var(--font-body);
+}
+.st-bg-action-btn:hover { background: var(--gold-light); border-color: var(--gold); color: var(--text); }
+/* Trashcan delete on bg thumbs */
+.iw-bg-delete { display: flex; align-items: center; justify-content: center; }
+
+/* Companion draggable divider */
+.st-companion-div {
+  height: 5px; flex-shrink: 0; background: var(--border);
+  cursor: row-resize; transition: background 0.15s; user-select: none;
+}
+.st-companion-div:hover, .st-companion-div.dragging { background: var(--gold); }
+
+/* Reel player area in center */
+.st-reel-player-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  background: #0D0A0A; overflow: hidden;
+}
+.st-reel-player-empty {
+  font-size: 12px; color: rgba(255,255,255,0.3); text-align: center; padding: 24px;
+}
+/* Phone-sized frame for reel preview */
+.st-reel-phone-frame {
+  width: 200px; aspect-ratio: 9/16; flex-shrink: 0;
+  border-radius: 14px; overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
+  background: #111;
+}
+
+/* ── Canvas snap guides ──────────────────────────────────────── */
+.st-canvas-area { position: relative; }
+.st-snap-guide { position: absolute; pointer-events: none; z-index: 10; background: rgba(52,152,219,0.7); }
+.st-snap-guide-v { top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-0.5px); }
+.st-snap-guide-h { left: 0; right: 0; top: 50%; height: 1px; transform: translateY(-0.5px); }
+
+/* ── Toolbar — format cycle button (gold, far right) ────────── */
+.st-format-cycle-btn {
+  padding: 6px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  font-family: var(--font-body); min-width: 72px; text-align: center;
+  background: var(--gold); color: #0D0A0A; border: none; border-radius: var(--radius-sm);
+  cursor: pointer; transition: opacity 0.15s;
+}
+.st-format-cycle-btn:hover { opacity: 0.85; }
+
+/* ── Toolbar — export button (red, far left) ─────────────────── */
+.st-export-btn-red {
+  padding: 6px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  font-family: var(--font-body); background: var(--red); color: #fff;
+  border: none; border-radius: var(--radius-sm); cursor: pointer; transition: opacity 0.15s;
+}
+.st-export-btn-red:hover { opacity: 0.85; }
+.st-export-btn-red:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Export wrap + day picker popover ───────────────────────── */
+.st-export-wrap { position: relative; }
+.st-day-picker {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 50;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.13);
+  display: flex; flex-wrap: wrap; gap: 4px; width: 210px;
+}
+.st-day-picker .st-day-pill {
+  flex: 1; min-width: 46px; padding: 6px 4px; font-size: 10px; font-weight: 700;
+  border-radius: 4px; cursor: pointer; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-2); transition: all 0.12s; text-align: center;
+  font-family: var(--font-body);
+}
+.st-day-picker .st-day-pill.active { background: var(--gold); color: #0D0A0A; border-color: var(--gold); }
+.st-day-picker .st-day-pill:hover:not(.active) { border-color: var(--gold); color: var(--gold); }
+
+/* ── Justify cycle button ────────────────────────────────────── */
+.st-justify-btn { display: flex; align-items: center; justify-content: center; }
+
+/* ── DESIGN TAB — Reels view ─────────────────────────────────── */
+.st-reel-view {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+}
+.st-reel-list {
+  flex: 1; overflow-y: auto; padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.st-reel-card {
+  background: var(--surface-2); border: 2px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 12px;
+  cursor: pointer; transition: border-color 0.12s;
+}
+.st-reel-card:hover { border-color: var(--gold-light); }
+.st-reel-card.active { border-color: var(--gold); background: var(--gold-light); }
+.st-reel-card-name { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 4px; line-height: 1.4; }
+.st-reel-card-caption { font-size: 11px; color: var(--text-3); line-height: 1.5; }
+.st-reel-empty { font-size: 11px; color: var(--text-3); padding: 24px 12px; text-align: center; line-height: 1.6; }
+
 /* ── PUBLISH V3 — Slot header strip ────────────────────────── */
 .pb-ws-slot-hdr { padding: 10px 14px 4px; flex-shrink: 0; }
 
@@ -5361,16 +5641,42 @@ body.studio-open .app-header { display: none; }
       </svg>
       <span class="v3-rail-wordmark">Studio</span>
     </div>
-    <!-- In Production episodes -->
-    <div class="v3-sec-label">In Production</div>
-    <div class="v3-ep-list" id="v3EpList"></div>
-    <!-- Divider -->
-    <div class="v3-divider"></div>
-    <!-- Loose tasks -->
-    <div class="v3-sec-label">Loose tasks</div>
-    <div class="v3-loose-list" id="v3LooseList"></div>
-    <!-- Spacer + user footer -->
-    <div class="v3-spacer"></div>
+    <!-- Accordion nav (Design / Write / Schedule / Tasks) -->
+    <div class="st-rail-accordion" id="stRailAccordion">
+
+      <!-- Design -->
+      <div class="st-acc-hdr open" id="stAccHdrDesign" onclick="stAccToggle('design')">
+        <span>Design</span><span class="st-acc-caret">›</span>
+      </div>
+      <div class="st-acc-body open" id="stAccBodyDesign">
+        <!-- populated by stRenderRailGuests() -->
+      </div>
+
+      <!-- Write -->
+      <div class="st-acc-hdr" id="stAccHdrWrite" onclick="stAccToggle('write')">
+        <span>Write</span><span class="st-acc-caret">›</span>
+      </div>
+      <div class="st-acc-body" id="stAccBodyWrite">
+        <div class="st-acc-item" id="stAccItemBrainstorm" onclick="stAccSelectMode('brainstorm')">Brainstorm</div>
+      </div>
+
+      <!-- Schedule (stub) -->
+      <div class="st-acc-hdr" id="stAccHdrSchedule" onclick="stAccToggle('schedule')">
+        <span>Schedule</span><span class="st-acc-caret">›</span>
+      </div>
+      <div class="st-acc-body" id="stAccBodySchedule">
+        <div class="st-acc-stub">Coming soon</div>
+      </div>
+
+      <!-- Tasks -->
+      <div class="st-acc-hdr" id="stAccHdrTasks" onclick="stAccToggle('tasks')">
+        <span>Tasks</span><span class="st-acc-caret">›</span>
+      </div>
+      <div class="st-acc-body" id="stAccBodyTasks">
+        <div class="st-acc-stub">Tasks coming soon</div>
+      </div>
+
+    </div>
     <div class="v3-foot" id="v3Foot">
       <button class="v3-avatar" id="v3AvatarBtn" onclick="toggleV3FootMenu()">
         <span id="v3AvatarInitials"></span>
@@ -5381,6 +5687,7 @@ body.studio-open .app-header { display: none; }
       </div>
       <div class="v3-foot-menu" id="v3FootMenu">
         <div class="v3-foot-menu-name" id="v3FootMenuName"></div>
+        <button class="v3-foot-menu-btn" onclick="stSwitchTab('design');toggleV3FootMenu()">Design</button>
         <button class="v3-foot-menu-btn" onclick="signOut()">Sign Out</button>
       </div>
     </div>
@@ -5730,59 +6037,28 @@ body.studio-open .app-header { display: none; }
   <!-- ── DESIGN / WRITE / IDEAS PANELS ── -->
   <div class="st-main" id="stStudioMain" style="display:none">
 
-    <!-- Mode column -->
-    <div class="st-mode-col" id="stModeCol">
-      <div class="st-mode-top">
-        <span class="st-mode-top-lbl">Mode</span>
-        <button class="st-mode-toggle" id="stModeToggle" onclick="stToggleModeCol()">‹</button>
-      </div>
-      <div class="st-mode-list">
-        <button class="st-mode-btn active" data-mode="images" onclick="stSelectMode(this,'images')">
-          <span class="st-mode-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="1.5"/><path d="M1 10.5 5 7l3.5 3 2-1.5 4.5 3.5"/><circle cx="10.5" cy="5.5" r="1" fill="currentColor" stroke="none"/></svg></span>
-          <span class="st-mode-lbl">Design</span>
-        </button>
-        <button class="st-mode-btn" data-mode="writer" onclick="stSelectMode(this,'writer')">
-          <span class="st-mode-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 1.5l3.5 3.5-8 8H3v-3.5l8-8z"/><path d="M10 2.5l3 3"/></svg></span>
-          <span class="st-mode-lbl">Write</span>
-        </button>
-        <button class="st-mode-btn" data-mode="outreach" onclick="stSelectMode(this,'outreach')">
-          <span class="st-mode-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M1.5 4.5l6.5 4.5 6.5-4.5"/></svg></span>
-          <span class="st-mode-lbl">Outreach</span>
-        </button>
-        <button class="st-mode-btn" data-mode="interview-prep" onclick="stSelectMode(this,'interview-prep')">
-          <span class="st-mode-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="1" width="5" height="7" rx="2.5"/><path d="M2.5 8a5.5 5.5 0 0010 0"/><line x1="8" y1="13.5" x2="8" y2="11"/><line x1="5.5" y1="14.5" x2="10.5" y2="14.5"/></svg></span>
-          <span class="st-mode-lbl">Interview Prep</span>
-        </button>
-        <button class="st-mode-btn" data-mode="brainstorm" onclick="stSelectMode(this,'brainstorm')">
-          <span class="st-mode-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5a4.5 4.5 0 014 7c0 1.2-.8 2.2-1 3H5c-.2-.8-1-1.8-1-3a4.5 4.5 0 014-7z"/><line x1="5.5" y1="11.5" x2="10.5" y2="11.5"/><line x1="6.5" y1="13.5" x2="9.5" y2="13.5"/></svg></span>
-          <span class="st-mode-lbl">Ideas</span>
-        </button>
-      </div>
-      <div class="st-howto">
-        <button class="st-howto-toggle" id="stHowToToggle" onclick="stToggleHowTo()">How To</button>
-        <div class="st-howto-body" id="stHowToBody">
-          <div class="st-howto-item"><strong>Design</strong>Pick a background, add your logo, drop a text block. Export when done.</div>
-          <div class="st-howto-item"><strong>Write</strong>Select an episode, describe what you need, copy the output to your doc.</div>
-          <div class="st-howto-item"><strong>Outreach</strong>Paste a guest name or describe the person — Studio writes a warm, specific pitch.</div>
-          <div class="st-howto-item"><strong>Interview Prep</strong>Give Studio the guest name and topic — it surfaces story angles and questions from the corpus.</div>
-          <div class="st-howto-item"><strong>Ideas</strong>Open-ended creative thinking. No wrong answers here.</div>
-        </div>
-      </div>
-    </div>
-
     <!-- Chat column -->
     <div class="st-chat-col" id="stChatCol">
-      <div class="st-chat-header">
-        <span class="st-chat-header-lbl">Studio Chat</span>
+      <!-- Images | Reels segmented toggle — shown only in Design mode -->
+      <div class="st-seg-row" id="stSegRow" style="display:none">
+        <button class="st-seg-btn active" id="stSegImages" onclick="stSetDesignTab('qg')">Images</button>
+        <button class="st-seg-btn" id="stSegReels" onclick="stSetDesignTab('reels')">Reels</button>
       </div>
-      <div class="st-ep-bar" id="stEpBar" onclick="stToggleEpDropdown()">
-        <div class="st-ep-bar-label">Guest <span class="st-ep-change-hint">— tap to change</span></div>
-        <div class="st-ep-bar-name">
-          <span id="stEpLabel">Select an episode</span>
-          <span class="st-ep-bar-caret">▾</span>
+      <!-- Caption region: pinned above chat, shown in Design mode -->
+      <div class="st-caption-wrap" id="stCaptionWrap" style="display:none">
+        <!-- Title Card: shown in Reels mode only, above Caption -->
+        <div id="stTitleCardWrap" style="display:none">
+          <div class="st-caption-lbl">Title Card</div>
+          <div class="st-title-card-field" id="stTitleCardField" contenteditable="true"
+               data-ph="Short hook for the title card…"></div>
+          <div style="height:8px"></div>
         </div>
-        <div class="st-ep-dropdown" id="stEpDropdown"></div>
+        <div class="st-caption-lbl" id="stCaptionLbl">Caption</div>
+        <div class="st-caption-field" id="stCaptionField" contenteditable="true"
+             data-ph="Type to enter your caption, or ask Claude to create some options for you."></div>
       </div>
+      <!-- Draggable divider between Caption region and Chat (shown in Design mode) -->
+      <div class="st-companion-div" id="stCompanionDiv" style="display:none"></div>
       <div class="st-chat-hist" id="stChatHist" data-ph="What do you need for this episode?"></div>
       <div class="st-chat-input-wrap">
         <textarea class="st-chat-input" id="stChatInput" rows="1" placeholder="Ask me anything about this episode…" onkeydown="stHandleKey(event)" oninput="stAutoResize(this)"></textarea>
@@ -5796,49 +6072,82 @@ body.studio-open .app-header { display: none; }
     <!-- Content column: canvas or doc -->
     <div class="st-content-col" id="stContentCol">
 
+      <!-- Design export row removed — Export moved into toolbar row 1 -->
+
       <!-- Canvas view (Images mode) -->
       <div class="st-canvas-view" id="stCanvasView">
 
-        <!-- Toolbar row 1: Export | View Images || Clear | Undo | Redo | Add Text -->
-        <div class="st-toolbar">
-          <button class="iw-export-btn" id="stExportBtn" onclick="stExport()">Export Image</button>
-          <a class="iw-view-btn" id="stDriveBtn" href="#" onclick="stOpenDrive();return false;">View Images</a>
-          <button class="iw-export-btn" id="stSaveReturnBtn" onclick="stSaveAndReturn()" style="display:none;background:var(--gold);color:#0D0A0A;">Save &amp; Return</button>
-          <span class="st-toolbar-sep"></span>
-          <button class="iw-tool-btn" onclick="stClearCanvas()">Clear</button>
-          <button class="iw-tool-btn" onclick="stUndo()" title="Undo" style="display:flex;align-items:center;justify-content:center;">
-            <svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M5 1L1 5l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M1 5h7a5 5 0 0 1 5 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <button class="iw-tool-btn" onclick="stRedo()" title="Redo" style="display:flex;align-items:center;justify-content:center;">
-            <svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M14 5H7a5 5 0 0 0-5 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <div class="iw-addtext-wrap" id="stAddTextWrap">
-            <div class="iw-tool-btn" id="stAddTextBtn" style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick="stShowTextTypePicker()">Add Text</div>
-            <div id="stTextTypePicker" class="iw-addtext-picker">
-              <div class="iw-text-type-btn" onclick="stAddText('headline')">Headline</div>
-              <div class="iw-text-type-btn" onclick="stAddText('normal')">Normal</div>
+        <!-- Toolbar row 1: Export (left/red) | Clear Undo Redo Add Text | Format (right/gold) -->
+        <div class="st-toolbar" style="justify-content:space-between">
+          <!-- Export wrap — far left, with day picker popover -->
+          <div class="st-export-wrap" id="stExportWrap">
+            <button class="st-export-btn-red" id="stExportBtn" onclick="stToggleDayPicker()">Export</button>
+            <div class="st-day-picker" id="stDayPicker" style="display:none">
+              <button class="st-day-pill" onclick="stPickDay(this,'MON')">Mon</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'TUE')">Tue</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'WED')">Wed</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'THU')">Thu</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'FRI')">Fri</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'SAT')">Sat</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'SUN')">Sun</button>
+              <button class="st-day-pill" onclick="stPickDay(this,'ANY')">Any</button>
             </div>
           </div>
+          <!-- Middle controls -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <a class="iw-view-btn" id="stDriveBtn" href="#" onclick="stOpenDrive();return false;">View Images</a>
+            <button class="iw-export-btn" id="stSaveReturnBtn" onclick="stSaveAndReturn()" style="display:none;background:var(--gold);color:#0D0A0A;">Save &amp; Return</button>
+            <span class="st-toolbar-sep"></span>
+            <button class="iw-tool-btn" onclick="stClearCanvas()">Clear</button>
+            <button class="iw-tool-btn" onclick="stUndo()" title="Undo" style="display:flex;align-items:center;justify-content:center;">
+              <svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 1L1 5l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M1 5h7a5 5 0 0 1 5 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button class="iw-tool-btn" onclick="stRedo()" title="Redo" style="display:flex;align-items:center;justify-content:center;">
+              <svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M10 1l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14 5H7a5 5 0 0 0-5 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div class="iw-addtext-wrap" id="stAddTextWrap">
+              <div class="iw-tool-btn" id="stAddTextBtn" style="display:flex;align-items:center;gap:4px;cursor:pointer" onclick="stShowTextTypePicker()">Add Text</div>
+              <div id="stTextTypePicker" class="iw-addtext-picker">
+                <div class="iw-text-type-btn" onclick="stAddText('headline')">Headline</div>
+                <div class="iw-text-type-btn" onclick="stAddText('normal')">Normal</div>
+              </div>
+            </div>
+          </div>
+          <!-- Format cycle button — far right, gold -->
+          <button id="stFormatCycleBtn" class="st-format-cycle-btn" onclick="stCycleFormat()">Vertical</button>
         </div>
 
         <!-- Toolbar row 2: Logo | Colors | Italic | Drop Shadow | Center | Overlay -->
         <div class="st-toolbar">
           <button id="stLogoBtn" class="iw-tool-btn st-logo-btn active" onclick="stToggleLogo()" title="Toggle logo"><svg width="46" height="21" viewBox="0 0 346.09 159.16" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="stBtnGrad" cx="39.45" cy="28.77" fx="39.45" fy="28.77" r="231.31" gradientUnits="userSpaceOnUse"><stop offset=".34" stop-color="#d12026"/><stop offset="1" stop-color="#faae17"/></radialGradient></defs><path fill="url(#stBtnGrad)" d="M330.51,34.67c-28.92-43.39-123.4-54.53-156.66,16.77-16.94,36.31-28.06,84.11-84,83.41-39.99-2.21-60.46-30.16-62.56-53.72-3.03-25.8,24.32-59.88,52.47-57.05,5.26.53,10.09,3.19,13.49,7.23,4.15,4.92,7.89,10.75,12.72,17.82,3.55,5.19,9.55,8.19,15.83,8.17,9.74.21,15.8.36,19.45-1.01,6.52,5.96,13.01,12.4,14.39,15.54.36-3.26-6.05-13.46-6.33-13.87.45.2,11.66,4.64,14.8,3.69-3.39-.8-11.12-6.17-18.27-11.58.45-2.92.27-6.93-.26-12.53-1.95-20.59-9.84-20.59-21.38-24.93-7.09-2.66-13.37-5.47-22.32-9.88C76.25-6.65,24.38,7.94,6.62,48.34.46,61.84-1.46,76.99,1.11,91.61c2.6,14.77,9.77,28.93,28.95,46.93,35.79,33.58,124.23,24.34,149.47-40.62,15.29-45.69,36.67-84.07,91.75-75.57,47.16,6.61,66.37,58.38,45.98,91.53-26.44,45.92-97.96,43.08-128.46-.9,20.35,63.5,97,47.61,117.55,33.15,28.71-20.21,58.88-59.35,24.15-111.45Z"/><path class="st-logo-eye" d="M262.55,32.59c-24.97,0-50.01,5.78-69.26,64.17,7.25,18.53,31.73,39.57,69.26,38.11,27.81,0,50.35-24.12,50.35-51.93s-22.54-50.35-50.35-50.35ZM256.86,98.96c-8.83,0-15.99-7.16-15.99-15.99s7.16-15.98,15.99-15.98,15.99,7.15,15.99,15.98-7.16,15.99-15.99,15.99Z"/></svg></button>
-          <div class="iw-color-dots" id="stColorDots">
-            <button class="iw-color-dot active" data-color="#FEBE18" style="background:#FEBE18" onclick="stApplyColor('#FEBE18')" title="Gold"></button>
-            <button class="iw-color-dot"        data-color="#D12225" style="background:#D12225" onclick="stApplyColor('#D12225')" title="Crimson"></button>
-            <button class="iw-color-dot"        data-color="#0D0A0A" style="background:#0D0A0A" onclick="stApplyColor('#0D0A0A')" title="Black"></button>
-            <button class="iw-color-dot"        data-color="#FFFFFF" style="background:#FFFFFF" onclick="stApplyColor('#FFFFFF')" title="White"></button>
+          <div class="st-color-pick-wrap" id="stColorPickWrap">
+            <button class="st-color-cur" id="stColorCurBtn" onclick="stToggleColorPicker()" title="Text color" style="background:#FEBE18"></button>
+            <div class="st-color-popover" id="stColorPopover" style="display:none">
+              <div class="st-color-row">
+                <button class="iw-color-dot" data-color="#FEBE18" style="background:#FEBE18" onclick="stApplyColor('#FEBE18')" title="Gold"></button>
+                <button class="iw-color-dot" data-color="#D12225" style="background:#D12225" onclick="stApplyColor('#D12225')" title="Crimson"></button>
+                <button class="iw-color-dot" data-color="#0D0A0A" style="background:#0D0A0A" onclick="stApplyColor('#0D0A0A')" title="Black"></button>
+                <button class="iw-color-dot" data-color="#FFFFFF" style="background:#FFFFFF" onclick="stApplyColor('#FFFFFF')" title="White"></button>
+              </div>
+              <div class="st-color-row">
+                <button class="iw-color-dot" data-color="#235789" style="background:#235789" onclick="stApplyColor('#235789')" title="Navy"></button>
+                <button class="iw-color-dot" data-color="#CBCBD4" style="background:#CBCBD4" onclick="stApplyColor('#CBCBD4')" title="Silver"></button>
+                <button class="iw-color-dot" data-color="#638475" style="background:#638475" onclick="stApplyColor('#638475')" title="Sage"></button>
+                <button class="iw-color-dot" data-color="#8D918B" style="background:#8D918B" onclick="stApplyColor('#8D918B')" title="Stone"></button>
+              </div>
+            </div>
           </div>
+          <button id="stFontUpBtn"   class="iw-tool-btn" onclick="stFontSizeUp()"   title="Font size up"   disabled style="font-weight:700;font-size:11px;letter-spacing:0.02em">A+</button>
+          <button id="stFontDownBtn" class="iw-tool-btn" onclick="stFontSizeDown()" title="Font size down" disabled style="font-weight:700;font-size:11px;letter-spacing:0.02em">A−</button>
           <button id="stItalicBtn" class="iw-tool-btn" style="font-style:italic;font-family:Georgia,'Times New Roman',serif;" onclick="stToggleItalic()" title="Italic">I</button>
           <button id="stShadowBtn" class="iw-tool-btn" style="font-weight:900;text-shadow:1px 2px 4px rgba(0,0,0,.55);" onclick="stToggleShadow()" title="Drop shadow">T</button>
-          <button id="stCenterBtn" class="iw-tool-btn" onclick="stCenterObject()" title="Center" disabled>Center</button>
+          <button id="stJustifyBtn" class="iw-tool-btn st-justify-btn" onclick="stJustifyCycle()" title="Text align" disabled><svg width="14" height="12" viewBox="0 0 14 12" fill="none"><line x1="1" y1="2" x2="13" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="6" x2="9" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="10" x2="11" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
           <div class="st-brightness-wrap">
             <button id="stBrightnessBtn" class="iw-tool-btn" onclick="stToggleBgBrightness()" title="Adjust background brightness">Overlay</button>
             <div id="stBrightnessPanel" class="st-brightness-panel">
@@ -5848,19 +6157,31 @@ body.studio-open .app-header { display: none; }
                      oninput="stSetBgBrightness(this.value)"
                      onchange="stPushHistory()">
               <span class="st-brightness-label">Light</span>
-              <button class="st-brightness-reset" onclick="stResetBgBrightness()" title="Reset">✕</button>
+              <button class="st-brightness-reset" onclick="stResetBgBrightness()" title="Reset"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="display:block"><path d="M2.5 6.5A4 4 0 1 0 4 3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><polyline points="2.5,1.5 2.5,3.5 4.5,3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
         </div>
 
         <!-- Canvas -->
         <div class="st-canvas-area">
+          <div class="st-snap-guide st-snap-guide-v" id="stSnapGuideV" style="display:none"></div>
+          <div class="st-snap-guide st-snap-guide-h" id="stSnapGuideH" style="display:none"></div>
           <div class="st-canvas-wrap" id="stCanvasWrap">
             <canvas id="stCanvas"></canvas>
           </div>
         </div>
 
       </div><!-- /stCanvasView -->
+
+      <!-- Reels view (Design tab, Reels mode) — phone-sized video player -->
+      <div class="st-reel-view" id="stReelView" style="display:none">
+        <div class="st-reel-player-area" id="stReelPlayerArea">
+          <div class="st-reel-player-empty" id="stReelPlayerEmpty">Select a reel from the panel to preview it here.</div>
+          <div class="st-reel-phone-frame" id="stReelPhoneFrame" style="display:none">
+            <iframe id="stReelPlayerFrame" style="width:100%;height:100%;border:none;" allowfullscreen allow="autoplay"></iframe>
+          </div>
+        </div>
+      </div>
 
       <!-- Doc view (writing modes) -->
       <div class="st-doc-view" id="stDocView">
@@ -5900,36 +6221,44 @@ body.studio-open .app-header { display: none; }
 
       <!-- Image assets (Images mode) -->
       <div id="stImgAssets" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0">
-        <div class="st-assets-section">
-          <div class="st-assets-lbl">Format</div>
-          <div class="st-ratio-pills">
-            <button class="st-ratio-pill active" onclick="stSetAspectRatio('instagram')">Instagram</button>
-            <button class="st-ratio-pill"        onclick="stSetAspectRatio('feed')">Feed</button>
-            <button class="st-ratio-pill"        onclick="stSetAspectRatio('square')">Square</button>
-            <button class="st-ratio-pill"        onclick="stSetAspectRatio('landscape')">Landscape</button>
-          </div>
+        <!-- Hooks & Quotes | Backgrounds toggle -->
+        <div class="st-tab-bar" id="stRailTabBar">
+          <button class="st-tab-btn active" id="stRailTabHq"  onclick="stSetRailTab('hq')">Hooks &amp; Quotes</button>
+          <button class="st-tab-btn"        id="stRailTabBg"  onclick="stSetRailTab('bg')">Backgrounds</button>
         </div>
-        <div class="st-tab-bar">
-          <button class="st-tab-btn active" onclick="stSetBgTab(this,'stLibPane')">Library</button>
-          <button class="st-tab-btn"        onclick="stSetBgTab(this,'stGenPane')">Generate</button>
+        <!-- H&Q panel (populated by stRenderHqPanel) -->
+        <div class="st-tab-pane st-hq-rail-pane" id="stHqRailPane">
+          <div class="st-hq-panel" id="stHqPanel"></div>
         </div>
-        <div class="st-tab-pane" id="stLibPane">
-          <div class="iw-bg-upload" onclick="stTriggerUpload()">
-            <svg width="13" height="13" data-lucide="upload"></svg>Upload
+        <!-- Backgrounds: single pool — Upload + Generate actions, then all images -->
+        <div class="st-tab-pane" id="stBgPane" style="display:none">
+          <div class="st-bg-actions">
+            <button class="st-bg-action-btn" onclick="stTriggerUpload()">Upload</button>
+            <button class="st-bg-action-btn" id="stGenExpandBtn" onclick="stToggleGenInput()">Generate</button>
           </div>
           <input type="file" id="stFileInput" accept="image/*" style="display:none" onchange="stHandleUpload(this)">
-          <div id="stBgGrid"></div>
-        </div>
-        <div class="st-tab-pane" id="stGenPane" style="display:none">
-          <div class="iw-prompt-area">
+          <!-- GenGem prompt input: collapsed by default, expanded on Generate click -->
+          <div class="iw-prompt-area" id="stGenInput" style="display:none">
             <textarea class="iw-prompt-input" id="stPromptInput" placeholder="A mood, a scene, a color direction…" rows="3"></textarea>
-            <button class="iw-prompt-send" id="stPromptSend" onclick="stSubmitPrompt()">Send</button>
+            <button class="iw-prompt-send" id="stPromptSend" onclick="stSubmitPrompt()">Generate</button>
           </div>
-          <div class="iw-gen-scroll" id="stGenThumbs">
-            <div class="iw-empty-msg">No images yet. Enter a prompt above.</div>
+          <!-- Single pool: generated images first, then library -->
+          <div class="st-bg-pool" id="stBgPool">
+            <div class="iw-gen-scroll" id="stGenThumbs"></div>
+            <div id="stBgGrid"></div>
           </div>
         </div>
       </div><!-- /stImgAssets -->
+
+      <!-- Reel browser (Design > Reels mode) -->
+      <div id="stReelBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+        <div class="st-assets-section" style="flex-shrink:0">
+          <div class="st-assets-lbl">Reels</div>
+        </div>
+        <div class="st-reel-list" id="stRailReelList">
+          <div class="st-reel-empty">Select a guest to browse reels.</div>
+        </div>
+      </div>
 
       <!-- Writing assets (writing modes) -->
       <div id="stWriteAssets" class="st-write-assets">
@@ -6424,6 +6753,8 @@ var ST_MODE_LABELS = {
   'interview-prep':'Interview Prep','brainstorm':'Ideas'
 };
 
+var st_reels = [];   // cached reel list for current episode in Design tab
+
 var st = {
   fabricCanvas:   null,
   ratio:          'instagram',
@@ -6443,7 +6774,12 @@ var st = {
   currentMode:    'images',
   currentTab:     'publish',
   episodeUid:     null,
-  publishOrigin:  null
+  guestName:      null,
+  publishOrigin:  null,
+  designTab:      'qg',
+  hqContent:      null,
+  exportDay:      'MON',
+  selectedReelId: null
 };
 
 // ── PUBLISH STATE ─────────────────────────────────────────────
@@ -6519,11 +6855,19 @@ function openStudio(tab) {
   st.overlayType  = 'full';
   st.userZoom     = 1;
   st.currentMode  = 'images';
+  st.bgItems      = null;
+  stSyncFormatBtn('instagram');
 
   document.body.classList.add('studio-open');
   var el = document.getElementById('studioOverlay');
   el.style.display = 'flex';
   lucide.createIcons({ nodes: [el] });
+
+  // Populate rail guest list + tasks from loaded state
+  stRenderRailGuests();
+  stRenderAccordionTasks();
+  stInitCompanionDivider();
+  stInitReelCaptionPersistence();
 
   // Reset chat session state
   stChatHistory         = [];
@@ -6549,7 +6893,6 @@ function closeStudio() {
   }
   document.body.classList.remove('studio-open');
   document.getElementById('studioOverlay').style.display = 'none';
-  document.getElementById('stEpDropdown').classList.remove('open');
   document.getElementById('pbEpDrop').classList.remove('open');
   st.history = []; st.redoStack = [];
   st.publishOrigin = null;
@@ -6583,6 +6926,7 @@ function stSwitchTab(tab) {
   var isPublish = (tab === 'publish');
   document.getElementById('stPublishPanel').style.display  = isPublish ? 'flex' : 'none';
   document.getElementById('stStudioMain').style.display    = isPublish ? 'none' : 'flex';
+  // v3EpRail is always visible as the unified left rail
 
   if (isPublish) {
     // Auto-select the closest unfinished episode unless the user has explicitly
@@ -6592,13 +6936,14 @@ function stSwitchTab(tab) {
     return;
   }
 
-  // Design / Write / Ideas / Outreach — one mode per tab, no mode col needed
+  // Rail accordion: open the appropriate section for this tab
+  var accSection = { design: 'design', write: 'write', ideas: 'write', outreach: 'tasks' };
+  stAccOpen(accSection[tab] || 'design');
+
+  // Map tab → internal mode
   var modeMap = { design: 'images', write: 'writer', ideas: 'brainstorm', outreach: 'outreach' };
   var mode = modeMap[tab] || 'images';
-
-  // Hide mode col (tabs replace it)
-  document.getElementById('stModeCol').style.display = 'none';
-  document.querySelectorAll('.st-mode-btn').forEach(function(b) { b.style.display = 'none'; });
+  st.currentMode = mode;
 
   // Update view panels
   var isImg = (mode === 'images');
@@ -6607,23 +6952,27 @@ function stSwitchTab(tab) {
   document.getElementById('stImgAssets').style.display     = isImg ? 'flex' : 'none';
   document.getElementById('stWriteAssets').style.display   = isImg ? 'none' : 'flex';
 
-  // Episode picker in Design chat col: show only for Design tab
-  var epBar = document.getElementById('stEpBar');
-  if (epBar) epBar.style.display = (tab === 'design') ? '' : 'none';
-
-  // Mark active mode button (keep internal active state even though col is hidden)
-  document.querySelectorAll('.st-mode-btn').forEach(function(b) { b.classList.remove('active'); });
-  var btn = document.querySelector('.st-mode-btn[data-mode="' + mode + '"]');
-  if (btn) btn.classList.add('active');
-  st.currentMode = mode;
+  // Design tab: show seg toggle + caption region + init sub-tab; hide for Write/etc
+  var segRow       = document.getElementById('stSegRow');
+  var captionWrap  = document.getElementById('stCaptionWrap');
+  var companionDiv = document.getElementById('stCompanionDiv');
+  if (tab === 'design') {
+    if (segRow)       segRow.style.display       = 'flex';
+    if (captionWrap)  captionWrap.style.display  = 'flex';
+    if (companionDiv) companionDiv.style.display = 'block';
+    stSetDesignTab(st.designTab || 'qg');
+  } else {
+    if (segRow)       segRow.style.display       = 'none';
+    if (captionWrap)  captionWrap.style.display  = 'none';
+    if (companionDiv) companionDiv.style.display = 'none';
+  }
 
   // Design-specific init (lazy — only on first visit or after canvas disposed)
   if (tab === 'design') {
     var el = document.getElementById('studioOverlay');
     document.getElementById('stLogoBtn').classList.remove('white-logo');
-    el.querySelectorAll('#stColorDots .iw-color-dot').forEach(function(d) {
-      d.classList.toggle('active', d.dataset.color === '#FEBE18');
-    });
+    var stCurBtn = document.getElementById('stColorCurBtn');
+    if (stCurBtn) stCurBtn.style.background = st.activeColor || '#FEBE18';
     el.querySelectorAll('.st-ratio-pill').forEach(function(p) {
       p.classList.toggle('active', p.textContent.trim() === 'Instagram');
     });
@@ -6641,6 +6990,11 @@ function stSwitchTab(tab) {
     }
     var srBtn = document.getElementById('stSaveReturnBtn');
     if (srBtn) srBtn.style.display = st.publishOrigin ? 'flex' : 'none';
+    // Auto-select first guest if none chosen yet
+    if (!st.episodeUid && state.episodes && state.episodes.length) {
+      var _first = state.episodes[0];
+      stSelectGuest(_first.Episode_UID, _first.Guest_Name || _first.Episode_UID);
+    }
   } else {
     // Write / Ideas / Outreach: welcome card if chat is empty
     var hist = document.getElementById('stChatHist');
@@ -6690,19 +7044,6 @@ function stSelectMode(btn, mode) {
     hist.innerHTML        = '';
     stShowWelcomeCard();
   }
-  setTimeout(function() {
-    var mc = document.getElementById('stModeCol');
-    if (!mc.classList.contains('collapsed')) {
-      mc.classList.add('collapsed');
-      document.getElementById('stModeToggle').textContent = '›';
-    }
-  }, 180);
-}
-
-function stToggleModeCol() {
-  var mc = document.getElementById('stModeCol');
-  var isCollapsed = mc.classList.toggle('collapsed');
-  document.getElementById('stModeToggle').textContent = isCollapsed ? '›' : '‹';
 }
 
 // ── PUBLISH TAB ───────────────────────────────────────────────
@@ -6877,83 +7218,8 @@ function pbV3UpdateStatusBadges(ep) {
 }
 
 function v3RenderEpRail() {
-  var listEl  = document.getElementById('v3EpList');
-  var looseEl = document.getElementById('v3LooseList');
-  if (!listEl || !looseEl) return;
-
-  var today = new Date();
-  var eps = (state.episodes || []).filter(function(ep) { return ep.Episode_UID; });
-
-  // Sort: nearest upcoming first, then past
-  eps.sort(function(a, b) {
-    var da = a.Release_Date ? new Date(a.Release_Date) : new Date('9999-01-01');
-    var db = b.Release_Date ? new Date(b.Release_Date) : new Date('9999-01-01');
-    return da - db;
-  });
-
-  var epHtml = '';
-  eps.forEach(function(ep) {
-    var badges = getEpisodeBadges(ep);
-    var daysOut = '';
-    if (ep.Release_Date) {
-      var d = Math.round((new Date(ep.Release_Date) - today) / 86400000);
-      daysOut = d + 'd';
-    }
-    var _daysUntil = ep.Release_Date ? (new Date(ep.Release_Date) - today) / 86400000 : Infinity;
-    var urgent = _daysUntil >= 0 && _daysUntil <= 7;
-    var isActive = (pb.episodeUid === ep.Episode_UID);
-
-    var audioState = badges.hasAudio ? 'active' : 'pending';
-    var imageState = !badges.hasImage ? 'pending'
-      : (ep.Images_Status === 'revision_requested' ? 'review' : 'active');
-    var reelState  = !badges.hasReel  ? 'pending'
-      : (ep.Video_Status  === 'revision_requested' ? 'review' : 'active');
-
-    var icoAudio = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 9V8a5 5 0 0 1 10 0v1"/><rect x="2" y="9" width="3" height="4" rx="1.5"/><rect x="11" y="9" width="3" height="4" rx="1.5"/></svg>';
-    var icoImage = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M2 12l3-3 3 3 2-2 4 4"/><circle cx="10.5" cy="5.5" r="1.3" fill="currentColor" stroke="none"/></svg>';
-    var icoReel  = '<svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="1" y="3" width="14" height="10" rx="1.5"/><line x1="5" y1="3" x2="5" y2="13"/><line x1="11" y1="3" x2="11" y2="13"/><line x1="1" y1="7" x2="5" y2="7"/><line x1="11" y1="7" x2="15" y2="7"/></svg>';
-
-    epHtml += '<button class="v3-ep-tab' + (isActive ? ' active' : '') + (urgent ? ' urgent' : '') + '"' +
-      ' data-uid="' + esc(ep.Episode_UID) + '"' +
-      ' onclick="pb._userChoseEpisode=true;pbSetEpisode(\'' + esc(ep.Episode_UID) + '\',\'' + esc(ep.Guest_Name || ep.Episode_UID) + '\');v3SyncRailSelection(\'' + esc(ep.Episode_UID) + '\')"' +
-      ' title="' + esc((ep.Guest_Name || '') + (daysOut ? ' — ' + daysOut + ' to release' : '')) + '">' +
-      '<div class="v3-ep-row1">' +
-        '<span class="v3-ep-name">' + esc(ep.Guest_Name || ep.Episode_UID) + '</span>' +
-        (daysOut ? '<span class="v3-ep-days">' + esc(daysOut) + '</span>' : '') +
-      '</div>' +
-      '<div class="v3-ep-icons">' +
-        '<span class="v3-state-icon ' + audioState + '" title="Episode">' + icoAudio + '</span>' +
-        '<span class="v3-state-icon ' + imageState + '" title="Images">' + icoImage + '</span>' +
-        '<span class="v3-state-icon ' + reelState  + '" title="Reels">'  + icoReel  + '</span>' +
-      '</div>' +
-    '</button>';
-  });
-  if (!epHtml) epHtml = '<div style="padding:10px 12px;font-size:11px;color:rgba(255,255,255,0.3)">No episodes loaded</div>';
-  listEl.innerHTML = epHtml;
-
-  // Loose tasks (no Episode_UID)
-  var loose = (state.tasks || []).filter(function(t) { return !t.Episode_UID; }).slice(0, 10);
-  var looseHtml = '';
-  loose.forEach(function(t) {
-    var icon = (t.Workflow_Step === 'Outreach' || t.Workflow_Step === 'Send_Email') ? '✉' : '◻';
-    var dotCls = (t.Status === 'complete' || t.Status === 'done') ? 'done' : 'open';
-    var tid = esc(t.Task_ID || t.Action_Title || '');
-    looseHtml += '<div class="v3-loose-item" data-task-id="' + tid + '" onclick="v3ToggleTask(this)">' +
-      '<div class="v3-loose-item-row">' +
-        '<span class="v3-lt-icon">' + icon + '</span>' +
-        '<span class="v3-lt-meta">' +
-          '<span class="v3-lt-title">' + esc(t.Action_Title || '—') + '</span>' +
-          '<span class="v3-lt-who">' + esc(t.Assignee || '') + '</span>' +
-        '</span>' +
-        '<span class="v3-lt-dot ' + dotCls + '"></span>' +
-      '</div>' +
-      '<div class="v3-loose-expand">' +
-        '<button class="v3-loose-verb-btn" onclick="event.stopPropagation();v3CompleteTask(\'' + tid + '\',this)">Mark Done</button>' +
-      '</div>' +
-    '</div>';
-  });
-  if (!looseHtml) looseHtml = '<div style="padding:6px 12px;font-size:11px;color:rgba(255,255,255,0.25)">None</div>';
-  looseEl.innerHTML = looseHtml;
+  stRenderRailGuests();
+  stRenderAccordionTasks();
 }
 
 function v3ToggleTask(el) {
@@ -6972,8 +7238,8 @@ function v3CompleteTask(taskId, btn) {
 }
 
 function v3SyncRailSelection(episodeUid) {
-  document.querySelectorAll('.v3-ep-tab').forEach(function(btn) {
-    btn.classList.toggle('active', btn.dataset.uid === episodeUid);
+  document.querySelectorAll('#stAccBodyDesign .st-acc-item').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-uid') === episodeUid);
   });
 }
 
@@ -10907,12 +11173,10 @@ function stToggleEpDropdown() {
 }
 
 function stSelectEpisode(uid, name) {
-  st.episodeUid = uid;
-  document.getElementById('stEpLabel').textContent = name;
-  document.querySelectorAll('#stEpDropdown .st-ep-item').forEach(function(i) {
-    i.classList.toggle('sel', i.dataset.uid === uid);
-  });
-  document.getElementById('stEpDropdown').classList.remove('open');
+  st.episodeUid  = uid;
+  st.guestName   = name || null;
+  st.hqContent   = null;
+  st_reels       = [];
 
   // Reset session state for new episode
   stChatHistory         = [];
@@ -10923,6 +11187,15 @@ function stSelectEpisode(uid, name) {
   stModeChatState       = {};
   var hist = document.getElementById('stChatHist');
   if (hist) hist.innerHTML = '';
+
+  // If in QG sub-tab, reload H&Q for new episode
+  if (st.designTab === 'qg') {
+    stLoadHqContent(uid);
+  }
+  // If in Reels sub-tab, reload reels
+  if (st.designTab === 'reels') {
+    stLoadRailReels(uid);
+  }
 
   // Load episode index async — populates stRagContext for all subsequent calls
   google.script.run
@@ -11033,7 +11306,7 @@ function confirmSetup() {
     stSelectEpisode(uid, guestName);
   } else {
     st.episodeUid = null;
-    document.getElementById('stEpLabel').textContent = uid === 'cross' ? 'No specific episode' : 'Select an episode';
+    st.guestName  = null;
   }
 
   var activePill = document.querySelector('#studio-setup-card .setup-fmt-pill.active');
@@ -11362,25 +11635,40 @@ function stInitCanvas() {
 
   st.fabricCanvas.on('object:scaling', function(e) {
     if (!_dragHistoryPushed) { stPushHistory(); _dragHistoryPushed = true; }
-    if (e.target && e.target._isBackground) {
-      var obj = e.target, cw = st.fabricCanvas.getWidth(), ch = st.fabricCanvas.getHeight();
+    var obj = e.target;
+    if (!obj) return;
+    if (obj._isBackground) {
+      var cw = st.fabricCanvas.getWidth(), ch = st.fabricCanvas.getHeight();
       var minScale = Math.max(cw / obj.width, ch / obj.height);
       if (obj.scaleX < minScale) { obj.scaleX = minScale; obj.scaleY = minScale; }
-    } else if (e.target && e.target._isText && !e.target._scalingBaseFontSize) {
-      e.target._scalingBaseFontSize = e.target.fontSize;
-      e.target._scalingBaseWidth    = e.target.width;
     }
   });
 
   st.fabricCanvas.on('object:modified', function(e) {
     var obj = e.target;
-    if (!obj || !obj._isText || !obj._scalingBaseFontSize) return;
-    if (obj.scaleX !== 1 || obj.scaleY !== 1) {
-      var scale = obj.scaleX;
-      obj.set({ fontSize: Math.max(12, Math.round(obj._scalingBaseFontSize * scale)), width: Math.max(100, Math.round(obj._scalingBaseWidth * scale)), scaleX: 1, scaleY: 1 });
-      obj.initDimensions(); obj.setCoords(); st.fabricCanvas.renderAll();
-    }
-    obj._scalingBaseFontSize = null; obj._scalingBaseWidth = null;
+    var gv = document.getElementById('stSnapGuideV'); if (gv) gv.style.display = 'none';
+    var gh = document.getElementById('stSnapGuideH'); if (gh) gh.style.display = 'none';
+    if (!obj || !obj._isText) return;
+    if (obj.scaleX === 1 && obj.scaleY === 1) return;
+    var newFontSize = Math.max(12, Math.round(obj.fontSize * obj.scaleY));
+    var newWidth    = Math.max(40,  Math.round(obj.width   * obj.scaleX));
+    obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 });
+    obj.initDimensions(); obj.setCoords(); st.fabricCanvas.renderAll();
+  });
+
+  // Snap guides — center horizontal + vertical snap
+  var SNAP_THRESHOLD = 10;
+  st.fabricCanvas.on('object:moving', function(e) {
+    var obj = e.target;
+    var cw  = st.fabricCanvas.getWidth(), ch = st.fabricCanvas.getHeight();
+    var pt  = obj.getCenterPoint();
+    var snapX = Math.abs(pt.x - cw / 2) < SNAP_THRESHOLD;
+    var snapY = Math.abs(pt.y - ch / 2) < SNAP_THRESHOLD;
+    if (snapX) { obj.set({ left: cw / 2, originX: 'center' }); obj.setCoords(); }
+    if (snapY) { obj.set({ top:  ch / 2, originY: 'center' }); obj.setCoords(); }
+    if (snapX || snapY) st.fabricCanvas.renderAll();
+    var gv = document.getElementById('stSnapGuideV'); if (gv) gv.style.display = snapX ? 'block' : 'none';
+    var gh = document.getElementById('stSnapGuideH'); if (gh) gh.style.display = snapY ? 'block' : 'none';
   });
 
   st.fabricCanvas.on('mouse:dblclick', function(opt) {
@@ -11396,6 +11684,7 @@ function stInitCanvas() {
     if (!st.fabricCanvas) return;
     if (e.key !== 'Backspace' && e.key !== 'Delete') return;
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.target.isContentEditable) return;
     var active = st.fabricCanvas.getActiveObject();
     if (!active || active.isEditing || active._isBackground || active._isOverlay) return;
     stPushHistory();
@@ -11404,6 +11693,16 @@ function stInitCanvas() {
     st.fabricCanvas.renderAll();
   };
   document.addEventListener('keydown', st.keyHandler);
+  if (!st._colorPickOutside) {
+    st._colorPickOutside = function(e) {
+      var wrap = document.getElementById('stColorPickWrap');
+      if (wrap && !wrap.contains(e.target)) {
+        var pop = document.getElementById('stColorPopover');
+        if (pop) pop.style.display = 'none';
+      }
+    };
+    document.addEventListener('click', st._colorPickOutside);
+  }
 
   st.fabricCanvas.on('selection:created', function() { stUpdateTextBtns(); });
   st.fabricCanvas.on('selection:updated', function() { stUpdateTextBtns(); });
@@ -11479,31 +11778,38 @@ function stReattachBgControls() {
   st.fabricCanvas.getObjects().forEach(function(obj) { if (obj._isBackground) stAttachBgControls(obj); });
 }
 
+function stApplyTextControls() {
+  if (!st.fabricCanvas) return;
+  st.fabricCanvas.getObjects().forEach(function(obj) {
+    if (obj._isText) obj.setControlsVisibility({ mt: false, mb: false });
+  });
+}
+
 function stUndo() {
   if (!st.fabricCanvas || !st.history.length) return;
   st.redoStack.push(st.fabricCanvas.toJSON(['_isBackground','_isText','_textType','_isLogo','_isOverlay']));
   var prev = st.history.pop();
-  st.fabricCanvas.loadFromJSON(prev, function() { stReattachBgControls(); st.fabricCanvas.renderAll(); });
+  st.fabricCanvas.loadFromJSON(prev, function() { stReattachBgControls(); stApplyTextControls(); st.fabricCanvas.renderAll(); });
 }
 
 function stRedo() {
   if (!st.fabricCanvas || !st.redoStack.length) return;
   st.history.push(st.fabricCanvas.toJSON(['_isBackground','_isText','_textType','_isLogo','_isOverlay']));
   var next = st.redoStack.pop();
-  st.fabricCanvas.loadFromJSON(next, function() { stReattachBgControls(); st.fabricCanvas.renderAll(); });
+  st.fabricCanvas.loadFromJSON(next, function() { stReattachBgControls(); stApplyTextControls(); st.fabricCanvas.renderAll(); });
 }
 
 function stSetAspectRatio(ratio) {
   if (st.ratio === ratio) return;
   var json = st.fabricCanvas ? st.fabricCanvas.toJSON(['_isBackground','_isText','_textType','_isLogo','_isOverlay']) : null;
   st.ratio = ratio;
-  var ratioLabels = { instagram:'Instagram', feed:'Feed', square:'Square', landscape:'Landscape' };
   document.querySelectorAll('#stCanvasView .iw-ratio-btn').forEach(function(btn) { btn.classList.toggle('active', btn.dataset.ratio === ratio); });
-  document.querySelectorAll('.st-ratio-pill').forEach(function(p) { p.classList.toggle('active', p.textContent.trim() === (ratioLabels[ratio] || '')); });
+  stSyncFormatBtn(ratio);
   stInitCanvas();
   if (json && json.objects && json.objects.length) {
-    st.fabricCanvas.loadFromJSON(json, function() { stReattachBgControls(); st.fabricCanvas.renderAll(); });
+    st.fabricCanvas.loadFromJSON(json, function() { stReattachBgControls(); stApplyTextControls(); st.fabricCanvas.renderAll(); });
   }
+  if (st.bgItems) stRenderBgGridFiltered();
 }
 
 function stClearCanvas() {
@@ -11663,13 +11969,31 @@ function stAddText(type) {
   stUpdateTextBtns();
 }
 
+function stToggleColorPicker() {
+  var pop = document.getElementById('stColorPopover');
+  if (!pop) return;
+  pop.style.display = pop.style.display === 'none' ? 'flex' : 'none';
+}
+
 function stApplyColor(color) {
   st.activeColor = color;
-  document.querySelectorAll('#stColorDots .iw-color-dot').forEach(function(d) { d.classList.toggle('active', d.dataset.color === color); });
+  var curBtn = document.getElementById('stColorCurBtn');
+  if (curBtn) curBtn.style.background = color;
+  var pop = document.getElementById('stColorPopover');
+  if (pop) pop.style.display = 'none';
   if (!st.fabricCanvas) return;
   var active = st.fabricCanvas.getActiveObject();
   if (active && (active._isText || active._isLogo)) {
-    stPushHistory(); active.set('fill', color); st.fabricCanvas.renderAll();
+    stPushHistory();
+    active.set('fill', color);
+    if (active.styles) {
+      Object.keys(active.styles).forEach(function(ln) {
+        if (!active.styles[ln]) return;
+        Object.keys(active.styles[ln]).forEach(function(ch) { delete active.styles[ln][ch].fill; });
+      });
+    }
+    active.set('dirty', true);
+    st.fabricCanvas.renderAll();
   }
 }
 
@@ -11700,11 +12024,33 @@ function stCenterObject() {
   active.setCoords(); st.fabricCanvas.renderAll();
 }
 
+function stFontSizeUp() {
+  if (!st.fabricCanvas) return;
+  var active = st.fabricCanvas.getActiveObject();
+  if (!active || !active._isText) return;
+  stPushHistory();
+  active.set({ fontSize: active.fontSize + 2, dirty: true });
+  st.fabricCanvas.renderAll();
+}
+
+function stFontSizeDown() {
+  if (!st.fabricCanvas) return;
+  var active = st.fabricCanvas.getActiveObject();
+  if (!active || !active._isText) return;
+  stPushHistory();
+  active.set({ fontSize: Math.max(12, active.fontSize - 2), dirty: true });
+  st.fabricCanvas.renderAll();
+}
+
 function stUpdateTextBtns() {
   if (!st.fabricCanvas) return;
   var active  = st.fabricCanvas.getActiveObject();
   var hasText = active && active._isText;
-  var cBtn = document.getElementById('stCenterBtn'); if (cBtn) cBtn.disabled = !active;
+  var jBtn  = document.getElementById('stJustifyBtn');  if (jBtn)  jBtn.disabled  = !hasText;
+  var fuBtn = document.getElementById('stFontUpBtn');   if (fuBtn) fuBtn.disabled  = !hasText;
+  var fdBtn = document.getElementById('stFontDownBtn'); if (fdBtn) fdBtn.disabled  = !hasText;
+  if (hasText) stUpdateJustifyBtn(active.textAlign || 'left');
+  else stUpdateJustifyBtn('left');
   var iBtn = document.getElementById('stItalicBtn'); if (iBtn) iBtn.classList.toggle('active', hasText && active.fontStyle === 'italic');
   var sBtn = document.getElementById('stShadowBtn'); if (sBtn) sBtn.classList.toggle('active', hasText && !!active.shadow);
 }
@@ -11798,6 +12144,7 @@ function stSetBgBrightness(val) {
 function stResetBgBrightness() {
   var slider = document.getElementById('stBrightnessSlider');
   if (slider) slider.value = 0;
+  stPushHistory();
   stSetBgBrightness(0);
 }
 
@@ -11814,62 +12161,68 @@ function stLoadBackgrounds() {
     .getBackgroundLibrary();
 }
 
+var BG_PREFIX_MAP = { 'vertical_': 'instagram', 'feed_': 'feed', 'square_': 'square', 'landscape_': 'landscape' };
+var BG_SECTION_LABELS = { generated:'AI Generated', instagram:'Vertical (9:16)', feed:'Feed (4:5)', square:'Square (1:1)', landscape:'Landscape (16:9)', other:'Other' };
+var BG_SECTION_ORDER  = ['instagram', 'feed', 'square', 'landscape', 'other', 'generated'];
+var BG_CANONICAL_AR   = { generated:'9/16', instagram:'9/16', feed:'4/5', square:'1/1', landscape:'16/9', other:'1/1' };
+var BG_TRASH_SVG = '<svg width="11" height="12" viewBox="0 0 11 12" fill="none"><path d="M1 3h9M4 3V2a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5v1M2 3l.6 7.5h5.8L9 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function stClassifyBgByName(name) {
+  var lower = (name || '').toLowerCase();
+  var prefixes = ['vertical_', 'feed_', 'square_', 'landscape_'];
+  for (var i = 0; i < prefixes.length; i++) {
+    if (lower.indexOf(prefixes[i]) === 0) return BG_PREFIX_MAP[prefixes[i]];
+  }
+  return 'other';
+}
+
 function stRenderBgGrid(items) {
   var container = document.getElementById('stBgGrid');
   if (!container) return;
   if (!items || !items.length) { container.innerHTML = '<div class="iw-empty-msg">No backgrounds yet. Upload one above.</div>'; return; }
+  st.bgItems = items.map(function(item) {
+    return { item: item, category: item.isAiGenerated ? 'generated' : stClassifyBgByName(item.name) };
+  });
+  stRenderBgGridFiltered();
+}
 
-  var SECTION_LABELS   = { generated:'Generated', instagram:'Instagram', feed:'Feed', square:'Square', other:'Other' };
-  var SECTION_ORDER    = ['generated','instagram','feed','square','other'];
-  var CANONICAL_RATIOS = { generated:'9/16', instagram:'9/16', feed:'4/5', square:'1/1', other:'16/9' };
+function stRenderBgGridFiltered() {
+  var container = document.getElementById('stBgGrid');
+  if (!container || !st.bgItems) return;
+  var currentFormat = st.ratio || 'instagram';
 
-  var classified = items.map(function(item) {
-    return { item: item, ratio: null, naturalW: null, naturalH: null };
+  var groups = { generated:[], instagram:[], feed:[], square:[], landscape:[], other:[] };
+  st.bgItems.forEach(function(c) {
+    var cat = c.category;
+    // Premade (non-AI, non-other): only show if it matches the current format
+    if (cat !== 'generated' && cat !== 'other' && cat !== currentFormat) return;
+    groups[cat].push(c);
   });
 
-  function renderGrouped() {
-    var groups = { generated:[], instagram:[], feed:[], square:[], other:[] };
-    classified.forEach(function(c) {
-      if (c.item.isAiGenerated) groups.generated.push(c);
-      else groups[c.ratio || 'other'].push(c);
+  var html = '';
+  BG_SECTION_ORDER.forEach(function(key) {
+    if (!groups[key].length) return;
+    html += '<div class="iw-bg-section-header">' + BG_SECTION_LABELS[key] + '</div>';
+    html += '<div class="iw-bg-grid">';
+    groups[key].forEach(function(c) {
+      var item   = c.item;
+      var selCls = st.selectedBgId === item.fileId ? ' selected' : '';
+      var ar     = BG_CANONICAL_AR[c.category] || '1/1';
+      html += '<div class="iw-bg-thumb' + selCls + '" data-file-id="' + item.fileId + '" style="aspect-ratio:' + ar + '">' +
+        '<img src="' + item.thumbnailUrl + '" alt="' + (item.name || '') + '" loading="lazy">' +
+        (item.isAiGenerated ? '<span class="iw-ai-badge">AI</span>' : '') +
+        '<button class="iw-bg-delete" title="Delete">' + BG_TRASH_SVG + '</button>' +
+        '</div>';
     });
-    var html = '';
-    SECTION_ORDER.forEach(function(key) {
-      if (!groups[key].length) return;
-      html += '<div class="iw-bg-section-header">' + SECTION_LABELS[key] + '</div>';
-      html += '<div class="iw-bg-grid">';
-      groups[key].forEach(function(c) {
-        var item   = c.item;
-        var selCls = st.selectedBgId === item.fileId ? ' selected' : '';
-        var arStr  = (c.naturalW && c.naturalH) ? (c.naturalW + '/' + c.naturalH) : CANONICAL_RATIOS[key];
-        html += '<div class="iw-bg-thumb' + selCls + '" data-file-id="' + item.fileId + '" style="aspect-ratio:' + arStr + '">' +
-          '<img src="' + item.thumbnailUrl + '" alt="' + item.name + '">' +
-          (item.isAiGenerated ? '<span class="iw-ai-badge">AI</span>' : '') +
-          '<button class="iw-bg-delete" title="Delete">&#215;</button>' +
-          '</div>';
-      });
-      html += '</div>';
-    });
-    container.innerHTML = html;
-    container.querySelectorAll('.iw-bg-thumb').forEach(function(div) {
-      var fileId = div.dataset.fileId;
-      div.querySelector('.iw-bg-delete').addEventListener('click', function(e) { e.stopPropagation(); stDeleteBg(fileId); });
-      div.addEventListener('click', function() { stSelectBg(fileId, div); });
-    });
-  }
+    html += '</div>';
+  });
+  if (!html) html = '<div class="iw-empty-msg">No backgrounds match this format.</div>';
 
-  renderGrouped();
-
-  classified.forEach(function(c, i) {
-    if (c.item.isAiGenerated) return;
-    var tmpImg = new Image();
-    tmpImg.onload = function() {
-      classified[i].naturalW = tmpImg.naturalWidth;
-      classified[i].naturalH = tmpImg.naturalHeight;
-      classified[i].ratio    = detectBgRatio(tmpImg.naturalWidth, tmpImg.naturalHeight);
-      renderGrouped();
-    };
-    tmpImg.src = c.item.thumbnailUrl;
+  container.innerHTML = html;
+  container.querySelectorAll('.iw-bg-thumb').forEach(function(div) {
+    var fileId = div.dataset.fileId;
+    div.querySelector('.iw-bg-delete').addEventListener('click', function(e) { e.stopPropagation(); stDeleteBg(fileId); });
+    div.addEventListener('click', function() { stSelectBg(fileId, div); });
   });
 }
 
@@ -11907,13 +12260,25 @@ function stPlaceBackground(imgUrl) {
 }
 
 function stDeleteBg(fileId) {
-  if (!confirm('Delete this background from the library?')) return;
+  if (!st.bgItems) return;
+  var idx = st.bgItems.findIndex(function(c) { return c.item.fileId === fileId; });
+  if (idx === -1) return;
+  var removed = st.bgItems.splice(idx, 1)[0];
+  delete bgCache[fileId];
+  stRenderBgGridFiltered();
   google.script.run
     .withSuccessHandler(function(result) {
-      if (result.success) { delete bgCache[fileId]; stLoadBackgrounds(); }
-      else showToast('Delete failed: ' + (result.error || ''), true);
+      if (!result.success) {
+        st.bgItems.splice(idx, 0, removed);
+        stRenderBgGridFiltered();
+        showToast('Delete failed: ' + (result.error || ''), true);
+      }
     })
-    .withFailureHandler(function() { showToast('Delete failed', true); })
+    .withFailureHandler(function() {
+      st.bgItems.splice(idx, 0, removed);
+      stRenderBgGridFiltered();
+      showToast('Could not delete background.', true);
+    })
     .deleteBackgroundFromLibrary(fileId);
 }
 
@@ -11997,34 +12362,630 @@ function stSubmitPrompt() {
 }
 
 function stSetBgTab(btn, paneId) {
-  document.querySelectorAll('.st-tab-btn').forEach(function(b) { b.classList.remove('active'); });
-  btn.classList.add('active');
-  ['stLibPane','stGenPane'].forEach(function(id) {
-    document.getElementById(id).style.display = (id === paneId) ? 'block' : 'none';
+  // Legacy — redirects to stSetRailTab
+  stSetRailTab(paneId === 'stGenPane' ? 'bg' : 'hq');
+}
+
+// ── RIGHT-RAIL TAB: Hooks & Quotes | Backgrounds ──────────────
+function stSetRailTab(tab) {
+  var isHq = (tab === 'hq');
+  var tabHq  = document.getElementById('stRailTabHq');
+  var tabBg  = document.getElementById('stRailTabBg');
+  var paneHq = document.getElementById('stHqRailPane');
+  var paneBg = document.getElementById('stBgPane');
+  if (tabHq)  tabHq.classList.toggle('active', isHq);
+  if (tabBg)  tabBg.classList.toggle('active', !isHq);
+  if (paneHq) paneHq.style.display = isHq ? 'flex' : 'none';
+  if (paneBg) paneBg.style.display = isHq ? 'none' : 'flex';
+}
+
+function stToggleGenInput() {
+  var wrap = document.getElementById('stGenInput');
+  if (!wrap) return;
+  var open = wrap.style.display !== 'none';
+  wrap.style.display = open ? 'none' : 'flex';
+  var btn = document.getElementById('stGenExpandBtn');
+  if (btn) btn.textContent = open ? 'Generate' : 'Close';
+  if (!open) {
+    var inp = document.getElementById('stPromptInput');
+    if (inp) inp.focus();
+  }
+}
+
+function stFirePromptChip(promptText) {
+  // Open Backgrounds tab and fire generation with the chip's prompt text
+  stSetRailTab('bg');
+  var wrap = document.getElementById('stGenInput');
+  if (wrap) wrap.style.display = 'flex';
+  var btn = document.getElementById('stGenExpandBtn');
+  if (btn) btn.textContent = 'Close';
+  var inp = document.getElementById('stPromptInput');
+  if (inp) { inp.value = promptText; inp.focus(); }
+  stSubmitPrompt();
+}
+
+// ── RAIL ACCORDION ───────────────────────────────────────────
+var _stAccSections = ['design', 'write', 'schedule', 'tasks'];
+
+function stAccToggle(section) {
+  var isOpen = document.getElementById('stAccHdr' + section.charAt(0).toUpperCase() + section.slice(1)).classList.contains('open');
+  if (isOpen) return; // clicking an already-open header does nothing (one always stays open)
+  stAccOpen(section);
+}
+
+function stAccOpen(section) {
+  _stAccSections.forEach(function(s) {
+    var hdr  = document.getElementById('stAccHdr'  + s.charAt(0).toUpperCase() + s.slice(1));
+    var body = document.getElementById('stAccBody' + s.charAt(0).toUpperCase() + s.slice(1));
+    var open = (s === section);
+    if (hdr)  hdr.classList.toggle('open', open);
+    if (body) body.classList.toggle('open', open);
   });
+}
+
+function stRenderRailGuests() {
+  var body = document.getElementById('stAccBodyDesign');
+  if (!body) return;
+  var eps = (state && state.episodes) ? state.episodes : [];
+  if (!eps.length) {
+    body.innerHTML = '<div class="st-acc-stub">No guests loaded</div>';
+    return;
+  }
+  body.innerHTML = '';
+  eps.forEach(function(ep) {
+    var uid   = ep.Episode_UID;
+    var guest = ep.Guest_Name || uid || '—';
+    var item  = document.createElement('div');
+    item.className = 'st-acc-item' + (st.episodeUid === uid ? ' active' : '');
+    item.setAttribute('data-uid', uid);
+    item.textContent = guest;
+    item.addEventListener('click', function() { stSelectGuest(uid, guest); });
+    body.appendChild(item);
+  });
+}
+
+function stRenderAccordionTasks() {
+  var body = document.getElementById('stAccBodyTasks');
+  if (!body) return;
+  var loose = (state.tasks || []).filter(function(t) { return !t.Episode_UID; }).slice(0, 10);
+  if (!loose.length) {
+    body.innerHTML = '<div class="st-acc-stub">No loose tasks</div>';
+    return;
+  }
+  body.innerHTML = '';
+  loose.forEach(function(t) {
+    var icon   = (t.Workflow_Step === 'Outreach' || t.Workflow_Step === 'Send_Email') ? '✉' : '◻';
+    var dotCls = (t.Status === 'complete' || t.Status === 'done') ? 'done' : 'open';
+    var tid    = esc(t.Task_ID || t.Action_Title || '');
+    var el     = document.createElement('div');
+    el.className = 'v3-loose-item';
+    el.setAttribute('data-task-id', tid);
+    el.setAttribute('onclick', 'v3ToggleTask(this)');
+    el.innerHTML =
+      '<div class="v3-loose-item-row">' +
+        '<span class="v3-lt-icon">' + icon + '</span>' +
+        '<span class="v3-lt-meta">' +
+          '<span class="v3-lt-title">' + esc(t.Action_Title || '—') + '</span>' +
+          '<span class="v3-lt-who">'   + esc(t.Assignee   || '')    + '</span>' +
+        '</span>' +
+        '<span class="v3-lt-dot ' + dotCls + '"></span>' +
+      '</div>' +
+      '<div class="v3-loose-expand">' +
+        '<button class="v3-loose-verb-btn" onclick="event.stopPropagation();v3CompleteTask(\'' + tid + '\',this)">Mark Done</button>' +
+      '</div>';
+    body.appendChild(el);
+  });
+}
+
+function stSelectGuest(uid, name) {
+  // Mark active in rail
+  document.querySelectorAll('#stAccBodyDesign .st-acc-item').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-uid') === uid);
+  });
+  // Select episode (resets H&Q cache, reel cache)
+  stSelectEpisode(uid, name);
+  // Ensure Design accordion is open and Design mode is active
+  stAccOpen('design');
+  if (st.currentTab !== 'design') stSwitchTab('design');
+}
+
+function stAccSelectMode(mode) {
+  // For Write sub-items (brainstorm, etc.)
+  st.currentMode = mode;
+  document.getElementById('stCanvasView').style.display  = 'none';
+  document.getElementById('stDocView').style.display     = 'flex';
+  document.getElementById('stImgAssets').style.display   = 'none';
+  document.getElementById('stWriteAssets').style.display = 'flex';
+  var segRow = document.getElementById('stSegRow');
+  if (segRow) segRow.style.display = 'none';
+  var captionWrap  = document.getElementById('stCaptionWrap');
+  if (captionWrap)  captionWrap.style.display  = 'none';
+  var companionDiv = document.getElementById('stCompanionDiv');
+  if (companionDiv) companionDiv.style.display = 'none';
+  var reelBrowser = document.getElementById('stReelBrowser');
+  if (reelBrowser) reelBrowser.style.display = 'none';
+  if (st.currentTab !== 'write') stSwitchTab('write');
+  // Mark write item active
+  document.querySelectorAll('#stAccBodyWrite .st-acc-item').forEach(function(el) {
+    el.classList.toggle('active', el.id === 'stAccItem' + mode.charAt(0).toUpperCase() + mode.slice(1));
+  });
+  var hist = document.getElementById('stChatHist');
+  if (hist) { hist.dataset.ph = ST_PLACEHOLDERS[mode] || ''; if (!hist.children.length) stShowWelcomeCard(); }
+}
+
+// ── H&Q TRAY — retired; H&Q is now a right-rail tab (stHqRailPane) ──────────
+function stToggleHqTray() { /* no-op: H&Q moved to right rail */ }
+function stCollapseHqTray() { stSetRailTab('bg'); } // switch to Backgrounds after pick
+
+// ── RAIL REEL LIST (right rail, Reels mode) ───────────────────
+function stLoadRailReels(uid) {
+  var list = document.getElementById('stRailReelList');
+  if (!list) return;
+  if (!uid) { stRenderRailReelList(); return; }
+  list.innerHTML = '<div class="st-reel-empty">Loading…</div>';
+  google.script.run
+    .withSuccessHandler(function(reels) {
+      st_reels = reels || [];
+      stRenderRailReelList();
+    })
+    .withFailureHandler(function() {
+      list.innerHTML = '<div class="st-reel-empty">Could not load reels.</div>';
+    })
+    .getReelsForEpisode(uid);
+}
+
+function stRenderRailReelList() {
+  var list = document.getElementById('stRailReelList');
+  if (!list) return;
+  if (!st.episodeUid) {
+    list.innerHTML = '<div class="st-reel-empty">Select a guest to browse reels.</div>';
+    return;
+  }
+  if (!st_reels.length) {
+    list.innerHTML = '<div class="st-reel-empty">No reels yet — add MP4 files to Staging/Reels.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  st_reels.forEach(function(r) {
+    var id      = r.Asset_ID;
+    var name    = (r.Quote_Text && r.Quote_Text !== 'undefined' && r.Quote_Text !== '')
+                    ? r.Quote_Text : (r.Display_Name || r.Asset_Type || 'Reel');
+    var caption = String(r.Caption_Host || '');
+    var card    = document.createElement('div');
+    card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
+    card.setAttribute('data-reel-id', id);
+    card.innerHTML =
+      '<div class="st-reel-card-name">' + esc(name) + '</div>' +
+      (caption ? '<div class="st-reel-card-caption">' + esc(caption) + '</div>' : '');
+    card.addEventListener('click', function() { stSelectRailReel(id); });
+    list.appendChild(card);
+  });
+}
+
+function stSelectRailReel(id) {
+  st.selectedReelId = id;
+  document.querySelectorAll('#stRailReelList .st-reel-card').forEach(function(c) {
+    c.classList.toggle('active', c.getAttribute('data-reel-id') === id);
+  });
+
+  // Find the reel object
+  var reel = null;
+  for (var i = 0; i < st_reels.length; i++) {
+    if (st_reels[i].Asset_ID === id) { reel = st_reels[i]; break; }
+  }
+  if (!reel) return;
+
+  // Caption + Title Card: localStorage first, then reel data
+  var captionEl   = document.getElementById('stCaptionField');
+  var titleCardEl = document.getElementById('stTitleCardField');
+  var savedCaption   = localStorage.getItem('st_caption_' + id);
+  var savedTitleCard = localStorage.getItem('st_tc_' + id);
+  var caption    = savedCaption   !== null ? savedCaption   : String(reel.Caption_Host || '');
+  var titleCard  = savedTitleCard !== null ? savedTitleCard : String(reel.Quote_Text || reel.Display_Name || '');
+  if (captionEl)   captionEl.textContent   = caption;
+  if (titleCardEl) titleCardEl.textContent = titleCard;
+
+  // Show video player in phone frame
+  var playerFrame = document.getElementById('stReelPlayerFrame');
+  var phoneFrame  = document.getElementById('stReelPhoneFrame');
+  var playerEmpty = document.getElementById('stReelPlayerEmpty');
+  var driveFileId = reel.Drive_File_ID || '';
+  if (driveFileId) {
+    if (playerFrame) playerFrame.src = 'https://drive.google.com/file/d/' + encodeURIComponent(driveFileId) + '/preview';
+    if (phoneFrame)  phoneFrame.style.display  = 'flex';
+    if (playerEmpty) playerEmpty.style.display = 'none';
+  }
+}
+
+// ── COMPANION DIVIDER ─────────────────────────────────────────
+function stInitCompanionDivider() {
+  var div      = document.getElementById('stCompanionDiv');
+  var topPane  = document.getElementById('stCaptionWrap');
+  var botPane  = document.getElementById('stChatHist');
+  if (!div || !topPane || !botPane) return;
+  var startY, startH;
+  div.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = topPane.getBoundingClientRect().height;
+    div.classList.add('dragging');
+    document.body.style.cursor    = 'row-resize';
+    document.body.style.userSelect = 'none';
+    function onMove(e2) {
+      var dy   = e2.clientY - startY;
+      var newH = Math.max(40, startH + dy);
+      topPane.style.flex = '0 0 ' + newH + 'px';
+    }
+    function onUp() {
+      div.classList.remove('dragging');
+      document.body.style.cursor    = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
+}
+
+// ── REEL CAPTION PERSISTENCE ─────────────────────────────────
+function stInitReelCaptionPersistence() {
+  var captionEl   = document.getElementById('stCaptionField');
+  var titleCardEl = document.getElementById('stTitleCardField');
+  if (captionEl) {
+    captionEl.addEventListener('input', function() {
+      if (st.designTab === 'reels' && st.selectedReelId) {
+        localStorage.setItem('st_caption_' + st.selectedReelId, captionEl.textContent);
+      }
+    });
+  }
+  if (titleCardEl) {
+    titleCardEl.addEventListener('input', function() {
+      if (st.designTab === 'reels' && st.selectedReelId) {
+        localStorage.setItem('st_tc_' + st.selectedReelId, titleCardEl.textContent);
+      }
+    });
+  }
+}
+
+// ── DESIGN TAB — Sub-tab switching ───────────────────────────
+function stSetDesignTab(tab) {
+  st.designTab = tab;
+  var isQg = (tab === 'qg');
+
+  // Segmented toggle state
+  var segImages = document.getElementById('stSegImages');
+  var segReels  = document.getElementById('stSegReels');
+  if (segImages) segImages.classList.toggle('active', isQg);
+  if (segReels)  segReels.classList.toggle('active', !isQg);
+
+  // Center: canvas (Images) or reel player (Reels)
+  document.getElementById('stCanvasView').style.display = isQg ? 'flex' : 'none';
+  if (isQg && st.fabricCanvas) setTimeout(stApplyDisplaySize, 0);
+  var reelView = document.getElementById('stReelView');
+  if (reelView) reelView.style.display = isQg ? 'none' : 'flex';
+
+  // Right rail: H&Q|Backgrounds panel (Images) or reel browser (Reels)
+  document.getElementById('stImgAssets').style.display = isQg ? 'flex' : 'none';
+  var reelBrowser = document.getElementById('stReelBrowser');
+  if (reelBrowser) reelBrowser.style.display = isQg ? 'none' : 'flex';
+
+  // Companion: Title Card shown in Reels mode only; clear caption on switch
+  var titleCardWrap = document.getElementById('stTitleCardWrap');
+  if (titleCardWrap) titleCardWrap.style.display = isQg ? 'none' : 'block';
+  var captionEl = document.getElementById('stCaptionField');
+  if (captionEl) {
+    captionEl.textContent = '';
+    captionEl.setAttribute('data-ph', isQg
+      ? 'Type to enter your caption, or ask Claude to create some options for you.'
+      : 'Caption…');
+  }
+  var titleCardEl = document.getElementById('stTitleCardField');
+  if (titleCardEl) titleCardEl.textContent = '';
+
+  // Reset phone frame when leaving Reels
+  if (isQg) {
+    var phoneFrame  = document.getElementById('stReelPhoneFrame');
+    var playerEmpty = document.getElementById('stReelPlayerEmpty');
+    var playerFrame = document.getElementById('stReelPlayerFrame');
+    if (phoneFrame)  phoneFrame.style.display  = 'none';
+    if (playerEmpty) playerEmpty.style.display = 'block';
+    if (playerFrame) playerFrame.src = '';
+  }
+
+  // Load content for each mode
+  if (isQg) {
+    if (st.episodeUid) stLoadHqContent(st.episodeUid);
+  } else {
+    if (st.episodeUid) stLoadRailReels(st.episodeUid);
+    else stRenderRailReelList();
+  }
+}
+
+// ── DESIGN TAB — H&Q chips panel ─────────────────────────────
+function stLoadHqContent(uid) {
+  if (st.hqContent !== null) { stRenderHqPanel(); return; }
+  var panel = document.getElementById('stHqPanel');
+  if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px">Loading…</div>';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      st.hqContent = res || { hooks: [], quotes: [], imagePrompts: [] };
+      stRenderHqPanel();
+    })
+    .withFailureHandler(function() {
+      if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px;line-height:1.5">Could not load.<br>Run Vert Fairy to generate hooks.</div>';
+    })
+    .getEpisodeHooksAndQuotes(uid);
+}
+
+function stRenderHqPanel() {
+  var panel = document.getElementById('stHqPanel');
+  if (!panel) return;
+  var content = st.hqContent;
+  var hooks   = (content && content.hooks)  ? content.hooks  : [];
+  var quotes  = (content && content.quotes) ? content.quotes : [];
+
+  if (!hooks.length && !quotes.length) {
+    panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px;line-height:1.5">No hooks or quotes yet.<br>Run Vert Fairy to generate them.</div>';
+    return;
+  }
+
+  function itemHtml(text, type) {
+    var safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return '<div class="st-hq-item ' + type + '" data-hq-text="' + safe + '">' + safe + '</div>';
+  }
+
+  var html = '';
+  if (hooks.length) {
+    html += '<div class="st-hq-section-lbl">Hooks</div>';
+    hooks.forEach(function(h) {
+      html += itemHtml((typeof h === 'string') ? h : (h.text || h.hook || String(h)), 'hook');
+    });
+  }
+  if (quotes.length) {
+    html += '<div class="st-hq-section-lbl">Quotes</div>';
+    quotes.forEach(function(q) {
+      html += itemHtml((typeof q === 'string') ? q : (q.text || q.quote || String(q)), 'quote');
+    });
+  }
+  panel.innerHTML = html;
+
+  panel.querySelectorAll('.st-hq-item[data-hq-text]').forEach(function(el) {
+    var text = el.getAttribute('data-hq-text');
+    el.addEventListener('click', function() { stDropText(text); });
+  });
+}
+
+function stDropText(text) {
+  if (!st.fabricCanvas) return;
+  // Collapse the H&Q tray — pick happened, move to composing
+  stCollapseHqTray();
+
+  var cw   = st.fabricCanvas.getWidth();
+  var ch   = st.fabricCanvas.getHeight();
+  var fill = st.activeColor || '#FFFFFF';
+  var guestAttr = st.guestName ? '\n— ' + st.guestName : '';
+  var fullText  = text + guestAttr;
+
+  stPushHistory();
+  var existing = st.fabricCanvas.getObjects().find(function(o) { return o._isText; });
+  if (existing) {
+    existing.set('text', fullText);
+    st.fabricCanvas.setActiveObject(existing);
+  } else {
+    var t = new fabric.Textbox(fullText, {
+      left:           cw / 2,
+      top:            ch * 0.41,
+      originX:        'center',
+      originY:        'center',
+      width:          cw - 48,
+      fontSize:       100,
+      fontFamily:     'Libre Baskerville',
+      fontWeight:     'normal',
+      fill:           fill,
+      textAlign:      'center',
+      lockUniScaling: true,
+      _isText: true
+    });
+    t.setControlsVisibility({ mt: false, mb: false });
+    st.fabricCanvas.add(t);
+    st.fabricCanvas.bringToFront(t);
+    st.fabricCanvas.setActiveObject(t);
+  }
+  st.fabricCanvas.renderAll();
+  stUpdateTextBtns();
+}
+
+// ── DESIGN TAB — Reels view ───────────────────────────────────
+function stLoadReels(uid) {
+  var list = document.getElementById('stReelList');
+  if (!list) return;
+  if (!uid) { stRenderReelList(); return; }
+  list.innerHTML = '<div class="st-reel-empty">Loading…</div>';
+  google.script.run
+    .withSuccessHandler(function(reels) {
+      st_reels = reels || [];
+      stRenderReelList();
+    })
+    .withFailureHandler(function() {
+      list.innerHTML = '<div class="st-reel-empty">Could not load reels.</div>';
+    })
+    .getReelsForEpisode(uid);
+}
+
+function stRenderReelList() {
+  var list = document.getElementById('stReelList');
+  if (!list) return;
+  if (!st.episodeUid) {
+    list.innerHTML = '<div class="st-reel-empty">Select an episode to browse reels.</div>';
+    return;
+  }
+  if (!st_reels.length) {
+    list.innerHTML = '<div class="st-reel-empty">No reels yet — add MP4 files to Staging/Reels.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  st_reels.forEach(function(r) {
+    var id      = r.Asset_ID;
+    var name    = (r.Quote_Text && r.Quote_Text !== 'undefined' && r.Quote_Text !== '')
+                    ? r.Quote_Text
+                    : (r.Display_Name || r.Asset_Type || 'Reel');
+    var caption = String(r.Caption_Host || '');
+    var card    = document.createElement('div');
+    card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
+    card.setAttribute('data-reel-id', id);
+    card.innerHTML =
+      '<div class="st-reel-card-name">' + esc(name) + '</div>' +
+      (caption ? '<div class="st-reel-card-caption">' + esc(caption) + '</div>' : '');
+    card.addEventListener('click', function() { stSelectReel(id); });
+    list.appendChild(card);
+  });
+}
+
+function stSelectReel(id) {
+  st.selectedReelId = id;
+  document.querySelectorAll('#stReelList .st-reel-card').forEach(function(c) {
+    c.classList.toggle('active', c.getAttribute('data-reel-id') === id);
+  });
+}
+
+// ── FORMAT CYCLE ─────────────────────────────────────────────
+var ST_FORMAT_CYCLE  = ['instagram', 'feed', 'square', 'landscape'];
+var ST_FORMAT_LABELS = { instagram: 'Vertical', feed: 'Feed', square: 'Square', landscape: 'Landscape' };
+
+function stCycleFormat() {
+  var cur  = st.ratio || 'instagram';
+  var idx  = ST_FORMAT_CYCLE.indexOf(cur);
+  var next = ST_FORMAT_CYCLE[(idx + 1) % ST_FORMAT_CYCLE.length];
+  stSetAspectRatio(next);
+  var btn = document.getElementById('stFormatCycleBtn');
+  if (btn) btn.textContent = ST_FORMAT_LABELS[next];
+}
+
+function stSyncFormatBtn(ratio) {
+  var btn = document.getElementById('stFormatCycleBtn');
+  if (btn) btn.textContent = ST_FORMAT_LABELS[ratio] || 'Vertical';
+}
+
+// ── JUSTIFY CYCLE ─────────────────────────────────────────────
+var ST_JUSTIFY_ICONS = {
+  left:   '<svg width="14" height="12" viewBox="0 0 14 12" fill="none"><line x1="1" y1="2" x2="13" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="6" x2="9" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="10" x2="11" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  center: '<svg width="14" height="12" viewBox="0 0 14 12" fill="none"><line x1="1" y1="2" x2="13" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="2" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  right:  '<svg width="14" height="12" viewBox="0 0 14 12" fill="none"><line x1="1" y1="2" x2="13" y2="2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="5" y1="6" x2="13" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="10" x2="13" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+};
+
+function stJustifyCycle() {
+  if (!st.fabricCanvas) return;
+  var active = st.fabricCanvas.getActiveObject();
+  if (!active || !active._isText) return;
+  var cur  = active.textAlign || 'left';
+  var next = cur === 'left' ? 'center' : cur === 'center' ? 'right' : 'left';
+  active.set('textAlign', next);
+  st.fabricCanvas.renderAll();
+  stPushHistory();
+  stUpdateJustifyBtn(next);
+}
+
+function stUpdateJustifyBtn(align) {
+  var btn = document.getElementById('stJustifyBtn');
+  if (btn) btn.innerHTML = ST_JUSTIFY_ICONS[align] || ST_JUSTIFY_ICONS.left;
+}
+
+// ── DAY PICKER ───────────────────────────────────────────────
+function stToggleDayPicker() {
+  var picker = document.getElementById('stDayPicker');
+  if (!picker) return;
+  picker.style.display = picker.style.display === 'none' ? 'flex' : 'none';
+}
+
+function stPickDay(btn, day) {
+  st.exportDay = day;
+  document.querySelectorAll('#stDayPicker .st-day-pill').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  document.getElementById('stDayPicker').style.display = 'none';
+  stExportDesign();
 }
 
 // ── EXPORT ───────────────────────────────────────────────────
 function stExport() {
   var canvas = st.fabricCanvas;
   if (!canvas) return;
-  var btn = document.getElementById('stExportBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   var origVpt = canvas.viewportTransform.slice();
   canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
   var dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
   canvas.setViewportTransform(origVpt);
   google.script.run
     .withSuccessHandler(function(result) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Export Image'; }
       if (result.success) { showToast('Saved: ' + result.filename); }
       else { showToast('Save failed: ' + (result.error || ''), true); }
     })
     .withFailureHandler(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Export Image'; }
       showToast('Save failed: ' + ((err && err.message) || err), true);
     })
     .saveImageToStaging(st.episodeUid, dataUrl);
+}
+
+function stExportDesign() {
+  var uid = st.episodeUid;
+  var day = st.exportDay || 'MON';
+  if (!uid) { showToast('Select an episode first.'); return; }
+  if (st.designTab === 'reels') {
+    stExportReel(uid, day);
+  } else {
+    stExportQg(uid, day);
+  }
+}
+
+function stExportQg(uid, day) {
+  var canvas = st.fabricCanvas;
+  if (!canvas) return;
+  var exportBtn = document.getElementById('stExportBtn');
+  if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Exporting…'; }
+
+  var canvasText = '';
+  canvas.getObjects().forEach(function(o) { if (o._isText && o.text) canvasText = o.text; });
+  var captionEl  = document.getElementById('stCaptionField');
+  var caption    = captionEl ? captionEl.textContent.trim() : '';
+
+  canvas.discardActiveObject();
+  canvas.renderAll();
+  var dataUrl = canvas.toDataURL({ format: 'png' });
+  var b64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
+      if (res && res.success) showToast('Exported → ' + res.filename);
+      else showToast('Export failed: ' + ((res && res.error) || 'unknown'), true);
+    })
+    .withFailureHandler(function(err) {
+      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
+      showToast('Export failed: ' + ((err && err.message) || err), true);
+    })
+    .exportAssetToDrive(uid, null, null, b64, null, day, canvasText, caption);
+}
+
+function stExportReel(uid, day) {
+  if (!st.selectedReelId) { showToast('Select a reel first.'); return; }
+  var exportBtn = document.getElementById('stExportBtn');
+  if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Exporting…'; }
+
+  var captionEl   = document.getElementById('stCaptionField');
+  var titleCardEl = document.getElementById('stTitleCardField');
+  var caption   = captionEl   ? captionEl.textContent.trim()   : '';
+  var titleText = titleCardEl ? titleCardEl.textContent.trim() : '';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
+      if (res && res.success) showToast('Exported → ' + res.filename);
+      else showToast('Export failed: ' + ((res && res.error) || 'unknown'), true);
+    })
+    .withFailureHandler(function(err) {
+      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
+      showToast('Export failed: ' + ((err && err.message) || err), true);
+    })
+    .exportReelToDrive(uid, day, st.selectedReelId, titleText, caption);
 }
 
 // ── DOC VIEW ─────────────────────────────────────────────────
@@ -12084,11 +13045,12 @@ document.addEventListener('click', function(e) {
   if (!e.target.closest('#stEpBar')) dd.classList.remove('open');
 });
 
-// Close text picker on outside click
+// Close pickers on outside click
 document.addEventListener('click', function(e) {
-  var picker = document.getElementById('stTextTypePicker');
-  if (!picker || picker.style.display === 'none') return;
-  if (!e.target.closest('#stAddTextWrap')) picker.style.display = 'none';
+  var tp = document.getElementById('stTextTypePicker');
+  if (tp && tp.style.display !== 'none' && !e.target.closest('#stAddTextWrap')) tp.style.display = 'none';
+  var dp = document.getElementById('stDayPicker');
+  if (dp && dp.style.display !== 'none' && !e.target.closest('#stExportWrap')) dp.style.display = 'none';
 });
 
 function showEpisodeList() {

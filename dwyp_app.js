@@ -133,8 +133,8 @@ var ASSET_LIBRARY_COLS = {
   Quote_Text:    7,
   Reel_Summary:  8,
   Image_Prompt:  9,
-  Caption_Draft: 10,
-  Caption_Final: 11,
+  Caption_Host:  10,  // working caption — sole source of truth for card render, schedule, Make pull
+  Caption_Guest: 11,  // omni-voice caption for guest package (Guest Package builder populates; empty until then)
   Notes:         12,
   Background_ID: 13,
   Canvas_State:  14,
@@ -193,7 +193,8 @@ var EPISODES_COLS = {
   Images_Status:       12,
   Episode_URL:         13,
   Episode_Type:        14,
-  Frameio_Project_ID:  15
+  Frameio_Project_ID:  15,
+  Guest_Package_URL:   16  // populated by Guest Package builder spoke; open slot only
 };
 
 
@@ -690,7 +691,7 @@ function getSocialAssets(episodeUid, assetType) {
         Episode_UID:  String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]),
         Asset_Type:   String(row[ASSET_LIBRARY_COLS.Asset_Type   - 1]),
         Drive_File_ID: fileId,
-        Caption:      String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
+        Caption:      String(row[ASSET_LIBRARY_COLS.Caption_Host - 1] || ''),
         Status:       String(row[ASSET_LIBRARY_COLS.Status        - 1]),
         Slide_Index:  String(row[ASSET_LIBRARY_COLS.Slide_Index   - 1]),
         Availability: String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
@@ -1065,7 +1066,7 @@ function getAssetLibraryRow(assetId) {
       Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
       Availability:  String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
       Quote_Text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
-      Caption_Final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '')
+      Caption_Host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || '')
     };
   }
   return null;
@@ -1126,7 +1127,7 @@ function deleteSocialAssetByAssetLibraryId(assetId) {
 /**
  * Canvas-level unschedule by assetId.
  * Trashes the Drive PNG (non-fatal), deletes the Social_Assets row, and resets the
- * Asset_Library row to candidate/available — preserving Quote_Text and Caption_Final.
+ * Asset_Library row to candidate/available — preserving Quote_Text and Caption_Host.
  *
  * Distinct from unscheduleAsset(episodeUid, slotId), which operates by slot lookup
  * and is called from the accordion-level unschedule flow.
@@ -1150,7 +1151,7 @@ function unscheduleAssetById(assetId) {
     // 2. Delete matching Social_Assets row
     deleteSocialAssetByAssetLibraryId(assetId);
 
-    // 3. Reset AL row — Quote_Text and Caption_Final are intentionally preserved
+    // 3. Reset AL row — Quote_Text and Caption_Host are intentionally preserved
     patchAssetLibraryRow(assetId, {
       Status:        'candidate',
       Availability:  'available',
@@ -1298,7 +1299,7 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
       var row     = i + 1;
       var written = false;
       if (captionText !== undefined && captionText !== null) {
-        sheet.getRange(row, ASSET_LIBRARY_COLS.Caption_Draft).setValue(captionText);
+        sheet.getRange(row, ASSET_LIBRARY_COLS.Caption_Host).setValue(captionText);
         written = true;
       }
       if (canvasJson !== undefined && canvasJson !== null) {
@@ -1309,10 +1310,7 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
         sheet.getRange(row, ASSET_LIBRARY_COLS.Display_Text).setValue(displayText);
         written = true;
       }
-      if (captionFinal !== undefined && captionFinal !== null) {
-        sheet.getRange(row, ASSET_LIBRARY_COLS.Caption_Final).setValue(captionFinal);
-        written = true;
-      }
+      // Caption_Guest (col 11) reserved for Guest Package builder — not written here
       if (written) bumpVersion('asset_library', 'saveAssetDraft');
       return { ok: true };
     }
@@ -1323,8 +1321,8 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
 }
 
 /**
- * Returns the display-layer state for a single asset: display_text, caption_final,
- * caption_draft, canvas_state, and quote_text_fallback.
+ * Returns the display-layer state for a single asset: display_text, caption_host,
+ * caption_guest, canvas_state, and quote_text_fallback.
  * Used by the frontend to do a targeted refresh without re-fetching the full candidate list.
  */
 function getAssetDisplayState(assetId) {
@@ -1339,8 +1337,8 @@ function getAssetDisplayState(assetId) {
       return {
         ok:                  true,
         display_text:        String(data[i][ASSET_LIBRARY_COLS.Display_Text  - 1] || '') || null,
-        caption_final:       String(data[i][ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
-        caption_draft:       _parseCaptionDraft_(String(data[i][ASSET_LIBRARY_COLS.Caption_Draft - 1] || '')),
+        caption_guest:       String(data[i][ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
+        caption_host:        String(data[i][ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
         canvas_state:        String(data[i][ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
         quote_text_fallback: String(data[i][ASSET_LIBRARY_COLS.Quote_Text    - 1] || '')
       };
@@ -1367,7 +1365,7 @@ function getAssetDisplayState(assetId) {
  * @param {string} canvasJson    - Fabric.js canvas JSON, base64 srcs already stripped
  * @returns {{ success: boolean, filename?: string, url?: string, folderUrl?: string, error?: string }}
  */
-function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson) {
+function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson, day, canvasText, caption) {
   try {
     var stagingId = getStagingFolderIdByUid(episodeUid);
     if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
@@ -1376,10 +1374,21 @@ function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson) {
     var exportFolder   = exportFolderIt.hasNext() ? exportFolderIt.next() : stagingFolder.createFolder('Manual_Exports');
 
     var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
-    var filename  = (slotId || 'noslot') + '_' + (assetId || 'noasset') + '_' + timestamp + '.png';
+    var dayPrefix = day ? (String(day).toUpperCase() + '_') : '';
+    var baseName  = dayPrefix + (slotId || 'noslot') + '_' + (assetId || 'noasset') + '_' + timestamp;
+    var filename  = baseName + '.png';
     var blob      = Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', filename);
     var file      = exportFolder.createFile(blob);
     var fileId    = file.getId();
+
+    // Write paired .txt companion (canvas text + caption)
+    var txtParts = [];
+    if (canvasText) txtParts.push(String(canvasText).trim());
+    if (caption)    txtParts.push(String(caption).trim());
+    if (txtParts.length) {
+      var txtBlob = Utilities.newBlob(txtParts.join('\n\n'), 'text/plain', baseName + '.txt');
+      exportFolder.createFile(txtBlob);
+    }
 
     var ss = SpreadsheetApp.openById(getMasterSheetId());
 
@@ -1406,6 +1415,67 @@ function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson) {
       success:   true,
       filename:  filename,
       url:       'https://drive.google.com/file/d/' + fileId + '/view',
+      folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Copies a reel's Drive file into Manual_Exports with a day prefix, then writes a
+ * paired .txt companion (title card text + caption). Used by Design tab Reels export.
+ */
+function exportReelToDrive(episodeUid, day, reelAssetId, titleText, caption) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
+    var stagingFolder  = DriveApp.getFolderById(stagingId);
+    var exportFolderIt = stagingFolder.getFoldersByName('Manual_Exports');
+    var exportFolder   = exportFolderIt.hasNext() ? exportFolderIt.next() : stagingFolder.createFolder('Manual_Exports');
+
+    // Resolve reel's Drive file ID from Asset_Library
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return { success: false, error: 'Asset_Library sheet not found' };
+
+    var alData  = alSheet.getDataRange().getValues();
+    var driveFileId = null;
+    for (var i = 1; i < alData.length; i++) {
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(reelAssetId)) {
+        driveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+        break;
+      }
+    }
+    if (!driveFileId) return { success: false, error: 'No Drive file ID found for reel: ' + reelAssetId };
+
+    var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
+    var dayPrefix = day ? (String(day).toUpperCase() + '_') : '';
+    var baseName  = dayPrefix + 'reel_' + reelAssetId + '_' + timestamp;
+
+    // Copy the reel file into Manual_Exports
+    var reelFile     = DriveApp.getFileById(driveFileId);
+    var copiedFile   = reelFile.makeCopy(baseName + '.' + (reelFile.getName().split('.').pop() || 'mp4'), exportFolder);
+
+    // Write paired .txt companion
+    var txtParts = [];
+    if (titleText) txtParts.push(String(titleText).trim());
+    if (caption)   txtParts.push(String(caption).trim());
+    if (txtParts.length) {
+      var txtBlob = Utilities.newBlob(txtParts.join('\n\n'), 'text/plain', baseName + '.txt');
+      exportFolder.createFile(txtBlob);
+    }
+
+    try {
+      var audit = ss.getSheetByName('Audit_Trail');
+      if (audit) audit.appendRow([new Date(), 'DWYP_App', 'exportReelToDrive', reelAssetId + ' → ' + baseName]);
+    } catch(logErr) {}
+
+    return {
+      success:   true,
+      filename:  baseName,
+      url:       'https://drive.google.com/file/d/' + copiedFile.getId() + '/view',
       folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
     };
   } catch (e) {
@@ -2599,8 +2669,8 @@ function getEpisodeHooksAndQuotes(episodeUid) {
         var name    = String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
         var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]);
         if (!text) continue;
-        var captionDraft = String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || '').trim();
-        var entry = { assetId: assetId, text: text, captionDraft: captionDraft || null };
+        var captionHost = String(row[ASSET_LIBRARY_COLS.Caption_Host - 1] || '').trim();
+        var entry = { assetId: assetId, text: text, captionHost: captionHost || null };
         // Display_Name prefix "Hook" → hooks, "Quote" → quotes; default quotes
         if (name.toLowerCase().indexOf('hook') === 0) {
           hooks.push(entry);
@@ -2650,32 +2720,6 @@ function getEpisodeHooksAndQuotes(episodeUid) {
   }
 }
 
-/**
- * Generates a social media caption using Claude for a Publish graphic or reel.
- * @param {string} episodeUid
- * @param {string} platform   — e.g. 'Instagram Story', 'Instagram Feed', 'Reel'
- * @param {string} contentText — text on graphic or reel display name
- * @returns {{ success: boolean, text?: string, error?: string }}
- */
-function generatePublishCaption(episodeUid, platform, contentText) {
-  try {
-    var plat = (platform || 'Instagram').toUpperCase();
-    var promptText =
-      "PLATFORM: " + plat + "\n\n" +
-      "Write a social media caption for the above platform for the Don't Waste Your Pain podcast.\n\n" +
-      "Content on the graphic or in the clip:\n" + (contentText || "(no content provided)") + "\n\n" +
-      "Platform-specific instructions:\n" +
-      "- INSTAGRAM STORY or INSTAGRAM FEED: punchy opener, under 125 characters, no hashtags\n" +
-      "- REEL: 1-2 sentences, hook-first, can go up to 200 characters\n" +
-      "Match the DWYP voice: honest, direct, specific, unsentimental. " +
-      "Return only the caption text.";
-
-    var text = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 512 });
-    return { success: true, text: text };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
 
 /**
  * Returns the stored summary for a reel, or generates + stores one if missing.
@@ -2745,53 +2789,6 @@ function getReelStreamUrl(fileId) {
   }
 }
 
-/**
- * Generates fresh caption variants for a reel, saves to Caption_Draft,
- * clears Caption_Final, and returns the first variant.
- */
-function generateReelCaption(assetId, episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet   = ss.getSheetByName(alName);
-    if (!sheet) return { caption: '', error: "Asset_Library tab not found" };
-    var data = sheet.getDataRange().getValues();
-
-    var rowIndex    = -1;
-    var summary     = '';
-    var displayName = '';
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      rowIndex    = i + 1;
-      summary     = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
-      break;
-    }
-    if (rowIndex === -1) return { caption: '', error: "Asset not found: " + assetId };
-
-    var manifest  = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-
-    var variantsJson = generateCaptionVariants_(summary || displayName, guestName, epTitle, true);
-    var first = '';
-    try {
-      var arr = JSON.parse(variantsJson);
-      if (Array.isArray(arr) && arr.length) {
-        var s = arr[0];
-        first = (s.length > 1 && s[0] === '"' && s[s.length - 1] === '"') ? s.slice(1, -1) : s;
-      }
-    } catch(e) {}
-
-    sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variantsJson);
-    sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Caption_Final).setValue('');
-    bumpVersion("asset_library", "generateReelCaption");
-    return { caption: first, draft: variantsJson };
-  } catch (err) {
-    return { caption: '', error: err.message };
-  }
-}
 
 function getOrGenerateReelSummary(assetId, episodeUid) {
   try {
@@ -2900,6 +2897,80 @@ function normalizeQuoteText(str) {
     .replace(/”/g, '"');
 }
 
+// ── APPROVED/ FOLDER HELPERS (Spoke A) ───────────────────────────────────────
+
+/**
+ * Returns the Approved/ subfolder at the episode production folder root,
+ * creating it if it does not exist.
+ * Distinct from Images/Approved/ and Reels/Approved/, which belong to the
+ * pre-pipeline staging review flow.
+ * @param {string} episodeUid
+ * @returns {GoogleAppsScript.Drive.Folder}
+ */
+function getOrCreateApprovedFolder(episodeUid) {
+  var stagingId = getStagingFolderIdByUid(episodeUid);
+  if (!stagingId) throw new Error('Production folder not found for episode: ' + episodeUid);
+  var root = DriveApp.getFolderById(stagingId);
+  var it   = root.getFoldersByName('Approved');
+  return it.hasNext() ? it.next() : root.createFolder('Approved');
+}
+
+/**
+ * Returns the slot-stable filename for an Approved/ asset.
+ * Format: {slotId}_{MMM-DD-YY}.{ext}
+ * Examples: SLOT-MON-01_MAY-18-26.png  |  CUSTOM-MON-1748291234567_MAY-18-26.mp4
+ * JT_TIMEZONE from Governance_Config; falls back to script timezone if unset.
+ * @param {string} slotId
+ * @param {Date}   scheduledAt
+ * @param {string} extension  - 'png' | 'mp4' | 'txt'
+ * @returns {string}
+ */
+function buildApprovedFilename(slotId, scheduledAt, extension) {
+  var tz = getGovernance('JT_TIMEZONE') || Session.getScriptTimeZone();
+  var dt = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  var ds = Utilities.formatDate(dt, tz, 'MMM-dd-yy').toUpperCase();
+  return slotId + '_' + ds + '.' + extension;
+}
+
+/**
+ * Writes an asset blob + caption sidecar (.txt) to Approved/ with slot-stable names.
+ * Overwrites any existing file with the same name (find-trash-create — Drive does
+ * not replace by name automatically).
+ * Logs APPROVED_WRITE to Audit_Trail.
+ * @param {string} episodeUid
+ * @param {string} slotId
+ * @param {Date}   scheduledAt
+ * @param {GoogleAppsScript.Base.Blob} assetBlob
+ * @param {string} captionText
+ * @param {string} extension  - 'png' | 'mp4'
+ * @returns {{ assetUrl: string, txtUrl: string, filename: string }}
+ */
+function writeApprovedAsset(episodeUid, slotId, scheduledAt, assetBlob, captionText, extension) {
+  var folder      = getOrCreateApprovedFolder(episodeUid);
+  var filename    = buildApprovedFilename(slotId, scheduledAt, extension);
+  var txtFilename = buildApprovedFilename(slotId, scheduledAt, 'txt');
+
+  var existing = folder.getFilesByName(filename);
+  while (existing.hasNext()) existing.next().setTrashed(true);
+  var existingTxt = folder.getFilesByName(txtFilename);
+  while (existingTxt.hasNext()) existingTxt.next().setTrashed(true);
+
+  var assetFile = folder.createFile(assetBlob.setName(filename));
+  var txtFile   = folder.createFile(Utilities.newBlob(captionText || '', 'text/plain', txtFilename));
+
+  try {
+    var ss    = SpreadsheetApp.openById(getMasterSheetId());
+    var audit = ss.getSheetByName('Audit_Trail');
+    if (audit) audit.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE', episodeUid + ' · ' + filename]);
+  } catch (logErr) {}
+
+  return {
+    assetUrl: 'https://drive.google.com/file/d/' + assetFile.getId() + '/view',
+    txtUrl:   'https://drive.google.com/file/d/' + txtFile.getId()   + '/view',
+    filename: filename
+  };
+}
+
 /**
  * Saves a canvas-exported PNG to Staging/Images/, updates Asset_Library row (if assetId provided),
  * and creates a Social_Assets row linking the AL asset to the slot.
@@ -2967,7 +3038,18 @@ function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, c
       }
     }
 
+    // Snapshot Caption_Host from AL row at schedule time — authoritative source for Approved/ sidecar
+    var captionForApproved = caption || '';
+    if (assetId && alData) {
+      for (var ci = 1; ci < alData.length; ci++) {
+        if (String(alData[ci][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+        captionForApproved = String(alData[ci][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
+        break;
+      }
+    }
+
     // Create Social_Assets row
+    var scheduledAt = new Date();
     var postId  = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
     var saSheet = ss.getSheetByName("Social_Assets");
     var saRow   = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
@@ -2978,11 +3060,23 @@ function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, c
     saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "quote_graphic";
     saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
     saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = fileId;
-    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = scheduledAt;
     saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
     saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = "publish_canvas";
     saSheet.appendRow(saRow);
     bumpVersion("asset_library", "addToWeekAsImage");
+
+    // Fan-out: write PNG + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
+    try {
+      writeApprovedAsset(episodeUid, slotId, scheduledAt, blob, captionForApproved, 'png');
+    } catch (approvedErr) {
+      try {
+        var auditLog = ss.getSheetByName('Audit_Trail');
+        if (auditLog) auditLog.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
+          'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + (resolvedAlId || 'drive-fallback') + ' | err=' + approvedErr.message]);
+      } catch (e2) {}
+    }
+
     return { success: true, postId: postId, fileId: fileId, assetLibraryId: resolvedAlId };
   } catch (e) {
     return { success: false, error: e.message };
@@ -3040,19 +3134,42 @@ function rescheduleAsset(assetId, postId, imageDataB64, mimeType, caption, quote
     if (canvasJson) alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
 
     // Update Social_Assets row (caption always; Drive_File_ID only when image changed)
-    var saSheet = ss.getSheetByName("Social_Assets");
+    var saSheet     = ss.getSheetByName("Social_Assets");
+    var slotId      = '';
+    var scheduledAt = new Date();
     if (saSheet && postId) {
       var saData = saSheet.getDataRange().getValues();
       for (var j = 1; j < saData.length; j++) {
         if (String(saData[j][SOCIAL_ASSETS_COLS.Post_ID - 1]) !== String(postId)) continue;
+        slotId = String(saData[j][SOCIAL_ASSETS_COLS.Slot - 1] || '');
         if (fileId) saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Drive_File_ID).setValue(fileId);
         saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Caption      ).setValue(caption || "");
-        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Scheduled_At ).setValue(new Date());
+        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Scheduled_At ).setValue(scheduledAt);
         break;
       }
     }
 
     bumpVersion("asset_library", "rescheduleAsset");
+
+    // Fan-out: write PNG + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
+    if (imageDataB64 && slotId) {
+      try {
+        var captionForApproved = caption || '';
+        for (var ri = 1; ri < alData.length; ri++) {
+          if (String(alData[ri][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+          captionForApproved = String(alData[ri][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
+          break;
+        }
+        writeApprovedAsset(episodeUid, slotId, scheduledAt, blob, captionForApproved, 'png');
+      } catch (approvedErr) {
+        try {
+          var auditRe = ss.getSheetByName('Audit_Trail');
+          if (auditRe) auditRe.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
+            'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + assetId + ' | err=' + approvedErr.message]);
+        } catch (e2) {}
+      }
+    }
+
     return { success: true, fileId: fileId };
   } catch (e) {
     return { success: false, error: e.message };
@@ -3109,497 +3226,6 @@ function addPostingSlot(day, platform, assetType) {
   }
 }
 
-// ── ASSET ENRICHMENT ─────────────────────────────────────────────────────────
-
-/**
- * Reads the raw podcast transcript for an episode and asks Claude to extract
- * hooks and quotes. Creates Asset_Library rows for each with Caption_Draft
- * (JSON array of 3 variants). Idempotent — skips texts already in AL.
- * @param {string} episodeUid
- * @returns {{ done: boolean, hooks?: number, quotes?: number, created?: number, error?: string }}
- */
-function enrichQuoteAssetsFromTranscript(episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet = ss.getSheetByName(alName);
-    if (!alSheet) return { done: false, error: "Asset_Library tab not found" };
-
-    // Scan existing quote_graphic rows — if any exist, skip re-extraction (Gemini is non-deterministic)
-    var alData        = alSheet.getDataRange().getValues();
-    var needsBackfill = []; // { rowNum, text } for rows with empty Caption_Draft
-    var existingCount = 0;
-    for (var i = 1; i < alData.length; i++) {
-      var row = alData[i];
-      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
-      if (normType !== 'quotegraphic') continue;
-      existingCount++;
-      var existingText    = String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1]).trim();
-      var existingCaption = String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1]).trim();
-      if (!existingCaption || existingCaption === '[]') needsBackfill.push({ rowNum: i + 1, text: existingText });
-    }
-
-    // If rows already exist, only backfill missing captions — never re-extract
-    if (existingCount > 0) {
-      var manifest  = getEpisodeManifest(episodeUid);
-      var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-      var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-      var backfilled = 0;
-      if (needsBackfill.length) {
-        var backfillMap = generateCaptionVariantsBatch_(
-          needsBackfill.map(function(b) { return b.text; }),
-          guestName, epTitle, false
-        );
-        needsBackfill.forEach(function(b, bIdx) {
-          var variants = backfillMap[bIdx] || '[]';
-          if (variants !== '[]') {
-            alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Draft).setValue(variants);
-            alSheet.getRange(b.rowNum, ASSET_LIBRARY_COLS.Caption_Final).setValue(_parseCaptionDraft_(variants));
-            backfilled++;
-          }
-        });
-        if (backfilled) bumpVersion("asset_library", "enrichQuoteAssetsFromTranscript");
-      }
-      return { done: true, skipped: existingCount, backfilled: backfilled };
-    }
-
-    // No existing rows — read transcript from Raw folder
-    var rawFolderId = getRawFolderIdByUid(episodeUid);
-    if (!rawFolderId) return { done: false, error: "Raw folder not found for: " + episodeUid };
-
-    var transcriptText = null;
-    var folder = DriveApp.getFolderById(rawFolderId);
-    var files  = folder.getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      if (file.getName().toLowerCase().indexOf("transcript") === -1) continue;
-      var mime = file.getMimeType();
-      if (mime === "application/vnd.google-apps.document") {
-        transcriptText = DocumentApp.openById(file.getId()).getBody().getText();
-      } else if (mime === "text/plain") {
-        transcriptText = file.getBlob().getDataAsString();
-      } else if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-        transcriptText = file.getAs("text/plain").getDataAsString();
-      }
-      if (transcriptText) break;
-    }
-    if (!transcriptText) return { done: false, error: "No transcript file found in Raw folder" };
-
-    var manifest  = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-    var apiKey    = getGovernance("GEMINI_API_KEY");
-
-    // Call 1: Gemini extracts hooks and quotes from the full transcript (1M-token context, no Claude TPM issue)
-    // Line-based format avoids JSON parsing failures caused by embedded quotes in real transcript text
-    var extractPrompt =
-      "Extract hooks and quotes from this podcast transcript for social media quote graphics.\n\n" +
-      "Guest: " + (guestName || "unknown") + "\n" +
-      "Episode: " + (epTitle   || "unknown") + "\n\n" +
-      "Hooks: standalone provocative or insightful statements that could stand alone on a quote graphic.\n" +
-      "Quotes: direct, memorable verbatim speech from the guest — specific and emotionally true.\n" +
-      "Extract 5–15 of each — only the best. Do not pad.\n\n" +
-      "Return ONLY plain lines in this exact format (no JSON, no markdown, no numbering):\n" +
-      "HOOK: the hook text\n" +
-      "QUOTE: the quote text — " + (guestName || "Guest");
-
-    var extraction = callGeminiTextAnalysis_(transcriptText, extractPrompt, apiKey);
-    if (!extraction) return { done: false, error: "Gemini extraction returned nothing" };
-
-    // Parse line-based response
-    var hooks  = [];
-    var quotes = [];
-    var lines  = extraction.split(/\r?\n/);
-    lines.forEach(function(line) {
-      var trimmed = line.trim();
-      if (/^HOOK:\s*/i.test(trimmed)) {
-        var t = trimmed.replace(/^HOOK:\s*/i, '').trim();
-        if (t) hooks.push(t);
-      } else if (/^QUOTE:\s*/i.test(trimmed)) {
-        var q = trimmed.replace(/^QUOTE:\s*/i, '').trim();
-        if (q) quotes.push(q);
-      }
-    });
-
-    var allEntries = hooks.map(function(t)  { return { prefix: 'Hook',  text: t }; })
-                   .concat(quotes.map(function(t) { return { prefix: 'Quote', text: t }; }));
-    if (!allEntries.length) return { done: true, hooks: 0, quotes: 0, created: 0 };
-
-    // Call 2: one Claude batch call for all caption variants (Claude only sees short extracted texts)
-    var variantMap = generateCaptionVariantsBatch_(
-      allEntries.map(function(e) { return e.text; }),
-      guestName, epTitle, false
-    );
-
-    // Write AL rows
-    var created = 0;
-    allEntries.forEach(function(entry, idx) {
-      var captionVariants = variantMap[idx] || '[]';
-      var assetId     = 'AL-' + episodeUid + '-QG-' + (Date.now() + idx);
-      var displayName = entry.prefix + ': ' + entry.text.slice(0, 60);
-      var newRow = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill('');
-      newRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = assetId;
-      newRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
-      newRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = 'quote_graphic';
-      newRow[ASSET_LIBRARY_COLS.Display_Name - 1] = displayName;
-      newRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = normalizeQuoteText(entry.text);
-      newRow[ASSET_LIBRARY_COLS.Caption_Draft - 1] = captionVariants;
-      newRow[ASSET_LIBRARY_COLS.Caption_Final - 1] = _parseCaptionDraft_(captionVariants);
-      newRow[ASSET_LIBRARY_COLS.Status        - 1] = 'candidate';
-      newRow[ASSET_LIBRARY_COLS.Availability - 1] = 'available';
-      newRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
-      newRow[ASSET_LIBRARY_COLS.Created_By   - 1] = 'transcript_enrichment';
-      alSheet.appendRow(newRow);
-      created++;
-    });
-    if (created) bumpVersion("asset_library", "enrichQuoteAssetsFromTranscript");
-    return { done: true, hooks: hooks.length, quotes: quotes.length, created: created };
-  } catch (err) {
-    return { done: false, error: err.message };
-  }
-}
-
-/**
- * Scans Staging/Reels/ for MP4 files, runs each through Gemini video for a
- * verbose description, then Claude for 3 caption variants. Creates or updates
- * Asset_Library rows. Idempotent — skips files already enriched.
- * @param {string} episodeUid
- * @returns {{ done: boolean, processed?: number, skipped?: number, error?: string }}
- */
-function enrichReelsForEpisode(episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet = ss.getSheetByName(alName);
-    if (!alSheet) return { done: false, error: "Asset_Library tab not found" };
-
-    // Index existing reel rows by Drive_File_ID
-    var alData = alSheet.getDataRange().getValues();
-    var existingByFileId = {};
-    for (var i = 1; i < alData.length; i++) {
-      var row = alData[i];
-      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
-      if (normType !== 'reel' && normType !== 'bankclip') continue;
-      var fid = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
-      if (fid) existingByFileId[fid] = { rowNum: i + 1, hasSummary: !!String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1]).trim() };
-    }
-
-    // Scan Staging/Reels/ — prefer Approved/ subfolder
-    var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { done: false, error: "Staging folder not found for: " + episodeUid };
-    var reelsFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Reels');
-    if (!reelsFolderIt.hasNext()) return { done: true, processed: 0, skipped: 0 };
-    var reelsFolder = reelsFolderIt.next();
-
-    var mp4Files = [];
-    var approvedIt = reelsFolder.getFoldersByName('Approved');
-    if (approvedIt.hasNext()) {
-      var aIt = approvedIt.next().getFiles();
-      while (aIt.hasNext()) { var af = aIt.next(); if (af.getMimeType() === 'video/mp4') mp4Files.push(af); }
-    }
-    if (!mp4Files.length) {
-      var rIt = reelsFolder.getFiles();
-      while (rIt.hasNext()) { var rf = rIt.next(); if (rf.getMimeType() === 'video/mp4') mp4Files.push(rf); }
-    }
-    if (!mp4Files.length) return { done: true, processed: 0, skipped: 0 };
-
-    var manifest  = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-    var apiKey    = getGovernance("GEMINI_API_KEY");
-
-    var processed  = 0;
-    var skipped    = 0;
-    var timedOut   = false;
-    var startTime  = Date.now();
-    var MAX_MS     = 4.5 * 60 * 1000; // leave 1.5 min buffer before GAS 6-min limit
-
-    for (var reelNum = 0; reelNum < mp4Files.length; reelNum++) {
-      if (Date.now() - startTime > MAX_MS) {
-        timedOut = true;
-        console.log('[enrichReelsForEpisode] Time limit approaching — stopping at reel ' + reelNum + '. Re-run to continue.');
-        break;
-      }
-
-      var file     = mp4Files[reelNum];
-      var fileId   = file.getId();
-      var fileName = file.getName().replace(/\.mp4$/i, '').replace(/[_-]/g, ' ').trim();
-      if (existingByFileId[fileId] && existingByFileId[fileId].hasSummary) { skipped++; continue; }
-
-      var videoPrompt =
-        "Watch this video clip carefully. This is from the 'Don't Waste Your Pain' podcast" +
-        (guestName ? " featuring " + guestName : "") + ".\n\n" +
-        "Describe in full detail:\n" +
-        "1. What is being said — key phrases and direct quotes verbatim\n" +
-        "2. The emotional tone and energy of the speaker\n" +
-        "3. The main point or takeaway\n" +
-        "4. Any compelling story beats or turning points\n\n" +
-        "Be verbose and thorough — this will be used to write social media captions.";
-
-      var summary = callGeminiVideoAnalysis_(fileId, videoPrompt, apiKey);
-      if (!summary) { skipped++; continue; }
-
-      var captionVariants = generateCaptionVariants_(summary, guestName, epTitle, true);
-
-      if (existingByFileId[fileId]) {
-        alSheet.getRange(existingByFileId[fileId].rowNum, ASSET_LIBRARY_COLS.Reel_Summary ).setValue(summary);
-        alSheet.getRange(existingByFileId[fileId].rowNum, ASSET_LIBRARY_COLS.Caption_Draft).setValue(captionVariants);
-      } else {
-        var assetId = 'AL-' + episodeUid + '-RL-' + fileId.slice(-8);
-        var newRow  = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill('');
-        newRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = assetId;
-        newRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
-        newRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = 'Reel';
-        newRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = fileId;
-        newRow[ASSET_LIBRARY_COLS.Display_Name - 1] = (fileName.slice(0, 80) || ('Reel ' + (reelNum + 1)));
-        newRow[ASSET_LIBRARY_COLS.Reel_Summary - 1] = summary;
-        newRow[ASSET_LIBRARY_COLS.Caption_Draft- 1] = captionVariants;
-        newRow[ASSET_LIBRARY_COLS.Status       - 1] = 'candidate';
-        newRow[ASSET_LIBRARY_COLS.Availability - 1] = 'available';
-        newRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
-        newRow[ASSET_LIBRARY_COLS.Created_By   - 1] = 'reel_enrichment';
-        alSheet.appendRow(newRow);
-      }
-      processed++;
-      Utilities.sleep(3000); // brief pause between files
-    }
-
-    if (processed) bumpVersion("asset_library", "enrichReelsForEpisode");
-    return { done: true, processed: processed, skipped: skipped, timedOut: timedOut, remaining: timedOut ? mp4Files.length - processed - skipped : 0 };
-  } catch (err) {
-    return { done: false, error: err.message };
-  }
-}
-
-/**
- * Uploads a Drive video to the Gemini Files API and returns a verbose
- * description using gemini-1.5-flash. Returns null on any failure.
- * @private
- */
-function callGeminiVideoAnalysis_(driveFileId, prompt, apiKey) {
-  try {
-    var file     = DriveApp.getFileById(driveFileId);
-    var fileSize = file.getSize();
-    var mimeType = file.getMimeType() || 'video/mp4';
-    var fileName = file.getName();
-    if (fileSize > 45 * 1024 * 1024) {
-      console.log("[callGeminiVideoAnalysis_] Skipping — too large (" + Math.round(fileSize / 1048576) + "MB): " + fileName);
-      return null;
-    }
-
-    // Initiate resumable upload
-    var initResp = UrlFetchApp.fetch(
-      'https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable&key=' + apiKey,
-      {
-        method: 'POST', contentType: 'application/json',
-        headers: {
-          'X-Goog-Upload-Protocol':              'resumable',
-          'X-Goog-Upload-Command':               'start',
-          'X-Goog-Upload-Header-Content-Length': String(fileSize),
-          'X-Goog-Upload-Header-Content-Type':   mimeType
-        },
-        payload: JSON.stringify({ file: { display_name: fileName } }),
-        muteHttpExceptions: true
-      }
-    );
-    if (initResp.getResponseCode() !== 200) {
-      console.log("[callGeminiVideoAnalysis_] Init failed " + initResp.getResponseCode());
-      return null;
-    }
-    var hdrs      = initResp.getHeaders();
-    var uploadUrl = hdrs['location'] || hdrs['Location'] || hdrs['x-goog-upload-url'];
-    if (!uploadUrl) { console.log("[callGeminiVideoAnalysis_] No upload URL"); return null; }
-
-    // Upload bytes
-    var uploadResp = UrlFetchApp.fetch(uploadUrl, {
-      method: 'POST', contentType: mimeType,
-      headers: { 'X-Goog-Upload-Command': 'upload, finalize', 'X-Goog-Upload-Offset': '0' },
-      payload: file.getBlob(),
-      muteHttpExceptions: true
-    });
-    if (uploadResp.getResponseCode() !== 200) { console.log("[callGeminiVideoAnalysis_] Upload failed " + uploadResp.getResponseCode()); return null; }
-
-    var gemFile = JSON.parse(uploadResp.getContentText()).file;
-    if (!gemFile || !gemFile.uri) { console.log("[callGeminiVideoAnalysis_] No file URI"); return null; }
-
-    // Poll until ACTIVE (max ~60s)
-    var state = gemFile.state || 'PROCESSING';
-    var polls = 0;
-    while (state !== 'ACTIVE' && polls < 12) {
-      Utilities.sleep(5000);
-      state = (JSON.parse(UrlFetchApp.fetch(
-        'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
-        { muteHttpExceptions: true }
-      ).getContentText()).state) || 'PROCESSING';
-      polls++;
-    }
-    if (state !== 'ACTIVE') { console.log("[callGeminiVideoAnalysis_] Never became ACTIVE"); return null; }
-
-    // Generate content
-    var genResult = JSON.parse(UrlFetchApp.fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
-      {
-        method: 'POST', contentType: 'application/json',
-        payload: JSON.stringify({ contents: [{ parts: [
-          { file_data: { mime_type: mimeType, file_uri: gemFile.uri } },
-          { text: prompt }
-        ]}]}),
-        muteHttpExceptions: true
-      }
-    ).getContentText());
-    var text = genResult.candidates && genResult.candidates[0] &&
-               genResult.candidates[0].content && genResult.candidates[0].content.parts &&
-               genResult.candidates[0].content.parts[0] && genResult.candidates[0].content.parts[0].text;
-
-    // Cleanup
-    try { UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey, { method: 'DELETE', muteHttpExceptions: true }); } catch (e) {}
-
-    return text || null;
-  } catch (err) {
-    console.log("[callGeminiVideoAnalysis_] Error: " + err.message);
-    return null;
-  }
-}
-
-/**
- * Calls Claude for 3 caption variants for a quote graphic or reel clip.
- * Returns a JSON array string '["v1","v2","v3"]', or '[]' on failure.
- * @private
- */
-function generateCaptionVariants_(contentText, guestName, epTitle, forReel) {
-  try {
-    var limit  = forReel ? '500' : '150';
-    var angle3 = forReel
-      ? '3. Story-lead: opens with the emotional context or a turning point in the clip, then delivers the insight'
-      : '3. Story-tease: implies there is a bigger story behind this moment';
-    var reelRules = forReel
-      ? "Rules: DWYP voice — honest, direct, specific, unsentimental. " +
-        "Each caption is 3–5 full sentences. Do not tease — say the actual thing. " +
-        "Draw directly from the content: name the specific idea, moment, or claim. " +
-        "First sentence is the hook (bold claim or specific detail). " +
-        "Remaining sentences develop the idea or give it stakes. " +
-        "Under " + limit + " characters. No hashtags."
-      : "Rules: DWYP voice — honest, direct, specific, unsentimental. Each under " + limit + " characters. No hashtags.";
-    var prompt =
-      "Write exactly 3 Instagram caption variants for a " + (forReel ? 'short podcast Reel' : 'quote graphic') + ".\n\n" +
-      (guestName ? "Guest: " + guestName + "\n" : "") +
-      (epTitle   ? "Episode: " + epTitle + "\n\n" : "\n") +
-      "Content:\n" + contentText + "\n\n" +
-      "Each variant takes a different angle:\n" +
-      "1. Hook-first: opens with the most compelling claim or direct quote\n" +
-      "2. Question-lead: opens with a question this content answers\n" +
-      angle3 + "\n\n" +
-      reelRules + "\n\n" +
-      'Return ONLY a JSON array: ["caption1", "caption2", "caption3"]';
-
-    var response = callClaudeAPI(
-      prompt, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'],
-      'Enrichment', null, { maxTokens: 800 }
-    );
-    if (!response) return '[]';
-    var match = response.match(/\[[\s\S]*?\]/);
-    return match ? match[0] : '[]';
-  } catch (err) {
-    return '[]';
-  }
-}
-
-/**
- * One Claude call for N items — returns object keyed by index with JSON-string variant arrays.
- * Avoids per-item API calls and stays well under 30k TPM since input is compact extracted text.
- * @private
- * @param {string[]} texts
- * @param {string} guestName
- * @param {string} epTitle
- * @param {boolean} forReel
- * @returns {Object.<string, string>} e.g. {"0": '["v1","v2","v3"]', "1": '["v1","v2","v3"]'}
- */
-function generateCaptionVariantsBatch_(texts, guestName, epTitle, forReel) {
-  try {
-    if (!texts || !texts.length) return {};
-    var limit  = forReel ? '500' : '150';
-    var angle3 = forReel
-      ? '3. Story-lead: opens with the emotional context or a turning point in the clip, then delivers the insight'
-      : '3. Story-tease: implies there is a bigger story behind this moment';
-    var reelRules = forReel
-      ? "Rules: DWYP voice — honest, direct, specific, unsentimental. " +
-        "Each caption is 3–5 full sentences. Do not tease — say the actual thing. " +
-        "Draw directly from the content: name the specific idea, moment, or claim. " +
-        "First sentence is the hook (bold claim or specific detail). " +
-        "Remaining sentences develop the idea or give it stakes. " +
-        "Under " + limit + " characters. No hashtags."
-      : "Rules: DWYP voice — honest, direct, specific, unsentimental. Each under " + limit + " characters. No hashtags.";
-    var itemLines = texts.map(function(t, i) { return '[' + i + ']: ' + t; }).join('\n');
-    var prompt =
-      "Write exactly 3 Instagram caption variants for EACH of the following " +
-      (forReel ? 'Reel clips' : 'quote graphic items') + " from the Don't Waste Your Pain podcast.\n\n" +
-      (guestName ? "Guest: " + guestName + "\n" : "") +
-      (epTitle   ? "Episode: " + epTitle   + "\n\n" : "\n") +
-      "Each variant takes a different angle:\n" +
-      "1. Hook-first: opens with the most compelling claim or direct quote\n" +
-      "2. Question-lead: opens with a question this content answers\n" +
-      angle3 + "\n\n" +
-      reelRules + "\n\n" +
-      "Items:\n" + itemLines + "\n\n" +
-      'Return ONLY a JSON object where keys are item indices (strings) and values are arrays of 3 captions:\n' +
-      '{"0": ["cap1","cap2","cap3"], "1": ["cap1","cap2","cap3"], ...}';
-
-    var response = callClaudeAPI(
-      prompt, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'],
-      'Enrichment', null, { maxTokens: 4096 }
-    );
-    if (!response) return {};
-    var objMatch = response.match(/\{[\s\S]*\}/);
-    if (!objMatch) return {};
-    var parsed = JSON.parse(objMatch[0]);
-    var result = {};
-    Object.keys(parsed).forEach(function(k) {
-      result[k] = Array.isArray(parsed[k]) ? JSON.stringify(parsed[k]) : '[]';
-    });
-    return result;
-  } catch (err) {
-    console.log('[generateCaptionVariantsBatch_] Error: ' + err.message);
-    return {};
-  }
-}
-
-/**
- * Calls Gemini Flash with plain text input. No file upload needed — text goes directly in the
- * generateContent payload. Gemini handles the full transcript size (up to ~1M tokens).
- * @private
- * @param {string} textContent  The full text to analyze
- * @param {string} prompt       Instruction prepended to the text
- * @param {string} apiKey
- * @returns {string|null}
- */
-function callGeminiTextAnalysis_(textContent, prompt, apiKey) {
-  try {
-    var resp = UrlFetchApp.fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey,
-      {
-        method: 'POST', contentType: 'application/json',
-        payload: JSON.stringify({ contents: [{ parts: [{ text: prompt + '\n\nTRANSCRIPT:\n' + textContent }] }] }),
-        muteHttpExceptions: true
-      }
-    );
-    if (resp.getResponseCode() !== 200) {
-      console.log('[callGeminiTextAnalysis_] Error ' + resp.getResponseCode() + ': ' + resp.getContentText().slice(0, 300));
-      return null;
-    }
-    var result = JSON.parse(resp.getContentText());
-    var text = result.candidates && result.candidates[0] &&
-               result.candidates[0].content && result.candidates[0].content.parts &&
-               result.candidates[0].content.parts[0] && result.candidates[0].content.parts[0].text;
-    return text || null;
-  } catch (err) {
-    console.log('[callGeminiTextAnalysis_] Error: ' + err.message);
-    return null;
-  }
-}
 
 // ── REELS SURFACE ─────────────────────────────────────────────────────────────
 
@@ -3633,23 +3259,23 @@ function getReelsForEpisode(episodeUid) {
         Display_Name:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
         Quote_Text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
         Reel_Summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
-        Caption_Draft: String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
-        Caption_Final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
+        Caption_Host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
+        Caption_Guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
         Availability:  String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
         createdAt:     String(row[ASSET_LIBRARY_COLS.Created_At    - 1] || ''),
         thumbnailUrl:  fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w160' : ''
       });
     }
-    // Deduplicate by Drive_File_ID — keep row with Caption_Final, then newest Created_At
+    // Deduplicate by Drive_File_ID — keep row with Caption_Host, then newest Created_At
     var bestByKey = {};
     var keyOrder  = [];
     reels.forEach(function(r) {
       var key = r.Drive_File_ID || r.Asset_ID;
       if (!bestByKey[key]) { bestByKey[key] = r; keyOrder.push(key); return; }
       var prev      = bestByKey[key];
-      var prevScore = (prev.Caption_Final ? 2 : 0) + (prev.Reel_Summary ? 1 : 0);
-      var currScore = (r.Caption_Final    ? 2 : 0) + (r.Reel_Summary    ? 1 : 0);
+      var prevScore = (prev.Caption_Host ? 2 : 0) + (prev.Reel_Summary ? 1 : 0);
+      var currScore = (r.Caption_Host    ? 2 : 0) + (r.Reel_Summary    ? 1 : 0);
       if (currScore > prevScore || (currScore === prevScore && r.createdAt > prev.createdAt)) {
         bestByKey[key] = r;
       }
@@ -3658,18 +3284,6 @@ function getReelsForEpisode(episodeUid) {
   } catch (e) {
     return [];
   }
-}
-
-// Defensive parse: Caption_Draft may be a JSON-stringified array (pre-midnight-pass Gemini output).
-// Post-midnight-pass the parse fails and the raw string is returned unchanged.
-function _parseCaptionDraft_(raw) {
-  var s = String(raw || '');
-  try {
-    var p = JSON.parse(s);
-    if (Array.isArray(p) && p.length > 0) return String(p[0]);
-    if (Array.isArray(p)) return '';
-  } catch (e) {}
-  return s;
 }
 
 /**
@@ -3704,8 +3318,8 @@ function getRankedAssetLibraryCandidates(episodeUid, assetType) {
           preview_text:  r.Reel_Summary || r.Quote_Text || r.Display_Name || '',
           display_text:  null,
           title_card:    r.Quote_Text || r.Display_Name || '',
-          caption_draft: _parseCaptionDraft_(r.Caption_Draft || ''),
-          caption_final: r.Caption_Final || '',
+          caption_host:  String(r.Caption_Host  || ''),
+          caption_guest: r.Caption_Guest || '',
           background_id: null,
           canvas_state:  null,
           drive_file_id: r.Drive_File_ID || '',
@@ -3750,9 +3364,9 @@ function getRankedAssetLibraryCandidates(episodeUid, assetType) {
         thumb_url:     fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200' : '',
         preview_text:  _displayText || String(row[ASSET_LIBRARY_COLS.Quote_Text - 1] || row[ASSET_LIBRARY_COLS.Display_Name - 1] || ''),
         display_text:  _displayText,
-        quote_text:    _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || '')),
-        caption_draft: _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || '')),
-        caption_final: _parseCaptionDraft_(String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || '')),
+        quote_text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
+        caption_host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
+        caption_guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
         canvas_state:  String(row[ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
         drive_file_id: fileId,
@@ -3807,8 +3421,8 @@ function assembleSlotForegroundContext(activeAssetId, activeAssetType, episodeUi
         asset_type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
         quote_text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
         reel_summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
-        caption_draft: String(row[ASSET_LIBRARY_COLS.Caption_Draft - 1] || ''),
-        caption_final: String(row[ASSET_LIBRARY_COLS.Caption_Final - 1] || ''),
+        caption_host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
+        caption_guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
         quality_score: Number(row[ASSET_LIBRARY_COLS.Quality_Score - 1]) || 0,
         slot_tags:     String(row[ASSET_LIBRARY_COLS.Slot_Tags     - 1] || '')
@@ -3851,7 +3465,7 @@ function assembleSlotForegroundContext(activeAssetId, activeAssetType, episodeUi
 }
 
 /**
- * Writes Caption_Final to the Asset_Library row matching Asset_ID.
+ * Writes Caption_Host to the Asset_Library row matching Asset_ID.
  * Called debounced on caption blur from the Reels Surface card list.
  */
 function updateCaption(assetId, captionFinal) {
@@ -3864,7 +3478,7 @@ function updateCaption(assetId, captionFinal) {
     var data    = sheet.getDataRange().getValues();
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Caption_Final).setValue(captionFinal);
+      sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Caption_Host).setValue(captionFinal);
       bumpVersion("asset_library", "updateCaption");
       return { success: true };
     }
@@ -3965,8 +3579,10 @@ function callPublishLLM(payload) {
 }
 
 /**
- * Writes a Social_Assets row and updates Asset_Library Status → scheduled / Availability → placed.
- * Called when JT confirms a reel schedule from the schedule popover.
+ * Schedules a reel into a slot (new) or reschedules it (existing SA row for same slot).
+ * Reschedule path: updates SA row in place, resets old asset to candidate/available if
+ * a different asset is being placed.
+ * Fan-out: copies reel mp4 + caption sidecar to Approved/ after SA write (non-fatal).
  * schedulePayload: { episodeUid, slotId, assetId, caption, driveFileId, platform, scheduledAt }
  */
 function scheduleReel(schedulePayload) {
@@ -3986,33 +3602,83 @@ function scheduleReel(schedulePayload) {
     var saSheet = ss.getSheetByName("Social_Assets");
     if (!saSheet) return { success: false, error: "Social_Assets tab not found" };
 
-    if (assetId && alSheet) {
-      var alData = alSheet.getDataRange().getValues();
-      for (var i = 1; i < alData.length; i++) {
-        if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status      ).setValue("scheduled");
-        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
-        if (!driveFileId) driveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
-        break;
+    // Read AL once — used for new-asset update, old-asset reset, caption snapshot, and fan-out
+    var alData             = alSheet ? alSheet.getDataRange().getValues() : [];
+    var captionForApproved = caption || '';
+    for (var i = 1; i < alData.length; i++) {
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status      ).setValue("scheduled");
+      alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
+      if (!driveFileId) driveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
+      captionForApproved = String(alData[i][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
+      break;
+    }
+
+    // Check for existing SA row by (episodeUid, slotId) — reschedule vs. new schedule
+    var saData       = saSheet.getDataRange().getValues();
+    var existingSaRow = -1;
+    var oldAlId       = '';
+    for (var j = 1; j < saData.length; j++) {
+      if (String(saData[j][SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      if (String(saData[j][SOCIAL_ASSETS_COLS.Slot        - 1]) !== String(slotId))     continue;
+      existingSaRow = j + 1;  // 1-based sheet row
+      oldAlId       = String(saData[j][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]);
+      break;
+    }
+
+    var postId;
+    if (existingSaRow !== -1) {
+      // Reschedule: update existing SA row in place
+      postId = String(saData[existingSaRow - 1][SOCIAL_ASSETS_COLS.Post_ID - 1]);
+      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Asset_Library_ID).setValue(assetId);
+      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Caption          ).setValue(caption);
+      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Drive_File_ID    ).setValue(driveFileId);
+      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Scheduled_At     ).setValue(scheduledAt);
+      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Scheduler_Status ).setValue("pending");
+      // Reset displaced asset to candidate/available
+      if (oldAlId && oldAlId !== assetId && alSheet) {
+        for (var k = 1; k < alData.length; k++) {
+          if (String(alData[k][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(oldAlId)) continue;
+          alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Status      ).setValue("candidate");
+          alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+          break;
+        }
+      }
+    } else {
+      // New schedule: append SA row
+      postId    = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
+      var saRow = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
+      saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
+      saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = assetId;
+      saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
+      saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
+      saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "Reel";
+      saRow[SOCIAL_ASSETS_COLS.Platform         - 1] = platform;
+      saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption;
+      saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = driveFileId;
+      saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = scheduledAt;
+      saRow[SOCIAL_ASSETS_COLS.Scheduler_Status - 1] = "pending";
+      saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
+      saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
+      saSheet.appendRow(saRow);
+    }
+
+    bumpVersion("asset_library", "scheduleReel");
+
+    // Fan-out: copy reel mp4 + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
+    if (driveFileId && slotId) {
+      try {
+        var reelBlob = DriveApp.getFileById(driveFileId).getBlob();
+        writeApprovedAsset(episodeUid, slotId, scheduledAt, reelBlob, captionForApproved, 'mp4');
+      } catch (approvedErr) {
+        try {
+          var auditRl = ss.getSheetByName('Audit_Trail');
+          if (auditRl) auditRl.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
+            'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + assetId + ' | err=' + approvedErr.message]);
+        } catch (e2) {}
       }
     }
 
-    var postId = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
-    var saRow  = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
-    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = assetId;
-    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
-    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "Reel";
-    saRow[SOCIAL_ASSETS_COLS.Platform         - 1] = platform;
-    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption;
-    saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = driveFileId;
-    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = scheduledAt;
-    saRow[SOCIAL_ASSETS_COLS.Scheduler_Status - 1] = "pending";
-    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
-    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
-    saSheet.appendRow(saRow);
-    bumpVersion("asset_library", "scheduleReel");
     return { success: true, postId: postId };
   } catch (e) {
     return { success: false, error: e.message };

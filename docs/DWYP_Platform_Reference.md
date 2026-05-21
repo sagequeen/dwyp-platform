@@ -1,6 +1,6 @@
 ﻿# DWYP Operations Platform — Platform Reference
-**Version: 3.1 | May 2026**
-**Replaces: DWYP_Platform_Reference_v3.0.md**
+**Version: 3.2 | May 2026**
+**Replaces: DWYP_Platform_Reference_v3.1.md**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -52,7 +52,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 35. **Sheet helper promotion pattern.** New lookup helpers defined locally. Promoted to `fairy_circle` only when a second consumer exists.
 36. **`Pipeline_Status` is a web app virtual field.** GAS never writes it. Derived client-side.
 37. **`callerName` parameter pattern established** for shared lookup helpers in `fairy_circle`.
-38. **Episode Card created by Marcom, not Secretary.**
+38. **Episode Card created by Marcom, not Secretary.** *Correction: Marcom retired (AD #89). Episode titles and show notes are now Claude-generated via Vert pipeline (AD #97). Secretary creates the card structure.*
 39. **Guest Brief lookup via Contact Library.** Not episode Staging folder.
 40. **`Contact_Library_Folder_ID` lives on Contacts tab.**
 41. **Production Notes lives in Raw folder.** Guest Brief lives in Contact Library folder.
@@ -77,7 +77,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 76. **In-app Episode Review gate.** Review_Episode task stays open until Filing Fairy closes the episode. Timestamped comments sent by JT create or append to a Revise task for Audra. Request Revisions spawns revision task for Audra, task remains open.
 77. **Social_Assets loop in Daily Pulse: queued.** Candidate row creation on file detection — not yet built.
 78. **`Proxy_File_ID` written by Daily Pulse, not manually.** `proxy_` prefix in `Staging/Episode/` subfolder is the trigger. GAS resolves file ID and writes to Episodes tab automatically.
-89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Three Vertex AI roles: (1) Vert Fairy — automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript; (2) Social Vert — Image Workshop chat panel, JT queries corpus on demand; (3) Librarian Vert — Studio tab, open-ended creative surface. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
+89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Vert Fairy: automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript. Social Vert and Librarian Vert as named sub-roles were subsequently retired (AD #97) — superseded by Vert (retrieval) + Claude (generation) model. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
 90. **Dashboard replaces Episodes and Tasks tabs as the primary home screen.** `renderDashboard()` is the entry point. navDashboard in place, shim removed. Episodes tab and Tasks tab are retired. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
 91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
 92. **Guest Brief removed from task and dashboard flow.** Brief auto-closes after Herald creates it. JT pulls directly from Contact Library when she is ready. Guest Brief Enrich (Audra) and Guest Brief Review (JT) tasks remain in the pipeline, but the brief itself is not surfaced via a task card in the dashboard.
@@ -100,6 +100,8 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 109. **Asset_Library row creation triggers (locked).** Reel: Daily Pulse detects reel file in Drive → row created immediately. Bank_Clip: Audra adds to bank → row created at that moment. Quote_Graphic: `materializeQuoteGraphicAssets` (Bridge Fairy, Track C) reads Show Notes Doc → one row per hook or guest quote, written in a single batch. Thumbnail: Artist Fairy or equivalent → one row per variant. Social_Assets row is created only on Add to Week (commit). Social_Assets row is deleted (clean delete — no cancelled status) on Unschedule.
 110. **Unschedule flow (locked).** (1) Social_Assets row deleted. (2) Asset_Library `Status` → `available`. (3) Asset_Library `Availability` → `available`. (4) If Quote_Graphic: find sibling row (same `Slide_Index`, same `Episode_UID`) → `Availability` → `available`. (5) Slot clears in Panel 2. Asset reappears in candidate pool.
 111. **Scribe Fairy retired. Never deployed.** Pipeline email events now spawn Writer email tasks (JT autonomous). Seven blank template keys migrate to Writer Email quick-start templates. Scribe Fairy joins Safety Fairy and Marcom Fairy as a dead-code stub under the intentional deletion policy (AD #101). `clerk_fairy.gs` AD #24 route `invite → scribeLetSchedule()` is dead — address when Clerk Fairy rebuild opens. Retirement confirmed Reframe #8, May 2026.
+112. **Quote attribution schema (QUOTE blocks).** Guest-quote blocks in Master Template `# Show Notes` section carry attribution on a dedicated `ATTRIBUTION:` line, not inline with the quote text. Block format: `QUOTE N: "[quote text]"` / `ATTRIBUTION: [Guest First Name Last Name]` / `SLOT_TAGS: [tags]` / `QUALITY_SCORE: [1-5]`. `_bridgeParseRankedItems_` (vert_fairy.js) reads the `ATTRIBUTION:` line and reconstructs `Quote_Text` as `"[quote text]" — [Name]` — this is the canonical downstream format; no downstream caller changed. Missing `ATTRIBUTION:` logs WARNING to Audit_Trail and passes bare quote text through — no hard fail. HOOK blocks have no `ATTRIBUTION:` line and parse unchanged. `materializeQuoteGraphicAssets` consumes `Quote_Text` by field name.
+113. **Master Template voice injection: in-template sections, not external docs.** Brand-voice and show-philosophy content lives in keyed sections of the Master Template and is composed into prompts at call time via `extractPrompt("# Section Name")`. `BRAND_VOICE_ID`, `CAPTION_VOICE_SUPPLEMENT_ID`, and `DELIVERABLES_VOICE_SPEC_ID` governance keys are retired (all blanked 2026-05-19). `extractPrompt` matches on literal section-key text as plain text lines beginning with `# `; not dependent on Google Docs heading styling. Call-site composition: Guest Brief (herald_fairy.js) — `# Show Philosophy`, `# Pillars`, `# Peer Shows` assembled into `brandContext`, substituted for `${brandVoice}` token. Editorial pass (vert_fairy.js `runEditorialPass`) — `# Host Voice`, `# Voice Prohibitions`, `# Caption Mechanics`, `# Ranking Schema`, `# Show Notes`. Soft-fail contract: empty `extractPrompt` return logged per-section to Audit_Trail, generation continues — a voiceless prompt that silently succeeds is the failure mode this guards against; `test_extractPromptSmokeTest` is the verification gate. `buildEpisodeIndexV2` has no injection point (pure Vertex RAG retrieval, no Claude calls). `_buildEditorialPassSystemInstruction_` signature: `(masterTemplateStructure)`; retains hardcoded voice-prohibitions block as redundant safeguard.
 
 ---
 
@@ -660,6 +662,15 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 ---
 
 ## Build History
+
+### v3.1 → v3.2 (May 2026)
+
+- **B6 #3 shipped: ATTRIBUTION-line parser.** `_bridgeParseRankedItems_` extended to parse the `ATTRIBUTION:` line from QUOTE blocks in Master Template v3.0 format. `Quote_Text` reconstructed as `"[quote text]" — [Name]`. Missing ATTRIBUTION logs WARNING to Audit_Trail, bare text passes through. HOOK blocks unchanged. AD #112 added.
+- **B6 #2 shipped: `extractPrompt` consolidation / `${brandVoice}` retirement.** External doc injection via `BRAND_VOICE_ID`, `CAPTION_VOICE_SUPPLEMENT_ID`, `DELIVERABLES_VOICE_SPEC_ID` retired. Voice and show-philosophy content now sourced from in-template sections via `extractPrompt`. Note: `CAPTION_VOICE_SUPPLEMENT_ID` and `DELIVERABLES_VOICE_SPEC_ID` were marked "confirmed active" in v3.1 history — all three keys were blanked 2026-05-19 before B6 #2 opened; provisional foundation docs (`DWYP_Caption_Voice_Supplement_v0`, `DWYP_Episode_Deliverables_Voice_Spec_v1`) retired with them. AD #113 added.
+- **Master Template v3.0 fully live.** Paste + B6 #3 + B6 #2 all shipped in one session. The "v3.0 fully live = paste + consolidation spoke" condition from Platform State coupling flag is met.
+- **`test_extractPromptSmokeTest` added to `dev_tools.js`.** Tests all five new `extractPrompt` keys (`# Host Voice`, `# Caption Mechanics`, `# Show Philosophy`, `# Pillars`, `# Peer Shows`) against the live Master Template. Required pre-gate before first Meenakshi pipeline run.
+
+---
 
 ### v3.0 → v3.1 (May 2026)
 

@@ -746,24 +746,17 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
     return;
   }
 
-  // --- Step 4a: Load Brand Voice doc ---
-  let brandVoice = "";
-  try {
-    brandVoice = DocumentApp.openById(getGovernance("BRAND_VOICE_ID")).getBody().getText();
-  } catch (e) {
-    logToAuditTrail(actor, "error", episodeUid, contactId,
-      `Brand Voice doc could not be loaded: ${e.message}`, "WARNING");
-    spawnTask({
-      actionTitle:      "Herald: Brand Voice doc failed to load — brief generated without it",
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "normal",
-      contactId:        contactId,
-      episodeUid:       episodeUid,
-      executiveSummary: `BRAND_VOICE_ID doc could not be opened for ${displayName} / ${episodeUid}. Brief was generated without brand voice context.`
-    });
-  }
+  // --- Step 4a: Load brand context from Master Template sections ---
+  const showPhilosophy = extractPrompt("# Show Philosophy");
+  const pillars        = extractPrompt("# Pillars");
+  const peerShows      = extractPrompt("# Peer Shows");
+  if (!showPhilosophy) logToAuditTrail(actor, "state_change", episodeUid, contactId,
+    "extractPrompt returned empty for # Show Philosophy — Guest Brief missing show context.", "WARNING");
+  if (!pillars) logToAuditTrail(actor, "state_change", episodeUid, contactId,
+    "extractPrompt returned empty for # Pillars — Guest Brief missing pillars context.", "WARNING");
+  if (!peerShows) logToAuditTrail(actor, "state_change", episodeUid, contactId,
+    "extractPrompt returned empty for # Peer Shows — Guest Brief missing peer shows context.", "WARNING");
+  const brandContext = [showPhilosophy, pillars, peerShows].filter(s => s.trim()).join("\n\n");
 
   let briefContent;
   try {
@@ -780,7 +773,7 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
     }
     briefContextParts.push(`BIO SUMMARY: ${bioSummary || "(none)"}`);
 
-    const briefPrompt = briefContextParts.join("\n\n") + "\n\n" + briefPromptTemplate.replace("${brandVoice}", brandVoice);
+    const briefPrompt = briefContextParts.join("\n\n") + "\n\n" + briefPromptTemplate.replace("${brandVoice}", brandContext);
 
     const systemInstruction = "You are Herald, a research assistant for Don't Waste Your Pain, a podcast hosted by Jennifer Trepanier. Your output is the host's primary prep tool before the interview. Be accurate, specific, and unflinching. The detailed instructions are in the prompt.";
     briefContent = callGeminiAPINoSearch(briefPrompt, systemInstruction, "Herald");

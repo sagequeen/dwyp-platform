@@ -1302,16 +1302,6 @@ function runEditorialPass(epUid, opts) {
     throw new Error("runEditorialPass: Could not read Episode Index v2 (" + indexV2Id + "): " + e.message);
   }
 
-  // Brand Voice doc
-  var brandVoiceText = "";
-  try {
-    var brandVoiceId = getGovernance("BRAND_VOICE_ID");
-    if (brandVoiceId) brandVoiceText = DocumentApp.openById(brandVoiceId).getBody().getText();
-  } catch (e) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "runEditorialPass: Brand Voice doc unreadable: " + e.message + ". Continuing without.", "warning");
-  }
-
   // Content Sensitivity doc
   var contentSensitivityText = "";
   try {
@@ -1339,18 +1329,21 @@ function runEditorialPass(epUid, opts) {
       "runEditorialPass: Guest Brief lookup failed: " + e.message + ". Continuing without.", "warning");
   }
 
-  // Master Template — compose prompt from named sections (v2.3: # headings enable extractPrompt)
+  // Master Template — compose voice + mechanics + structure from named sections
   var templatePrompt = "";
   try {
-    var voice     = extractPrompt("# Voice Prohibitions");
-    var ranking   = extractPrompt("# Ranking Schema");
-    var showNotes = extractPrompt("# Show Notes");
-    templatePrompt = [voice, ranking, showNotes].filter(function(s) { return s.trim(); }).join('\n\n');
+    var hostVoice      = extractPrompt("# Host Voice");
+    var voiceProhibits = extractPrompt("# Voice Prohibitions");
+    var captionMech    = extractPrompt("# Caption Mechanics");
+    var ranking        = extractPrompt("# Ranking Schema");
+    var showNotes      = extractPrompt("# Show Notes");
+    templatePrompt = [hostVoice, voiceProhibits, captionMech, ranking, showNotes]
+      .filter(function(s) { return s.trim(); }).join('\n\n');
   } catch (e) {
     throw new Error("runEditorialPass: Master Template sections unreadable: " + e.message);
   }
   if (!templatePrompt) {
-    throw new Error("runEditorialPass: Master Template sections missing or empty — check # Voice Prohibitions, # Ranking Schema, # Show Notes headings in template");
+    throw new Error("runEditorialPass: Master Template sections missing or empty — check # Host Voice, # Voice Prohibitions, # Caption Mechanics, # Ranking Schema, # Show Notes headings in template");
   }
 
   // ── 5. Release date string ───────────────────────────────────────────────────
@@ -1362,7 +1355,7 @@ function runEditorialPass(epUid, opts) {
   }
 
   // ── 6. Build prompt ──────────────────────────────────────────────────────────
-  var systemInstruction = _buildEditorialPassSystemInstruction_(brandVoiceText, templatePrompt);
+  var systemInstruction = _buildEditorialPassSystemInstruction_(templatePrompt);
   var userPrompt        = _buildEditorialPassPrompt_(
     epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text
   );
@@ -1413,57 +1406,11 @@ function runEditorialPass(epUid, opts) {
 
 /**
  * Builds the system instruction for the editorial pass.
- * Uses Brand Voice doc as voice authority when available; falls back to a short default.
- * Voice prohibitions match the existing pipeline — do not redesign.
- * Master Template structure inserted verbatim from extractPrompt output.
+ * Voice authority comes from Master Template sections (# Host Voice, # Voice Prohibitions, # Caption Mechanics, # Ranking Schema, # Show Notes).
+ * Hardcoded VOICE PROHIBITIONS block retained as belt-and-suspenders guard.
  */
-function _buildEditorialPassSystemInstruction_(brandVoiceText, masterTemplateStructure) {
-  var podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
-
-  var voiceBlock = brandVoiceText
-    ? "BRAND VOICE AUTHORITY (this is the highest-trust document for all voice decisions):\n" + brandVoiceText
-    : "You are writing for \"" + podcastName + "\" — a podcast about what lives on the other side of pain, grief, and the moments that break and remake a person. Everything you write must sound like it came from inside this show — not from a podcast content template.";
-
-  // Caption Voice Supplement
-  var captionSupplement = "";
-  try {
-    var captionSupplementId = getGovernance("CAPTION_VOICE_SUPPLEMENT_ID");
-    if (captionSupplementId) {
-      captionSupplement = DocumentApp.openById(captionSupplementId).getBody().getText();
-    } else {
-      logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
-        "_buildEditorialPassSystemInstruction_: CAPTION_VOICE_SUPPLEMENT_ID not set — Caption Supplement skipped.", "warning");
-    }
-  } catch (e) {
-    logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
-      "_buildEditorialPassSystemInstruction_: Caption Voice Supplement unreadable: " + e.message + ". Continuing without.", "warning");
-  }
-
-  // Episode Deliverables Voice Spec
-  var deliverablesSpec = "";
-  try {
-    var deliverablesSpecId = getGovernance("DELIVERABLES_VOICE_SPEC_ID");
-    if (deliverablesSpecId) {
-      deliverablesSpec = DocumentApp.openById(deliverablesSpecId).getBody().getText();
-    } else {
-      logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
-        "_buildEditorialPassSystemInstruction_: DELIVERABLES_VOICE_SPEC_ID not set — Deliverables Spec skipped.", "warning");
-    }
-  } catch (e) {
-    logToAuditTrail("Vert_Fairy_Editorial", "state_change", "", null,
-      "_buildEditorialPassSystemInstruction_: Episode Deliverables Voice Spec unreadable: " + e.message + ". Continuing without.", "warning");
-  }
-
-  var captionBlock = captionSupplement
-    ? "\n\n=== CAPTION VOICE MECHANICS (companion to Brand Voice) ===\n" + captionSupplement
-    : "";
-
-  var deliverablesBlock = deliverablesSpec
-    ? "\n\n=== EPISODE DELIVERABLES VOICE SPEC (drift patterns observed in past runs) ===\nWhen the per-section instructions in the Master Template conflict with the rules below, prefer the rules below.\n" + deliverablesSpec
-    : "";
-
-  return voiceBlock + captionBlock + deliverablesBlock + "\n\n" +
-    "VOICE PROHIBITIONS — these are automatic failures. If any appear in your output, rewrite before returning:\n" +
+function _buildEditorialPassSystemInstruction_(masterTemplateStructure) {
+  return "VOICE PROHIBITIONS — these are automatic failures. If any appear in your output, rewrite before returning:\n" +
     "- Forbidden phrases: \"heart-centered,\" \"transformative journey,\" \"profound exploration,\" \"safe space,\" \"deeply moving,\" \"inspires us to,\" \"in a world where,\" \"sit with,\" \"holds space,\" \"unpacks,\" \"dives deep,\" \"game-changer,\" \"paradigm shift,\" \"on this journey,\" \"resonates,\" \"impactful,\" \"journey,\" \"faith-based\"\n" +
     "- This show is never to be described or categorized as faith-based. Do not imply it.\n" +
     "- Forbidden register: wellness-poster language, inspirational-calendar tone, Goop newsletter aesthetics, church bulletin\n" +

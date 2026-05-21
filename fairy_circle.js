@@ -724,7 +724,7 @@ function extractPrompt(sectionHeading) {
 
     const target = sectionHeading.replace(/^#+\s*/, "").trim().toLowerCase();
 
-    const lines    = text.split("\n");
+    const lines    = text.split(/\r\n|\r|\n/);
     let capturing  = false;
     const buffer   = [];
 

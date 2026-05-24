@@ -179,7 +179,7 @@ Documentation is forward-looking, not technical history. Project knowledge is re
 2. **Single source of truth per fact.** When the same fact would appear in two docs, one is canonical and the other points at it. No silent duplication.
 3. **No supersede notices, no "what this displaces" tables, no version-trail prose.** History lives in git. If a doc replaces another, the replaced doc is deleted in the same commit.
 4. **Cross-reference drift is a bug.** If doc X says "see Y v2.9" and Y is now v3.1, fix the reference at the source. Do not add a "still applies despite version" note.
-5. **Closed spokes get incorporated.** Spoke design docs and prompts are rolled into permanent docs at completion, then deleted. They are not archived.
+5. **Closed spokes: outcomes captured in State (done + hanging).** The spoke doc itself is discarded — never repo'd, never archived.
 6. **AI audience.** Tables, bullets, terse phrasing. No narrative throat-clearing. No prose flourishes that don't survive retrieval chunking.
 
 **Surface back before acting when:**
@@ -189,13 +189,25 @@ Documentation is forward-looking, not technical history. Project knowledge is re
 
 ---
 
+## Doc-Sync SoP (Hub + Code)
+
+**Repo boundary.** Only the canonical permanent docs (Tier 1–3) are `.md` files in the repo. Spoke prompts and handoff/design `.md`s are **never** repo files — pasted directly into Code, discarded after the session. Repo'ing working docs is the failure mode this SoP prevents.
+
+**Code — session end.** Update `DWYP_Platform_State.md` with **done** + **hanging**. State is the only working artifact that touches the repo; it is the contract between sessions. Mechanics: State Update Protocol, below.
+
+**Hub — thread start.** Confirm Audra has synced State before relying on it. This is the *only* sync prompt Hub gives.
+
+**Hub — in-thread (correct; keep).** Warn when a thread nears compression limits; move multi-step processes to an artifact. Do **not** prompt to sync working docs to the repo mid-thread.
+
+---
+
 ## State Update Protocol
 
 After completing a spoke, task set, or significant session:
 
 1. **Offer to update Platform State.** Name the specific changes before writing.
 2. **Update Platform Reference only when** a new architectural decision is locked or schema changes — not for bug fixes or polish. Reference is append-only.
-3. **One-off `.md` files** brought to a session (spoke prompts, design notes) get incorporated into permanent docs when the work they describe is complete. Closed spokes are deleted, not archived.
+3. **One-off `.md` files** (spoke prompts, design notes) are pasted into Code, never repo'd. Outcomes land in State; the file is discarded.
 4. **Update Build Playbook** when a phase or item completes — mark done, note any surface-back items, identify next.
 5. **Codebase Map** updated by Code when responsibility-level changes happen (new file, deleted file, function moved between files). Implementation-detail changes do not trigger an update.
 

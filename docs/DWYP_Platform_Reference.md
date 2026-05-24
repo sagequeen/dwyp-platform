@@ -1,5 +1,5 @@
 ﻿# DWYP Operations Platform — Platform Reference
-**Version: 3.3 | May 2026**
+**Version: 3.4 | May 2026**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -36,7 +36,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 20. **`createEpisodeFolder()` is private to `secretary_fairy`.** Not promoted to `fairy_circle`.
 21. **Initial manifest shape locked.** Fields: `episode_uid, contact_id, guest_name, recording_date, raw_folder_id, staging_folder_id, status, phase, created_at, herald_form_data`.
 22. **Approval state authority is Episodes tab.** `Video_Status` and `Images_Status` written by web app on JT action. GAS does not independently verify.
-23. **`Workflow_Step` values locked.** `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Filing` | `Produce_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
+23. **`Workflow_Step` values locked.** `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Filing` | `Produce_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
 24. **`clerk_fairy.gs` owns `doPost()`.** Routes: `filing` → `runFilingFairy()`, `invite` → `scribeLetSchedule()`. `filing_fairy` exposes `runFilingFairy()` as callable entry point only. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
 25. **Scribe Fairy is a new file, not a port.** Five defined touchpoints. No `doPost()`.
 26. **Filing and Scribe stay separate files.**
@@ -105,6 +105,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 115. **Caption field consolidation (Spoke 0, May 2026).** `Caption_Draft` and `Caption_Final` columns on Asset_Library renamed to `Caption_Host` and `Caption_Guest` respectively. Semantics preserved: `Caption_Host` (col 10) is Claude-generated and frozen after write; `Caption_Guest` (col 11) is JT-edited and the source of truth for card render and Make.com post. All GAS write paths updated. Schema v2.0.
 116. **Publish tab retired (May 2026). Design is the sole landing route.** Studio tab structure reduced from five tabs to four (Design / Write / Outreach / Ideas). ~7,000 lines of `pb*` code removed from `dwyp_app.gs` and `dwyp_ui.html`. AD #102 updated.
 117. **Staging-first deployment cadence retired (May 2026).** Code pushes directly to production. `STAGING_DEPLOYMENT_URL` blanked in Governance_Config — `isStaging()` returns false everywhere. Staging deployment exists but is not an active step in the release workflow. `getMasterSheetId()` always resolves the production sheet.
+118. **Reel revision §4 atomic close — `Reels/Superseded/` subfolder.** `closeReelRevision()` creates `Reels/Superseded/` inside the episode Staging folder on first use. Superseded reel file moves here, evacuating it from Loop C's watched root (`Reels/`). Revised file lands in `Reels/` root → next Daily Pulse re-spawns `Review_Reels`. AL row `Drive_File_ID` updated in-place by `Asset_ID` (no new row). Open `Revise_Reels` task auto-completed on close. `bumpVersion` fires for both `asset_library` and `tasks` domains.
 
 ---
 
@@ -159,7 +160,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 | 13 | M | Episode_URL | URL | Podcast episode URL. Manually managed. |
 | 14 | N | Episode_Type | Enum | Episode type (e.g., guest \| roundtable \| solo). Manually managed. |
 
-### Tasks (16 columns)
+### Tasks (17 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
@@ -179,6 +180,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 | 14 | N | Created_At | Timestamp | System-set. |
 | 15 | O | Completed_At | Timestamp | System-set on completion. |
 | 16 | P | Note_Sent_At | Timestamp | Timestamp of last notification sent for this task. |
+| 17 | Q | Asset_ID | String | FK → Asset_Library.Asset_ID. Set on revision tasks (`Revise_Reels`, `edit_vids`). Empty for all other task types. Added Reels Surface spoke 2026-05-24. |
 
 ### Episode_Log (9 columns)
 
@@ -457,6 +459,7 @@ Design and Publish share the same Fabric.js canvas. Assets move between them wit
       Approved/                       ← Filing Fairy moves to Finished Episodes
       Save/                           ← Filing Fairy moves to REELS_ARCHIVE_FOLDER_ID
       Delete/                         ← Filing Fairy trashes
+      Superseded/                     ← §4 close moves superseded originals here (out of Loop C root watch)
 
 04_FINISHED_EPISODES/
   EP-YYMMDD-HHmm_GuestName/          ← Filing Fairy moves here
@@ -665,6 +668,15 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 ---
 
 ## Build History
+
+### v3.3 → v3.4 (May 2026)
+
+- **Reels sub-tab shipped.** Selector re-enabled in Studio Design tab with Drive `/preview` playback. `Caption_Host` wired to caption field; `generateReelCaption` calls Claude with `# Caption Mechanics` + `# Voice Prohibitions` system prompt, writes caption from `Reel_Summary`. Three action verbs: Export (copy→move to `Manual_Exports/`), Edit with Vids (spawns `edit_vids` task stub), Request Revision (§4 atomic close). `closeReelRevision`: swaps `Drive_File_ID` on AL row by `Asset_ID`, moves old file → `Reels/Superseded/`, completes open `Revise_Reels` task, `bumpVersion` both domains. AD #118 added.
+- **Tasks schema extended to 17 columns.** `Asset_ID` (col 17, FK → Asset_Library) added for revision tasks. `spawnTask()` writes it header-driven. Schema v2.1. Manual step: add `Asset_ID` header in col 17 of Tasks tab in production Master Sheet.
+- **`Workflow_Step` enum extended.** `Revise_Reels` added to locked values (AD #23 updated).
+- **Folder structure updated.** `Reels/Superseded/` subfolder documented in Folder Structure and AD #118.
+
+---
 
 ### v3.2 → v3.3 (May 2026)
 

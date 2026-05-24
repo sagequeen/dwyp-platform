@@ -70,6 +70,23 @@ function test_syncReelAssets() {
 
 
 // =============================================================================
+// REELS SURFACE — Uses ACTIVE_EP_UID
+// =============================================================================
+
+// Atomic close after Audra uploads a revised reel.
+// Paste the Asset_Library Asset_ID and the new Drive file ID, then run.
+// After this completes, the next Pulse will spawn a fresh Review_Reels for JT.
+function test_closeReelRevision() {
+  var ASSET_ID       = ''; // ← paste Asset_Library Asset_ID here
+  var NEW_DRIVE_FILE = ''; // ← paste Drive file ID of revised reel here
+  if (!ASSET_ID || !NEW_DRIVE_FILE) throw new Error('Set ASSET_ID and NEW_DRIVE_FILE before running.');
+  var result = closeReelRevision(ACTIVE_EP_UID, ASSET_ID, NEW_DRIVE_FILE);
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+
+// =============================================================================
 // ARTIST FAIRY — Uses ACTIVE_EP_UID
 // =============================================================================
 

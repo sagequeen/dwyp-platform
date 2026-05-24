@@ -174,7 +174,8 @@ var TASKS_COLS = {
   Revision_Notes:    13,
   Created_At:        14,
   Completed_At:      15,
-  Note_Sent_At:      16
+  Note_Sent_At:      16,
+  Asset_ID:          17   // FK to Asset_Library.Asset_ID for revision tasks
 };
 
 // Episodes tab column map (1-based, matches v1.5 schema column order)
@@ -423,7 +424,8 @@ function getTasks() {
       Episode_UID:       row[TASKS_COLS.Episode_UID - 1],
       Workflow_Step:     row[TASKS_COLS.Workflow_Step - 1],
       Executive_Summary: row[TASKS_COLS.Executive_Summary - 1],
-      Payload_Link:      row[TASKS_COLS.Payload_Link - 1]
+      Payload_Link:      row[TASKS_COLS.Payload_Link - 1],
+      Asset_ID:          String(row[TASKS_COLS.Asset_ID - 1] || "")
     });
   }
 
@@ -522,10 +524,10 @@ function createTask(payload) {
     var nnn    = String(Math.floor(Math.random() * 900) + 100); // 100-999
     var taskId = "TASK-" + yy + mm + dd + "-" + hh + mn + "-" + nnn;
 
-    // Build row in TASKS_COLS order (16 columns)
+    // Build row in TASKS_COLS order (17 columns)
     var dueDate = payload.dueDate ? new Date(payload.dueDate) : "";
 
-    var row = new Array(16).fill("");
+    var row = new Array(17).fill("");
     row[TASKS_COLS.Task_ID           - 1] = taskId;
     row[TASKS_COLS.Action_Title      - 1] = payload.actionTitle      || "";
     row[TASKS_COLS.Assignee          - 1] = payload.assignee         || "";
@@ -536,6 +538,7 @@ function createTask(payload) {
     row[TASKS_COLS.Episode_UID       - 1] = payload.episodeUid       || "";
     row[TASKS_COLS.Executive_Summary - 1] = payload.executiveSummary || "";
     row[TASKS_COLS.Created_At        - 1] = now;
+    row[TASKS_COLS.Asset_ID          - 1] = payload.assetId          || "";
 
     sheet.appendRow(row);
     bumpVersion("tasks", "createTask");
@@ -1451,11 +1454,14 @@ function exportReelToDrive(episodeUid, day, reelAssetId, titleText, caption) {
 
     var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
     var dayPrefix = day ? (String(day).toUpperCase() + '_') : '';
+    var reelFile  = DriveApp.getFileById(driveFileId);
+    var ext       = reelFile.getName().split('.').pop() || 'mp4';
     var baseName  = dayPrefix + 'reel_' + reelAssetId + '_' + timestamp;
 
-    // Copy the reel file into Manual_Exports
-    var reelFile     = DriveApp.getFileById(driveFileId);
-    var copiedFile   = reelFile.makeCopy(baseName + '.' + (reelFile.getName().split('.').pop() || 'mp4'), exportFolder);
+    // Move the reel file into Manual_Exports — evacuates Reels/ root, silencing Loop C
+    reelFile.setName(baseName + '.' + ext);
+    reelFile.moveTo(exportFolder);
+    var movedFile = reelFile;
 
     // Write paired .txt companion
     var txtParts = [];
@@ -1474,7 +1480,7 @@ function exportReelToDrive(episodeUid, day, reelAssetId, titleText, caption) {
     return {
       success:   true,
       filename:  baseName,
-      url:       'https://drive.google.com/file/d/' + copiedFile.getId() + '/view',
+      url:       'https://drive.google.com/file/d/' + movedFile.getId() + '/view',
       folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
     };
   } catch (e) {
@@ -3770,6 +3776,225 @@ function updateDisplayName(assetId, displayName) {
     return { success: false, error: "Asset not found: " + assetId };
   } catch (e) {
     return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Generates a Caption_Host for a reel by passing its Reel_Summary through Claude.
+ * Writes the result back to Asset_Library and returns { ok, caption }.
+ */
+function generateReelCaption(assetId) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var sheet   = ss.getSheetByName(alName);
+    if (!sheet) return { ok: false, error: 'Asset_Library not found' };
+
+    var data    = sheet.getDataRange().getValues();
+    var rowNum  = -1, summary = '', episodeUid = '';
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      summary    = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
+      episodeUid = String(data[i][ASSET_LIBRARY_COLS.Episode_UID  - 1] || '');
+      rowNum     = i + 1;
+      break;
+    }
+    if (rowNum === -1) return { ok: false, error: 'Reel not found: ' + assetId };
+    if (!summary)     return { ok: false, error: 'No Reel_Summary — run Sync Reels first' };
+
+    var captionMechanics  = extractPrompt('# Caption Mechanics')   || '';
+    var voiceProhibitions = extractPrompt('# Voice Prohibitions')  || '';
+
+    var systemPrompt = [
+      captionMechanics  ? ('CAPTION MECHANICS:\n' + captionMechanics)  : '',
+      voiceProhibitions ? ('VOICE PROHIBITIONS:\n' + voiceProhibitions) : ''
+    ].filter(Boolean).join('\n\n');
+
+    var userPrompt =
+      'Write one social media caption for this podcast reel clip.\n\n' +
+      'REEL SUMMARY:\n' + summary + '\n\n' +
+      'Rules: write from the host perspective. One caption only. No hashtags. No em-dashes. No ellipses. ' +
+      'Return only the caption text — no preamble, no label.';
+
+    var caption = callClaudeAPI(userPrompt, systemPrompt || null, 'generateReelCaption');
+    if (!caption) return { ok: false, error: 'Claude returned empty response' };
+    caption = caption.trim();
+
+    sheet.getRange(rowNum, ASSET_LIBRARY_COLS.Caption_Host).setValue(caption);
+    bumpVersion('asset_library', 'generateReelCaption');
+    logToAuditTrail('generateReelCaption', 'state_change', episodeUid, '',
+      '[INFO] Generated Caption_Host for asset ' + assetId, 'INFO');
+
+    return { ok: true, caption: caption };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Spawns a revision task linked to a reel by Asset_ID.
+ * type: 'edit_vids' → action title for Vids edit request
+ *       'request_revision' → action title for revision request (not called directly; use requestReelRevision)
+ */
+function spawnReelEditTask(episodeUid, assetId, type) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var sheet   = ss.getSheetByName(alName);
+    var displayName = assetId;
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+        displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || assetId);
+        break;
+      }
+    }
+
+    var actionTitle = type === 'edit_vids'
+      ? ('Edit reel in Vids: ' + displayName)
+      : ('Revise reel: ' + displayName);
+
+    spawnTask({
+      actionTitle:      actionTitle,
+      assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+      assignedBy:       'The Fairy Team',
+      status:           'open',
+      priority:         'normal',
+      episodeUid:       episodeUid,
+      workflowStep:     'Revise_Reels',
+      executiveSummary: 'JT requested a reel edit. Asset_ID: ' + assetId,
+      assetId:          assetId
+    });
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Phase 6 — Step 1: JT taps Request Revision.
+ * Completes the open Review_Reels task for this episode (JT's review pass is done),
+ * then spawns a Revise_Reels task for Audra carrying the Asset_ID FK.
+ */
+function requestReelRevision(episodeUid, assetId) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Complete the open Review_Reels task for this episode
+    var taskSheet = ss.getSheetByName('Tasks');
+    if (taskSheet) {
+      var tData    = taskSheet.getDataRange().getValues();
+      var tHeaders = tData[0];
+      var tIdCol   = tHeaders.indexOf('Task_ID');
+      var tEpCol   = tHeaders.indexOf('Episode_UID');
+      var tWfCol   = tHeaders.indexOf('Workflow_Step');
+      var tStCol   = tHeaders.indexOf('Status');
+      for (var t = 1; t < tData.length; t++) {
+        if (String(tData[t][tEpCol]) !== String(episodeUid))        continue;
+        if (String(tData[t][tWfCol]) !== 'Review_Reels')            continue;
+        var ts = String(tData[t][tStCol]);
+        if (ts !== 'open' && ts !== 'in_progress')                  continue;
+        updateTaskStatus(String(tData[t][tIdCol]), 'complete', true);
+        break;
+      }
+    }
+
+    // Spawn Revise_Reels task for Audra
+    var result = spawnReelEditTask(episodeUid, assetId, 'request_revision');
+    if (!result.ok) return result;
+
+    logToAuditTrail('requestReelRevision', 'human_action', episodeUid, '',
+      '[INFO] JT requested revision for reel ' + assetId + '. Review_Reels completed; Revise_Reels spawned.', 'INFO');
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Phase 6 — Step 3: Atomic close after Audra uploads revised reel.
+ * Swaps new Drive_File_ID onto the AL row, moves old file to Reels/Superseded/,
+ * completes the Revise_Reels task. New file should already be in Reels/ root —
+ * Loop C will detect it on next Pulse and spawn a fresh Review_Reels for JT.
+ */
+function closeReelRevision(episodeUid, assetId, newDriveFileId) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return { ok: false, error: 'Asset_Library not found' };
+
+    var alData = alSheet.getDataRange().getValues();
+    var rowNum = -1, oldDriveFileId = '';
+    for (var i = 1; i < alData.length; i++) {
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      oldDriveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+      rowNum = i + 1;
+      break;
+    }
+    if (rowNum === -1) return { ok: false, error: 'AL row not found for asset: ' + assetId };
+
+    // Move old file to Reels/Superseded/ to evacuate root and silence Loop C
+    if (oldDriveFileId && oldDriveFileId !== newDriveFileId) {
+      try {
+        var stagingId     = getStagingFolderIdByUid(episodeUid);
+        var stagingFolder = DriveApp.getFolderById(stagingId);
+        var reelsFolderIt = stagingFolder.getFoldersByName('Reels');
+        if (reelsFolderIt.hasNext()) {
+          var reelsFolder    = reelsFolderIt.next();
+          var supersededIt   = reelsFolder.getFoldersByName('Superseded');
+          var supersededFolder = supersededIt.hasNext()
+            ? supersededIt.next()
+            : reelsFolder.createFolder('Superseded');
+          DriveApp.getFileById(oldDriveFileId).moveTo(supersededFolder);
+        }
+      } catch (moveErr) {
+        logToAuditTrail('closeReelRevision', 'error', episodeUid, '',
+          '[WARNING] Could not move old reel to Superseded/: ' + moveErr.message, 'WARNING');
+      }
+    }
+
+    // Swap Drive_File_ID on AL row
+    alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(newDriveFileId);
+    bumpVersion('asset_library', 'closeReelRevision');
+
+    // Complete open Revise_Reels task for this episode/asset
+    var taskSheet = ss.getSheetByName('Tasks');
+    if (taskSheet) {
+      var tData    = taskSheet.getDataRange().getValues();
+      var tHeaders = tData[0];
+      var tIdCol   = tHeaders.indexOf('Task_ID');
+      var tEpCol   = tHeaders.indexOf('Episode_UID');
+      var tWfCol   = tHeaders.indexOf('Workflow_Step');
+      var tStCol   = tHeaders.indexOf('Status');
+      var tAsCol   = tHeaders.indexOf('Asset_ID');
+      for (var t = 1; t < tData.length; t++) {
+        if (String(tData[t][tEpCol]) !== String(episodeUid))   continue;
+        if (String(tData[t][tWfCol]) !== 'Revise_Reels')       continue;
+        var ts = String(tData[t][tStCol]);
+        if (ts !== 'open' && ts !== 'in_progress')             continue;
+        // If Asset_ID column exists, match on it; otherwise close first Revise_Reels found
+        if (tAsCol !== -1 && String(tData[t][tAsCol]) && String(tData[t][tAsCol]) !== String(assetId)) continue;
+        updateTaskStatus(String(tData[t][tIdCol]), 'complete', true);
+        bumpVersion('tasks', 'closeReelRevision');
+        break;
+      }
+    }
+
+    logToAuditTrail('closeReelRevision', 'state_change', episodeUid, '',
+      '[INFO] Reel revision closed for asset ' + assetId +
+      '. Old file ' + oldDriveFileId + ' → Superseded/. New file: ' + newDriveFileId, 'INFO');
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 }
 

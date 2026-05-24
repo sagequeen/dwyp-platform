@@ -892,6 +892,7 @@ function generateContactId() {
  * @param {string} [taskConfig.workflowStep]    - Pipeline stage. System tasks only.
  * @param {string} [taskConfig.executiveSummary]- Episode/situation context. System tasks only.
  * @param {string} [taskConfig.payloadLink]     - Drive doc, folder, or external URL.
+ * @param {string} [taskConfig.assetId]         - Asset_Library Asset_ID FK. Revision tasks only.
  */
 function spawnTask(taskConfig, suppressBump) {
   const scriptProps = PropertiesService.getScriptProperties();
@@ -922,7 +923,8 @@ function spawnTask(taskConfig, suppressBump) {
     Payload_Link:      taskConfig.payloadLink      || "",
     Revision_Notes:    "",
     Created_At:        new Date(),
-    Completed_At:      ""
+    Completed_At:      "",
+    Asset_ID:          taskConfig.assetId          || ""
   };
 
   // Header-driven row build — immune to column reorder.

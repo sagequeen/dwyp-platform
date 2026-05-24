@@ -106,6 +106,43 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 116. **Publish tab retired (May 2026). Design is the sole landing route.** Studio tab structure reduced from five tabs to four (Design / Write / Outreach / Ideas). ~7,000 lines of `pb*` code removed from `dwyp_app.gs` and `dwyp_ui.html`. AD #102 updated.
 117. **Staging-first deployment cadence retired (May 2026).** Code pushes directly to production. `STAGING_DEPLOYMENT_URL` blanked in Governance_Config — `isStaging()` returns false everywhere. Staging deployment exists but is not an active step in the release workflow. `getMasterSheetId()` always resolves the production sheet.
 118. **Reel revision §4 atomic close — `Reels/Superseded/` subfolder.** `closeReelRevision()` creates `Reels/Superseded/` inside the episode Staging folder on first use. Superseded reel file moves here, evacuating it from Loop C's watched root (`Reels/`). Revised file lands in `Reels/` root → next Daily Pulse re-spawns `Review_Reels`. AL row `Drive_File_ID` updated in-place by `Asset_ID` (no new row). Open `Revise_Reels` task auto-completed on close. `bumpVersion` fires for both `asset_library` and `tasks` domains.
+119. **Icon state machine retired; state rides the card in words.** The 3-color
+machine (gold/red/gray = whose court) is retired. Navigation surfaces carry no state
+signals. Persistent state is expressed as words on the card — In Revision (Audra's
+court) / Ready for Review (JT's court) / scheduled / not. Novelty ("new since last
+view") is a separate, ephemeral signal: a red circle on the card that clears on view,
+never on a navigation rail. Design target for the Task surface (Push 3); not yet
+built. Current Dashboard cards carry a release pill + per-asset icons (see Platform
+State) until that build.
+120. **Episode Card = head + body.** HEAD (Tier 3, the gate): episode pipeline state —
+Pending / In Revision / Ready for Review / Approved / Released; entry to Episode
+Review; tempers the body (an unapproved episode must visibly caveat scheduled
+outbound shown below it). BODY (uniform every episode): quote graphics (Tier 1,
+quiet — scheduled/not), reels (Tier 2, loud — novelty ● / scheduled / not),
+scheduling slots (open/filled). Asset loudness is set by predictability: Tier 1
+auto/quiet, Tier 2 shifty/loud, Tier 3 gate. Work is entered by tapping a card
+element; the element type is the route (no Target_Surface needed for card elements).
+Design target for the Task surface (Push 3); not yet built.
+121. **Task dispatch — two origins, two-tier ladder.** Card elements route by element
+type (structural): empty image slot → Design; reel → Reels Review; head → Episode
+Review. Real task rows (revisions, loose, coordination) route by a two-tier ladder:
+(1) explicit `Target_Surface` stamped at creation — spawner knows the room; manual
+creation stamps from context or a picker; talk-to-text parse stamps it if confident;
+(2) floor = the directory itself — an empty target opens the task in the directory
+with a route-or-resolve affordance, so misroute is impossible. `none` ≠ null: `none`
+= intentional no-room (coordination / self-resolve → checkbox); `null` = unresolved
+target → "route this" prompt; both floor to the directory but read differently. Parse
+attempts a target, never gates on it.
+
+**Task taxonomy — three independent axes:** Origin (system-spawned / manual /
+self-assigned) · Scope (episode-linked `Episode_UID` / loose null / set-scoped
+[parked, no live case]) · Destination (routes to a room / resolve-in-place).
+
+**Tasks schema deltas (17 cols today):** add `Raw_Input` (talk-to-text keeper); add
+`Target_Surface` enum (`design | writer | schedule | review | none` + null; vocab in
+Governance_Config). Design target for the Task surface (Push 3); not yet built.
+Reel-revision (§4) schema deps — S2-11 Status/Availability separation, reel-linkage
+FK, `revision_requested` status — tracked in Build Playbook, not resolved here.
 
 ---
 

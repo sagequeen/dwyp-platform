@@ -125,7 +125,10 @@ See §4 for the corollary table — 13 operational rules under this principle.
 The spine. One line each. Listed in the order they emerged.
 
 1. **Playbook-as-Engine** — A pre-compose engine reads a Playbook (the `Why` column in the slot recipe table) to fill the week's slots with ranked drafts *before* JT opens the app. AI chat = refinement, not creation.
-2. **Studio-as-the-App + Episodes-as-Tabs** — No dashboard. No separate Studio surface. The app is one surface; episodes are tabs in the left rail.
+2. **Dashboard-as-Home + Studio-as-Creation** — The app lands on the Dashboard
+   (episode cards + loose-task containers). Studio is the desktop creation
+   environment: a surface-first nav accordion (Design / Write / Schedule / Tasks).
+   Navigation carries no state signals; state rides the card.
 3. **Mobile = What Is, Not What Should Be** — Mobile is read/react/schedule. Origination lives on desktop. Hard wall, not graceful degradation.
 4. **Project, Not Episode** — Episode is the dense recurring instance of a more general shape. Build for the specific case; generalize only when a second case shows up with real evidence.
 5. **Slot-Type Unifies Outbound** — The schedule is a unified calendar of typed slots. Slot type determines recipe, platform target, asset shape, review affordance.
@@ -182,36 +185,26 @@ The app's spatial contract. Every surface sits inside it.
 
 | Pane | Width | What it holds |
 |---|---|---|
-| Left — Episode tabs | Compact | Episode list, free workspace, contacts, loose tasks, (Audra) ops |
+| Left — Navigation | Compact | Surface accordion (Design / Write / Schedule / Tasks); episodes under active surface; free workspace; contacts; loose tasks; (Audra) ops |
 | Center-left — Canvas | Largest, primary | Active workspace (Publish week, Writer doc, Design canvas, episode review, task surface) |
 | Center-right — Contextual / expanded menu | Variable | Whatever the rail icon expanded |
 | Right — Rail | Narrow icon column | Canvas-aware tools; Claude is one icon |
 
 **Mobile** is the same chrome with reaction-only verbs per the Surface Principle. Not a separate surface — a permission profile.
 
-### Episode Tab Anatomy
+### Episode Presence
 
-```
-[Guest Name]
-[Release Date or fallback]
-🎧 🖼 🎬
-```
+Episodes surface as **cards on the Dashboard** (home) and as a **navigation list
+under the active Studio surface**. Card spec is authoritative in
+`DWYP_Platform_State.md`. Navigation lists carry no state signals.
 
-No blocking task text. Icons carry the signal. Tasks for an episode live *inside* the tab once tapped.
+**Date fallback chain:** `Release_Date` → `Recording_Date` → `TBD`. TBD sorts to
+bottom under Date-Driven Priority.
 
-**Date fallback chain:** `Release_Date` → `Recording_Date` → `TBD`. TBD sorts to bottom under Date-Driven Priority.
+**Active set:** an episode is present from Drive-folder creation (Secretary at
+scheduling) through end-of-day of its final social post, then leaves the active
+set. Archive surface deferred until JT asks for it.
 
-**Active set:** Episode lives in left rail from Drive folder creation (Secretary at scheduling) through end-of-day of the final social post for that episode. Then it leaves the rail. Archive surface deferred until JT asks for it.
-
-### Icon State Machine (Locked at 3 Colors, Role-Filtered)
-
-| State | Audra | JT |
-|---|---|---|
-| Gray | nothing to do | nothing to do |
-| Gold | ready to deliver | ready to review/schedule |
-| Red | revision in queue/progress | Audra has it; add tasks at your own risk |
-
-**Gold = JT's court. Red = Audra's court. Gray = nobody's.** One icon tells both parties the same truth about who holds the work.
 
 ### Within-Session vs. Cross-Session
 

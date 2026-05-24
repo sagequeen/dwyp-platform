@@ -15,34 +15,6 @@ The eight reframes are the spine of this document. They don't change in v1.3; th
 
 ---
 
-## What This Displaces (cumulative since v1.0)
-
-| Earlier decision | Now | Locked in |
-|---|---|---|
-| Bottom nav: Dashboard / Contacts / Studio (State v5.4) | Left-nav app; no Dashboard surface | v1.1 + S5 |
-| Studio = creative surface, separate from Dashboard | Studio *is* the app | v1.1 + S5 |
-| Episode Card → Episode Detail → task → review | Episode tab in left rail; tasks live inside | v1.1 + S5 |
-| Mode List of 7 modes | Three surfaces (Publish / Writer / Design); mode follows task | v1.1 |
-| Per-card chat = creation interface | Per-card chat = refinement of pre-composed content | v1.1 |
-| Vert Fairy Pass 2 = one caption per platform per asset | 2–3 pre-composed options per slot, caption + background | v1.1 |
-| Publish surface = social only | Schedule surface = all outbound content | v1.1 |
-| Manifest-direct social save | Asset_Library row per pre-composed option; selection tracked | v1.1 |
-| "Pinning" docs = a UI state | Drive folder convention + known relationships | v1.1 |
-| Scribe Fairy as autonomous email-sender | Scribe retires; pipeline emails become Writer tasks | v1.1 |
-| Pending as a Status enum value | Pending derived from slot recipe + Asset_Library presence | v1.3 (S4) |
-| Parallel surface for non-episode-scoped content | Same surface; nullable Episode_UID is sufficient | v1.3 (S4) |
-| Hard-commit / soft-commit / cutoff state distinctions on slots | Slot is filled or empty; Make reads at post time | v1.3 (S2) |
-| Audra's revision queue as a separate ops surface | Same left rail, role-filtered icon semantics | v1.3 (S2 + S5) |
-| Cross-session navigation persistence | Within-session persists; cross-session resets to priority | v1.3 (S5) |
-| Publish tab as Studio entry point | Design is sole active landing tab; Schedule is a separate future surface | AD #116 (May 2026) |
-| Suggestions written to Asset_Library at materialization | Suggestions live in self-clearing store; Asset_Library holds kept things only | Hub, May 2026 |
-| Chained per-card create→schedule flow | Two rooms: Design (make) ↔ Schedule (place); bidirectional ID-passing doorways | Hub, May 2026 |
-| Slot lock implied at Make's read (unspecified render state) | Locked/grayed is a derived render state; slot stays visible read-only | Hub, May 2026 |
-| (Considered, rejected) Finalize week-level commit | Per-slot lock-on-read; no commit gesture | Hub, May 2026 |
-| Left rail = episodes-as-tabs only | Episodes-as-tabs (task feed) + surface-first accordion (browse path); both coexist | Hub, May 2026 |
-| Emotional load lens framing | Lens 11 — Cognitive Load | v1.3 (S1) |
-| Audit user = JT only | Audit user = JT + Audra | v1.3 (S1) |
-
 ---
 
 ## Foundation Principles
@@ -200,13 +172,19 @@ Pre-compose quality = Playbook quality. **OQ-F (playbook strategic content) is p
 
 Reel sourcing remains JT-driven and won't be automated.
 
-### 2. Studio-as-the-App + Episodes-as-Tabs *(confirmed S5)*
+### 2. Dashboard-as-Home + Studio-as-Creation
 
-There is no Dashboard. There is no separate Studio. The app is one surface, and episodes are tabs in the left rail. Each episode tab holds everything for that episode — tasks (for both users, role-filtered, including Audra's revise tasks), schedule view, assets, reviews. The state icons currently on episode cards survive; they just live on tabs now.
+The app lands on the **Dashboard** — the ops home: episode cards (release + asset
+state) and loose-task containers (Podcast / People / Personal). Card spec is
+authoritative in `DWYP_Platform_State.md`.
 
-A free workspace tab parallels the episode tabs for non-episode-scoped work.
+**Studio** is the desktop creation environment, entered from the Dashboard. Its
+left rail is a surface-first navigation accordion — Design / Write / Schedule /
+Tasks — with episodes listed under the active surface. Navigation carries no state
+signals; state rides the card.
 
-Tapping a task swaps the center pane — does not navigate to a new surface. **Mode follows task.** The user never picks "Publish vs Writer vs Design."
+Mobile is the Dashboard plus reaction verbs (Surface Principle); origination lives
+in desktop Studio. Mode follows task — the user never picks Design / Write / Schedule.
 
 **S5 — Desktop chrome locked at four panes:**
 
@@ -392,15 +370,14 @@ Every surface answers to exactly one role. If a surface wants to do two things, 
 
 Audra: same rhythms + pipeline ops (filing, herald, debug) via role-filtered icons on the same left rail.
 
-### Left Rail Composition *(S5)*
+### Left Rail Composition
 
-- Episodes (active set: Drive folder exists → final post end-of-day)
-- Free workspace (one)
-- Contacts
-- Loose tasks (Personal / Launch / untethered) — smaller container now that episode-scoped tasks live in their episode tabs
-- (Audra only) Ops drawer or right-rail Ops icon (placement Q16)
+Surface-first navigation accordion: **Design / Write / Schedule / Tasks.** Episodes
+list under the active surface (e.g. guest names under Design). Contacts, Free
+workspace, and Loose tasks reachable from the same rail. (Audra only) Ops drawer or
+right-rail Ops icon (placement Q16).
 
-**Browse path (additional, coexists with task feed):** Left rail supports a surface-first accordion (Design / Write / Schedule / Tasks) as an alternate entry for going straight to a surface. Task-driven assembly — tap task → surface assembles — remains the default. Accordion is additive, not a replacement for episodes-as-tabs.
+Pure navigation — no state signals, no badges. State rides the card on the Dashboard.
 
 ### Three AI Surfaces
 All three follow Reframe #7 (context = surface). All three sit in the same chat-bubble + chip primitives spec.
@@ -411,17 +388,6 @@ All three follow Reframe #7 (context = surface). All three sit in the same chat-
 | Writer canvas | Claude | Writing assistance scoped to pinned + open docs |
 | Help Desk | Gemini (per Phase 4.5 plan) | Informational ops chat — read-only across app state |
 
-### Icon State Machine *(locked S2 + S3)*
-
-Three colors. Role-filtered. Shared language: gold = JT's court, red = Audra's court, gray = nobody's.
-
-| State | Audra | JT |
-|---|---|---|
-| Gray | nothing to do | nothing to do |
-| Gold | ready to deliver | ready to review/schedule |
-| Red | revision (queued or in progress — same color) | "Audra has it; add tasks at your own risk" |
-
-Considered and rejected: red-active / red-pulse distinguishing queued from in-progress revisions; fourth state for partial scheduling. Volume reality keeps three colors sufficient.
 
 ### Canvas Open-State Rule *(refined S5)*
 

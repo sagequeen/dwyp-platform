@@ -1,6 +1,5 @@
 ﻿# DWYP Operations Platform — Platform Reference
-**Version: 3.2 | May 2026**
-**Replaces: DWYP_Platform_Reference_v3.1.md**
+**Version: 3.3 | May 2026**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -90,7 +89,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 99. **Asset Library is the single source of truth for all content assets.** `Social_Assets` tab handles scheduling and Make integration only. Asset Library stores: asset metadata, content text, Drive file ID, canvas state JSON (Fabric.js serialization for 1:1 reconstruction), background reference, captions, reel summaries. One row per asset. Permanent — rows are never deleted.
 100. **Canvas state serialized to Asset Library on Add to Week.** `canvas.toJSON()` stored in `Canvas_State` column. `canvas.loadFromJSON()` rebuilds exact editable state on slot re-entry. Enables 1:1 reconstruction and episode switching without loss.
 101. **Preservation Mandate replaced with intentional deletion policy.** Original mandate ("never simplify, rename, or thin any function") was a guardrail against Gemini's aggressive pruning. Replaced with: nothing gets removed without an explicit decision. Renames and dead code removal require explicit approval. Active function behavior is never changed without a confirmed design decision.
-102. **Studio tab structure (locked May 2026).** Five tabs: Publish / Design / Write / Outreach / Ideas. Old mode list (Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Brainstorm) retired — replaced by tab structure. Episode Index data model: see § AI Layer Architecture in this doc.
+102. **Studio tab structure (updated May 2026).** Four tabs: Design / Write / Outreach / Ideas. Publish tab retired — Design is the sole landing route. Old mode list (Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Brainstorm) retired — replaced by tab structure. ~7,000 lines of `pb*` code removed. See AD #116. Episode Index data model: see § AI Layer Architecture in this doc.
 103. **Episode index created by Vert on Daily Pulse trigger.** Index is a permanent markdown document per episode stored in `EPISODE_SEARCH_INDEX_KEY` Drive folder. Vert retrieves corpus context; Claude writes the index content (episode summary, hooks, quotes, image prompts, starter captions, transcript map). Reel descriptions are the only living section — updated by Daily Pulse on reel add/remove. Template: `DWYP_Episode_Index_Template.md`.
 104. **Quick Caption retired as standalone feature.** Caption generation moves to Daily Pulse audio extraction path: reel upload detected → audio extracted → transcription → episode index reel descriptions → Studio surfaces captions pre-populated.
 105. **Optimistic UI pattern adopted for approve/save/place actions.** UI updates immediately; GAS writes async. On GAS failure: UI reverts, toast shown, failure logged to Audit_Trail.
@@ -102,14 +101,18 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 111. **Scribe Fairy retired. Never deployed.** Pipeline email events now spawn Writer email tasks (JT autonomous). Seven blank template keys migrate to Writer Email quick-start templates. Scribe Fairy joins Safety Fairy and Marcom Fairy as a dead-code stub under the intentional deletion policy (AD #101). `clerk_fairy.gs` AD #24 route `invite → scribeLetSchedule()` is dead — address when Clerk Fairy rebuild opens. Retirement confirmed Reframe #8, May 2026.
 112. **Quote attribution schema (QUOTE blocks).** Guest-quote blocks in Master Template `# Show Notes` section carry attribution on a dedicated `ATTRIBUTION:` line, not inline with the quote text. Block format: `QUOTE N: "[quote text]"` / `ATTRIBUTION: [Guest First Name Last Name]` / `SLOT_TAGS: [tags]` / `QUALITY_SCORE: [1-5]`. `_bridgeParseRankedItems_` (vert_fairy.js) reads the `ATTRIBUTION:` line and reconstructs `Quote_Text` as `"[quote text]" — [Name]` — this is the canonical downstream format; no downstream caller changed. Missing `ATTRIBUTION:` logs WARNING to Audit_Trail and passes bare quote text through — no hard fail. HOOK blocks have no `ATTRIBUTION:` line and parse unchanged. `materializeQuoteGraphicAssets` consumes `Quote_Text` by field name.
 113. **Master Template voice injection: in-template sections, not external docs.** Brand-voice and show-philosophy content lives in keyed sections of the Master Template and is composed into prompts at call time via `extractPrompt("# Section Name")`. `BRAND_VOICE_ID`, `CAPTION_VOICE_SUPPLEMENT_ID`, and `DELIVERABLES_VOICE_SPEC_ID` governance keys are retired (all blanked 2026-05-19). `extractPrompt` matches on literal section-key text as plain text lines beginning with `# `; not dependent on Google Docs heading styling. Call-site composition: Guest Brief (herald_fairy.js) — `# Show Philosophy`, `# Pillars`, `# Peer Shows` assembled into `brandContext`, substituted for `${brandVoice}` token. Editorial pass (vert_fairy.js `runEditorialPass`) — `# Host Voice`, `# Voice Prohibitions`, `# Caption Mechanics`, `# Ranking Schema`, `# Show Notes`. Soft-fail contract: empty `extractPrompt` return logged per-section to Audit_Trail, generation continues — a voiceless prompt that silently succeeds is the failure mode this guards against; `test_extractPromptSmokeTest` is the verification gate. `buildEpisodeIndexV2` has no injection point (pure Vertex RAG retrieval, no Claude calls). `_buildEditorialPassSystemInstruction_` signature: `(masterTemplateStructure)`; retains hardcoded voice-prohibitions block as redundant safeguard.
+114. **Transcript-as-source-of-truth (locked hub decision 2026-05-22).** The finished transcript placed in `Staging/Episode/` is the single source of truth for all copy passes. Track A (`buildEpisodeIndexV2`) and Track B (`runEditorialPass`) both read the transcript directly via `gatherVertContext()`. Neither route through Vertex RAG for transcript content — Vertex RAG provides cross-episode context only, and is not in the critical path for either track.
+115. **Caption field consolidation (Spoke 0, May 2026).** `Caption_Draft` and `Caption_Final` columns on Asset_Library renamed to `Caption_Host` and `Caption_Guest` respectively. Semantics preserved: `Caption_Host` (col 10) is Claude-generated and frozen after write; `Caption_Guest` (col 11) is JT-edited and the source of truth for card render and Make.com post. All GAS write paths updated. Schema v2.0.
+116. **Publish tab retired (May 2026). Design is the sole landing route.** Studio tab structure reduced from five tabs to four (Design / Write / Outreach / Ideas). ~7,000 lines of `pb*` code removed from `dwyp_app.gs` and `dwyp_ui.html`. AD #102 updated.
+117. **Staging-first deployment cadence retired (May 2026).** Code pushes directly to production. `STAGING_DEPLOYMENT_URL` blanked in Governance_Config — `isStaging()` returns false everywhere. Staging deployment exists but is not an active step in the release workflow. `getMasterSheetId()` always resolves the production sheet.
 
 ---
 
-## Schema — Authoritative (v1.8)
+## Schema — Authoritative (v2.0)
 
 > Authority: live Master Sheet as of May 2026.
 
-### Contacts (24 columns)
+### Contacts (23 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
@@ -134,49 +137,48 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 | 19 | S | Source | Enum: form \| manual | How contact entered the system. |
 | 20 | T | Headshot_URL | URL | Herald-written. Drive direct-access URL. |
 | 21 | U | Contact_Library_Folder_ID | String | Drive folder ID for this contact's library assets. Hard required for Guest Brief. |
-| 22 | V | Workstream | Enum: DWYP \| PoP | Legal separation enforcement. |
-| 23 | W | Created_At | Timestamp | System-set on creation. |
-| 24 | X | Last_Activity | Timestamp | Written by `updateLastActivity()`. Updated by secretary_fairy.gs (contact stub creation) and herald_fairy.gs (enrichment, brief). Used to sort Contacts list desc. Added Phase 1.3. |
+| 22 | V | Created_At | Timestamp | System-set on creation. |
+| 23 | W | Last_Activity | Timestamp | Written by `updateLastActivity()`. Updated by secretary_fairy.gs (contact stub creation) and herald_fairy.gs (enrichment, brief). Used to sort Contacts list desc. Added Phase 1.3. |
 
-### Episodes (16 columns)
+### Episodes (14 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
-| 1 | A | Episode_UID | String | Primary key. Format: `EP-YYMMDD-HHmm`. |
-| 2 | B | Contact_ID | String | Foreign key → Contacts. |
-| 3 | C | Guest_Name | String | Denormalized display name. Freetext for Roundtable. |
-| 4 | D | Episode_Sequence | Integer | Manually managed. GAS never writes. |
-| 5 | E | Release_Date | Date | Manually managed. GAS never writes. |
-| 6 | F | Recording_Date | Date | Secretary writes on calendar match. |
-| 7 | G | Episode_Status | Enum: active \| complete \| archived | Secretary sets active on creation. |
-| 8 | H | Video_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. |
-| 9 | I | Images_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. |
-| 10 | J | Production_Folder_ID | String | Drive folder ID. Secretary writes. |
-| 11 | K | Staging_Folder_ID | String | Drive folder ID. Secretary writes. |
-| 12 | L | Proxy_File_ID | String | Daily Pulse writes on `proxy_` detection. |
-| 13 | M | Frameio_Project_ID | String | Retired (AD #72). Column remains; GAS must not write. |
-| 14 | N | NotebookLM_Source_ID | String | Populated manually when episode is added to NotebookLM KB. |
-| 15 | O | Notes | LongText | Freetext. Human-managed. |
-| 16 | P | Created_At | Timestamp | Secretary writes on creation. |
+| 1 | A | Episode_Sequence | Integer | Manually managed. GAS never writes. AD #28. |
+| 2 | B | Release_Date | Date | Manually managed. GAS never writes. AD #28. |
+| 3 | C | Episode_UID | String | Primary key. Format: `EP-YYMMDD-HHmm`. |
+| 4 | D | Contact_ID | String | Foreign key → Contacts. |
+| 5 | E | Guest_Name | String | Denormalized display name. Freetext for Roundtable. |
+| 6 | F | Status | Enum: active \| complete \| archived | Secretary sets active on creation. |
+| 7 | G | Raw_Folder_ID | String | Drive folder ID of the episode subfolder inside `02_RAW_PRODUCTION`. Secretary writes. |
+| 8 | H | Production_Folder_ID | String | Drive folder ID of the episode subfolder inside `03_STAGING_DRAFTS`. Secretary writes. |
+| 9 | I | Recording_Date | Date | Secretary writes on calendar match. |
+| 10 | J | Calendar_Event_ID | String | Google Calendar event ID. Secretary writes on calendar match. |
+| 11 | K | Video_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. AD #22. |
+| 12 | L | Images_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. AD #22. |
+| 13 | M | Episode_URL | URL | Podcast episode URL. Manually managed. |
+| 14 | N | Episode_Type | Enum | Episode type (e.g., guest \| roundtable \| solo). Manually managed. |
 
-### Tasks (14 columns)
+### Tasks (16 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
 | 1 | A | Task_ID | String | Primary key. Format: `TASK-YYMMDD-HHMM-NNN`. |
-| 2 | B | Episode_UID | String | Foreign key → Episodes. Optional (manual tasks may be episode-agnostic). |
-| 3 | C | Workflow_Step | Enum | See AD #23 for locked values. Blank for manual tasks. |
-| 4 | D | Action_Title | String | Human-readable task title. |
-| 5 | E | Executive_Summary | LongText | Context for the assignee. |
-| 6 | F | Assignee | String | Email address. Required. |
-| 7 | G | Assigned_By | String | Email or "The Fairy Team". |
-| 8 | H | Status | Enum: open \| in_progress \| complete \| blocked | |
-| 9 | I | Priority | Enum: normal \| urgent | |
-| 10 | J | Due_Date | Date | Optional. |
-| 11 | K | Payload_Link | URL | Optional. Drive doc, review link, etc. |
-| 12 | L | Created_At | Timestamp | System-set. |
-| 13 | M | Completed_At | Timestamp | System-set on completion. |
-| 14 | N | Visible_To | Enum: both \| audra_only \| jt_only | Security filter enforcement. |
+| 2 | B | Action_Title | String | Human-readable task title. |
+| 3 | C | Assignee | String | Email address. Required. |
+| 4 | D | Assigned_By | String | Email or "The Fairy Team". |
+| 5 | E | Status | Enum: open \| in_progress \| complete \| blocked | |
+| 6 | F | Priority | Enum: normal \| urgent | |
+| 7 | G | Due_Date | Date | Optional. |
+| 8 | H | Contact_ID | String | Foreign key → Contacts. Optional. |
+| 9 | I | Episode_UID | String | Foreign key → Episodes. Optional (manual tasks may be episode-agnostic). |
+| 10 | J | Workflow_Step | Enum | See AD #23 for locked values. Blank for manual tasks. |
+| 11 | K | Executive_Summary | LongText | Context for the assignee. |
+| 12 | L | Payload_Link | URL | Optional. Drive doc, review link, etc. |
+| 13 | M | Revision_Notes | LongText | Optional. Context for revision tasks. |
+| 14 | N | Created_At | Timestamp | System-set. |
+| 15 | O | Completed_At | Timestamp | System-set on completion. |
+| 16 | P | Note_Sent_At | Timestamp | Timestamp of last notification sent for this task. |
 
 ### Episode_Log (9 columns)
 
@@ -192,7 +194,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 | 8 | Resolved | Boolean | FALSE on creation. TRUE when Filing Fairy closes episode, or manually. |
 | 9 | Visible_To | Enum: both \| audra_only \| jt_only | Defaults to both. |
 
-### Asset_Library (21 columns)
+### Asset_Library (20 columns)
 
 Single source of truth for all content assets. One row per asset. Permanent — rows are never deleted. Canvas state stored for 1:1 reconstruction.
 
@@ -207,8 +209,8 @@ Single source of truth for all content assets. One row per asset. Permanent — 
 | 7 | Quote_Text | LongText | Hook or quote text placed on canvas. Quote_Graphic only. |
 | 8 | Reel_Summary | LongText | Gemini-generated context description. Reels only. Used by caption generation. |
 | 9 | Image_Prompt | LongText | Prompt used to generate background. Quote_Graphic only. |
-| 10 | Caption_Draft | LongText | Claude-generated draft caption. Frozen after AI write — never overwritten. |
-| 11 | Caption_Final | LongText | JT-approved/edited caption. Source of truth for card render and Make.com post. |
+| 10 | Caption_Host | LongText | Claude-generated caption. Frozen after AI write — never overwritten. (Formerly Caption_Draft — AD #115.) |
+| 11 | Caption_Guest | LongText | JT-approved/edited caption. Source of truth for card render and Make.com post. (Formerly Caption_Final — AD #115.) |
 | 12 | Notes | LongText | JT scratchpad. Not posted. |
 | 13 | Background_ID | String | Drive file ID of background image from `IMAGE_BACKGROUND_LIBRARY_ID`. Quote_Graphic only. |
 | 14 | Canvas_State | LongText | Fabric.js `canvas.toJSON()` serialization. Enables 1:1 reconstruction on slot re-entry. Quote_Graphic only. |
@@ -216,9 +218,8 @@ Single source of truth for all content assets. One row per asset. Permanent — 
 | 16 | Availability | Enum: available \| placed \| paired | Controls candidate panel visibility. |
 | 17 | Created_At | Timestamp | |
 | 18 | Created_By | String | `system` for GAS rows. User email for manual rows. |
-| 19 | Quality_Score | Integer (1–5) | Populated by midnight pass. Empty until pass runs. Read-only in all wiring spokes. |
-| 20 | Slot_Tags | String | Comma-separated Posting_Schedule Slot_IDs. Populated by midnight pass. |
-| 21 | Display_Text | LongText | JT-edited card text (hook/quote as edited on canvas). Source of truth for card stack render. Null until first canvas edit saved. Quote_Graphic only. |
+| 19 | Quality_Score | Integer (1–5) | Vestigial ranking artifact. Pipeline writes; rankings UI retired. Column retained — writes are by index. |
+| 20 | Slot_Tags | String | Vestigial ranking artifact. Comma-separated Posting_Schedule Slot_IDs. Rankings UI retired. Column retained — writes are by index. |
 
 ### Social_Assets (13 columns)
 
@@ -434,14 +435,14 @@ Design and Publish share the same Fabric.js canvas. Assets move between them wit
 ## Folder Structure
 
 ```
-RAW_PRODUCTION/
-  EP-YYMMDD-HHmm_GuestName/          ← Production folder (Production_Folder_ID)
+02_RAW_PRODUCTION/
+  EP-YYMMDD-HHmm_GuestName/          ← Raw folder (Raw_Folder_ID on Episodes tab)
     Production_Notes.gdoc
     [transcript file — raw]
     [headshot files]
 
-STAGING_DRAFTS/
-  EP-YYMMDD-HHmm_GuestName/          ← Staging folder (Staging_Folder_ID)
+03_STAGING_DRAFTS/
+  EP-YYMMDD-HHmm_GuestName/          ← Production folder (Production_Folder_ID on Episodes tab)
     manifest.json
     Episode/
       [finished transcript]
@@ -457,7 +458,7 @@ STAGING_DRAFTS/
       Save/                           ← Filing Fairy moves to REELS_ARCHIVE_FOLDER_ID
       Delete/                         ← Filing Fairy trashes
 
-FINISHED_EPISODES/
+04_FINISHED_EPISODES/
   EP-YYMMDD-HHmm_GuestName/          ← Filing Fairy moves here
 
 CONTACT_LIBRARY/
@@ -511,14 +512,16 @@ Clean four-layer model. Vert retrieves. Claude generates. GAS orchestrates. Gemi
 
 **Social Vert and Librarian Vert as named personas are retired.** The roles are now Vert (retrieval) and Claude (generation). Claude introduces itself as Claude in Studio chat.
 
+**Track A and Track B are transcript-direct (AD #114).** `buildEpisodeIndexV2` (Track A) and `runEditorialPass` (Track B) both call `gatherVertContext()` which reads the finished transcript from `Staging/Episode/` subfolder. Vertex RAG provides cross-episode context only — it is not in the critical path for either track. The table below shows Vertex in the pipeline; the operative source for episode-specific content is always the local transcript.
+
 ### Automated Pipeline (GAS-triggered)
 
 | Stage | Technology | Role |
 |---|---|---|
 | Guest research | Herald → Gemini API | Bio, Guest Brief. No Claude involvement. |
-| Show Notes | Vert → Vertex + Claude | Pass 1: Vert retrieves corpus context. Claude writes show notes + podcast description. |
-| Starter pack | Vert + Claude | Pass 2: Claude reads Pass 1 output + Vertex context. Writes hooks, quotes, image prompts, starter captions to episode index. |
-| Episode index | Vert Fairy | Created as byproduct of show notes run. One permanent markdown doc per episode. |
+| Show Notes | Vert → transcript + Claude | Track B: `runEditorialPass` reads transcript directly via `gatherVertContext()`. Claude writes show notes + podcast description. |
+| Episode index | Vert → transcript + Claude | Track A: `buildEpisodeIndexV2` reads transcript directly via `gatherVertContext()`. Claude writes hooks, quotes, image prompts, captions, transcript map. |
+| Quote graphic assets | Bridge Fairy → Claude | Track C: `materializeQuoteGraphicAssets` reads Show Notes doc → one Asset_Library row per hook or guest quote. |
 | Reel descriptions | Daily Pulse → Gemini | Gemini processes reel audio. Claude not involved. |
 | Canvas backgrounds | GenGem → Gemini image API | User-triggered. Always Gemini. |
 
@@ -630,7 +633,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 | `doGet()` / query string webhook pattern | Retired. POST + JSON body only. |
 | Any read/write to Guest tab | Retired. All contact fields live on Contacts tab. |
 | `fairyNudge` key in `spawnTask()` | Retired. Use `executiveSummary` only. |
-| `Staging_Folder_ID` column | Renamed `Production_Folder_ID` in live sheet. |
+| `Staging_Folder_ID` column | Renamed `Production_Folder_ID` in live sheet. Points to `03_STAGING_DRAFTS` episode subfolder. Distinct from `Raw_Folder_ID` (`02_RAW_PRODUCTION`). |
 | `Relationship_Status` / Contact_Type enum | Replaced by `Relationship_Type` EnumList on Contacts tab. |
 | `Pipeline_Status` AppSheet virtual column | Web app derives pipeline state client-side. |
 | Secretary creating Frame.io project | Retired (AD #72). |
@@ -662,6 +665,16 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 ---
 
 ## Build History
+
+### v3.2 → v3.3 (May 2026)
+
+- **Spoke 0 shipped: Caption field consolidation.** `Caption_Draft` → `Caption_Host`, `Caption_Final` → `Caption_Guest` on Asset_Library tab (cols 10–11). All GAS write paths updated. Semantics unchanged: Caption_Host is Claude-generated/frozen; Caption_Guest is JT-edited/source of truth for card render and Make.com post. AD #115 added.
+- **Transcript-as-source-of-truth locked.** Hub decision 2026-05-22: finished transcript in `Staging/Episode/` is the single source of truth for all copy passes. Track A (`buildEpisodeIndexV2`) and Track B (`runEditorialPass`) both call `gatherVertContext()` to read transcript directly — Vertex RAG is not in the critical path for either. AD #114 added. AI Layer Architecture section updated.
+- **Publish tab retired.** ~7,000 lines of `pb*` code removed from `dwyp_app.gs` and `dwyp_ui.html`. Studio tab structure: four tabs (Design / Write / Outreach / Ideas). Design is the sole landing route. AD #116 added; AD #102 updated.
+- **Staging-first deployment cadence retired.** Code now pushes directly to production. `STAGING_DEPLOYMENT_URL` blanked in Governance_Config. AD #117 added.
+- **Schema corrected to v2.0** (live sheet as of May 2026): Episodes (16→14 cols, complete column order correction), Tasks (14→16 cols, complete column order correction), Asset_Library (21→20 cols, Caption_Host/Caption_Guest rename, Display_Text removed, Quality_Score/Slot_Tags marked vestigial), Contacts (24→23 cols, Workstream removed).
+
+---
 
 ### v3.1 → v3.2 (May 2026)
 

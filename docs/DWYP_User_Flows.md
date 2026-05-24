@@ -1,15 +1,15 @@
 # DWYP User Flows
-**Version: 1.0 | May 2026**
-**Status: Foundation document — surface-level companion to App_Structure v1.3**
-**Companion documents:** `DWYP_App_Structure.md` v1.3 · `DWYP_Surface_Principle.md` · `DWYP_Performance_Principle.md`
+**Version: 1.1 | May 2026**
+**Status: Foundation document — surface-level companion to App_Structure v1.4**
+**Companion documents:** `DWYP_App_Structure.md` v1.4 · `DWYP_Surface_Principle.md` · `DWYP_Performance_Principle.md`
 
 ---
 
 ## Purpose
 
-The surface-level application of App_Structure v1.3's principles. Where v1.3 says *what's true*, this doc says *what verbs exist on what surfaces*, *which scenarios stressed which lenses*, and *which gaps still route forward*.
+The surface-level application of App_Structure v1.4's principles. Where v1.4 says *what's true*, this doc says *what verbs exist on what surfaces*, *which scenarios stressed which lenses*, and *which gaps still route forward*.
 
-Phase 2.0 output, paired with v1.3. Input to Phases 2.1 (component library), 2.3 (mobile IA), 2.4 (desktop chrome), 3.3 (schedule panel).
+Phase 2.0 output, paired with v1.4. Input to Phases 2.1 (component library), 2.3 (mobile IA), 2.4 (desktop chrome), 3.3 (schedule panel).
 
 ---
 
@@ -37,7 +37,7 @@ Mobile is treated as a **permission profile**, not a separate surface. Per Refra
 | 2 | Episode Tab | Project workspace — task feed, schedule, assets, reviews, reference docs | Center pane, scoped to episode |
 | 3 | Free Workspace Tab | Project workspace — non-episode-scoped equivalent | Center pane |
 | 4 | Contacts | Reference + edit — guest brief source-of-truth | Left rail tab |
-| 5 | Publish (canvas) | Schedule — pre-composed slots, refined and queued | Episode tab center pane |
+| 5 | Schedule (canvas) | Place — assign kept assets to slots, view locked slots, export guest bundle | Global surface (not yet built) |
 | 6 | Writer (canvas) | Compose — written work (docs, emails, briefs) | Episode or free workspace center pane |
 | 7 | Design (canvas) | Compose — visual work (quote graphics, backgrounds) | Episode or free workspace center pane |
 | 8 | Help Desk | Informational ops chat (Gemini, read-only across app state) | Right rail icon → center-right pane |
@@ -78,7 +78,7 @@ The default view when an episode tab is tapped with no within-session state and 
 | Add task (note-attached-to-episode) | ✅ | Inspiration release valve; mobile-permitted (Reframe #3) |
 | View reference docs (Episode Card, Guest Brief, transcript link) | 🟡 | Read-only by default (Edit Is A Mode); Phase 2.1 component |
 | Edit reference doc | 🟡 | Contextual `Edit Contact` / `Edit Description` buttons; Save commits + triggers automation (S3) |
-| Open Publish week | ✅ | Tap Publish task or Schedule entry; canvas assembles |
+| Open Schedule | 🟡 | Tap Schedule entry; global surface assembles (not yet built) |
 | Open Writer doc | ✅ | Tap Writer task or doc tile; canvas assembles |
 | Open Design canvas | ✅ | Tap Design task or asset tile; canvas assembles |
 | Open Episode Review (audio/video) | ✅ | Custom HTML5 player, GCS-served (S2) |
@@ -126,35 +126,21 @@ Source-of-truth for guest records. Reference + edit surface. Feeds Herald enrich
 
 ---
 
-### 5. Publish (canvas)
+### 5. Schedule (canvas)
 
-Schedule surface inside episode tab. Week view of pre-composed slots.
+**Not yet built.** Global placement surface — assign kept assets from Asset_Library to week slots, view locked posts, export guest bundle. Grouped by guest/week (Q11 resolved). Composition verbs (choose options, refine, background generation) live in Design (#7), not here. Two-Room Model: Design makes, Schedule places; doorways pass Asset_ID, not state.
 
 | Verb | Status | Notes |
 |---|---|---|
-| View week (left rail by Sort_Order from slot recipe) | 🟡 | S4 operationalized slot recipe; render component Phase 2.1 |
-| View slot canvas | 🟡 | Default state per Q1 (resolved: pre-composed-as-drafts uncommitted, Pending if no available asset) |
-| Choose between pre-composed options | 🟡 | 2–3 options per slot from Vert Fairy Pass 2 (v1.1); count Q3 |
-| Edit selected option (caption text) | 🟡 | Inline edit in canvas; commits to Asset_Library row |
-| Generate / regenerate background | 🟡 | Library-first vs Gemini fresh per Q13 |
-| Refine via Claude chat | 🟡 | Per-card chat = refinement, not creation (v1.1); right-rail Claude icon (S5) |
-| Schedule slot | ✅ | Schedule Button Is The Verb (S1); slot fills (S2) |
-| Unschedule slot | ✅ | Reversibility — mobile-permitted (S1) |
-| Tap Pending slot | 🟡 | Two-button canvas: Next + Poke (S4); component Phase 2.1 |
-| Poke (spawn upstream task, idempotent) | 🟡 | Composite key `(episode_uid, asset_type, slot_day)`; spawnTask helper update (S4) |
-| Next (skip to next actionable slot) | 🟡 | Resume By Priority in button form (S4) |
-| Add Slot (Reel — standalone or extra) | ✅ | Existing `+ Add` affordance; canvas reacts on Reel type (S4) |
-| Upload Reel | 🟡 | Within Add Slot canvas for Reel type (S4) |
-| Get Summary on Reel | 🟡 | Gemini transcribe/summarize → `Asset_Library.Reel_Summary` → caption chat unlocks (S4) |
-| Star / Unstar reel | ✅ | Symmetric reversibility (S2) |
-| Edit Reel (Vids trim path) | 🟡 | 3-state button (S2); workfile handshake + Sentinel Fairy |
-| Sync (after Vids export) | 🟡 | Fires Sentinel Fairy (S2) |
-| Request Revisions (reel) | ✅ | Schedule gate flips on (Availability=blocked); icon flips gold→red (S2) |
-| Approve (reel) | ✅ | Terminal "no revisions needed" gesture (S2) |
-| Mark Urgent (JT-side toggle) | 🟡 | Two-step friction; SMSes Audra (S2) |
-| Cannot schedule reel if revision pending | ✅ | Availability gate (S2); UX surfacing Q (S2-4) |
+| Place asset in slot | 🟡 | Assign an available Asset_Library row to a slot; slot renders filled (gold border) |
+| Rearrange (change slot day/platform) | 🟡 | Drag or reassign within week view |
+| Unschedule | 🟡 | Remove from slot; asset returns to available in Design |
+| View locked slot | 🟡 | `Scheduler_Status` = `queued`/`posted` → slot renders grayed, read-only, asset + caption visible |
+| Edit in Design (doorway) | 🟡 | Opens Design canvas for that asset; returns to Schedule on close |
+| Export guest bundle | 🟡 | Point-in-time snapshot for guest; post-export edits do not re-sync |
+| View Pending slot | 🟡 | Recipe exists, no available asset; Pending is derived (not stored) |
 
-**Mobile:** View scheduled slots, unschedule, edit precomp text, schedule, swap between options (Q2). Cannot originate, regenerate background, trim, or use Add Slot creation flow.
+**Mobile:** View scheduled slots, check locked status. All place/rearrange/edit actions desktop-only.
 
 ---
 
@@ -420,7 +406,7 @@ From `DWYP_App_Structure.md` v1.3:
 | Q8 | Default center pane when episode tab is selected and has no pending task | Phase 2.4 |
 | Q9 | Pinned-docs context budget — default-pinned ≠ default-injected vs whole-panel-injects-with-truncation | Phase 2.4 + Publish AI Companion design |
 | Q10 | Templates location — storage scheme | Phase 2.1 + Writer spoke |
-| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | Phase 2.4 |
+| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved Hub, May 2026** — global surface, grouped by guest/week |
 | Q12 | Feedback loop capture target — Interactions tab vs Audit_Trail append vs Asset_Library chat_history column | Phase 2 schema review |
 | Q13 | Background image strategy at pre-compose — library-first with Gemini fallback, or fresh per slot | Vert Fairy job spec |
 | Q14 | Slot recipe table storage location | Build-time decision |
@@ -431,4 +417,4 @@ From `DWYP_App_Structure.md` v1.3:
 
 ---
 
-*DWYP_User_Flows v1.0 — May 2026. Surface-level companion to App_Structure v1.3. Per-surface action inventory across ten surfaces. Eleven scenario walkthroughs from Phase 2.0 (S1–S5). Cumulative gap list with routing. Input to Phases 2.1 / 2.3 / 2.4 / 3.3.*
+*DWYP_User_Flows v1.1 — May 2026. Companion: `DWYP_App_Structure.md` v1.4.*

@@ -3222,6 +3222,103 @@ body.studio-open .app-header { display: none; }
 .v3-foot-name { font-size: 11px; color: rgba(255,255,255,0.65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v3-foot-role { font-size: 9px; color: rgba(255,255,255,0.28); }
 
+/* ── STUDIO — toolbar buttons ──────────────────────────────── */
+.st-export-wrap { position: relative; display: flex; flex-direction: column; align-items: flex-start; }
+.st-export-btn-red {
+  padding: 6px 14px; font-size: 11px; font-weight: 700;
+  background: var(--red); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.st-export-btn-red:hover { filter: brightness(1.1); }
+.st-format-cycle-btn {
+  padding: 6px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+  font-family: var(--font-body); min-width: 72px; background: var(--gold); color: #0D0A0A;
+  border: none; border-radius: var(--radius-sm); cursor: pointer;
+}
+.st-format-cycle-btn:hover { filter: brightness(0.92); }
+.st-justify-btn { min-width: 32px; display: flex; align-items: center; justify-content: center; }
+
+/* ── STUDIO — day picker popover ───────────────────────────── */
+.st-day-picker {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 100;
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15); min-width: 220px;
+}
+.st-day-pill {
+  padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 20px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-2); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.st-day-pill:hover { border-color: var(--gold); color: var(--gold); }
+.st-day-pill.active { background: var(--gold); color: #0D0A0A; border-color: var(--gold); }
+
+/* ── STUDIO — H&Q rail ─────────────────────────────────────── */
+.st-hq-rail-pane { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; }
+.st-hq-section-lbl {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-3); padding: 8px 12px 4px; flex-shrink: 0;
+}
+.st-hq-item {
+  font-size: 11px; color: var(--text); padding: 8px 12px 8px 14px;
+  border-left: 3px solid transparent; cursor: pointer; line-height: 1.45;
+}
+.st-hq-item:hover { background: var(--surface-2); }
+.st-hq-item.hook  { border-left-color: var(--red); }
+.st-hq-item.quote { border-left-color: var(--gold); }
+.st-hq-item.used  { opacity: 0.45; }
+
+/* ── STUDIO — background pane ──────────────────────────────── */
+.st-bg-actions {
+  display: flex; gap: 6px; padding: 6px 8px; flex-shrink: 0;
+}
+.st-bg-action-btn {
+  flex: 1; padding: 6px 10px; font-size: 11px; font-weight: 600;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text-2); border-radius: var(--radius-sm); cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.st-bg-action-btn:hover { border-color: var(--gold); color: var(--gold); }
+.st-bg-pool { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; padding: 0 8px 8px; }
+.st-bg-section { display: flex; flex-direction: column; }
+#stBgPane { padding: 0; overflow: hidden; flex-direction: column; }
+.st-bg-section-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-3); padding: 8px 4px 4px; flex-shrink: 0;
+}
+
+/* ── STUDIO — reel browser & player ────────────────────────── */
+.st-reel-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; min-height: 0; }
+.st-reel-empty { font-size: 12px; color: var(--text-3); text-align: center; padding: 20px 12px; line-height: 1.5; }
+.st-reel-card {
+  padding: 8px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; transition: background 0.12s, border-color 0.12s;
+}
+.st-reel-card:hover  { background: var(--surface-2); }
+.st-reel-card.active { background: var(--surface-2); border-color: var(--gold); }
+.st-reel-card-inner  { display: flex; flex-direction: column; gap: 2px; }
+.st-reel-card-name    { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; }
+.st-reel-card-caption { font-size: 11px; color: var(--text-3); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-reel-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; align-items: center; justify-content: center; background: #f0f0f0; }
+.st-reel-player-area { display: flex; align-items: center; justify-content: center; flex: 1; width: 100%; }
+.st-reel-player-empty { font-size: 12px; color: rgba(0,0,0,0.4); text-align: center; padding: 20px; }
+.st-reel-phone-frame {
+  height: min(72vh, 560px); aspect-ratio: 9/16; flex-shrink: 0;
+  border-radius: 14px; overflow: hidden; position: relative;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.08);
+  background: #111;
+}
+#stReelPlayerFrame {
+  position: absolute; top: -52px; left: 0;
+  width: 100%; height: calc(100% + 100px); border: none;
+}
+
+/* ── STUDIO — snap guides ──────────────────────────────────── */
+.st-snap-guide { position: absolute; pointer-events: none; z-index: 10; background: rgba(52,152,219,0.7); }
+.st-snap-guide-v { top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-0.5px); }
+.st-snap-guide-h { left: 0; right: 0; top: 50%; height: 1px; transform: translateY(-0.5px); }
+
+/* ── STUDIO — companion divider ────────────────────────────── */
+.st-companion-div { flex-shrink: 0; height: 1px; background: var(--border); margin: 0; }
 
 </style>
 </head>
@@ -3574,7 +3671,7 @@ body.studio-open .app-header { display: none; }
       <!-- Images | Reels segmented toggle — shown only in Design mode -->
       <div class="st-seg-row" id="stSegRow" style="display:none">
         <button class="st-seg-btn active" id="stSegImages" onclick="stSetDesignTab('qg')">Images</button>
-        <button class="st-seg-btn" id="stSegReels" onclick="stSetDesignTab('reels')">Reels</button>
+        <button class="st-seg-btn" id="stSegReels" disabled style="opacity:0.4;cursor:not-allowed;">Reels</button>
       </div>
       <!-- Caption region: pinned above chat, shown in Design mode -->
       <div class="st-caption-wrap" id="stCaptionWrap" style="display:none">
@@ -3710,7 +3807,7 @@ body.studio-open .app-header { display: none; }
         <div class="st-reel-player-area" id="stReelPlayerArea">
           <div class="st-reel-player-empty" id="stReelPlayerEmpty">Select a reel from the panel to preview it here.</div>
           <div class="st-reel-phone-frame" id="stReelPhoneFrame" style="display:none">
-            <iframe id="stReelPlayerFrame" style="width:100%;height:100%;border:none;" allowfullscreen allow="autoplay"></iframe>
+            <iframe id="stReelPlayerFrame" allowfullscreen allow="autoplay"></iframe>
           </div>
         </div>
       </div>
@@ -4154,10 +4251,15 @@ function loadData() {
           state.contactsLoaded = true;
           state.loaded         = true;
           _coldStartComplete   = true;
-          v3RenderEpRail();
-          // Auto-select first episode now that data is ready
+          stRenderRailGuests();
+          // Auto-select closest-date episode now that data is ready
           if (!st.episodeUid && state.episodes && state.episodes.length) {
-            var _fe = state.episodes[0];
+            var _sorted = state.episodes.slice().sort(function(a, b) {
+              var da = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
+              var db = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
+              return da - db;
+            });
+            var _fe = _sorted[0];
             stSelectGuest(_fe.Episode_UID, _fe.Guest_Name || _fe.Episode_UID);
           }
         })
@@ -4453,9 +4555,13 @@ function stSwitchTab(tab) {
     }
     var srBtn = document.getElementById('stSaveReturnBtn');
     if (srBtn) srBtn.style.display = st.publishOrigin ? 'flex' : 'none';
-    // Auto-select first guest if none chosen yet
+    // Auto-select closest-date guest if none chosen yet
     if (!st.episodeUid && state.episodes && state.episodes.length) {
-      var _first = state.episodes[0];
+      var _first = state.episodes.slice().sort(function(a, b) {
+        var da = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
+        var db = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
+        return da - db;
+      })[0];
       stSelectGuest(_first.Episode_UID, _first.Guest_Name || _first.Episode_UID);
     }
   } else {
@@ -4867,8 +4973,8 @@ function stRenderModelMessage(text) {
       html += '<strong style="font-size:1.05em">' + esc(line.slice(2)) + '</strong><br>';
       continue;
     }
-    // Inline: replace [[HOOK: text]], [[QUOTE: text — name]], [[PROMPT: text]] with chips
-    var processed = line.replace(/\[\[(HOOK|QUOTE|PROMPT):\s*([\s\S]*?)\]\]/g, function(_, type, content) {
+    // Inline: replace [[HOOK: text]], [[QUOTE: text — name]] with chips
+    var processed = line.replace(/\[\[(HOOK|QUOTE):\s*([\s\S]*?)\]\]/g, function(_, type, content) {
       var chipType = type.toLowerCase();
       var chipText = content.trim();
       return '<span class="st-src-chip ' + chipType + '" data-type="' + chipType + '" data-text="' + esc(chipText) + '">' + esc(chipText) + '</span>';
@@ -4890,9 +4996,6 @@ function stTapChip(type, text) {
   if (st.currentMode === 'images') {
     if (type === 'quote') {
       stTapQuoteChip(text);
-    } else if (type === 'prompt') {
-      var inp = document.getElementById('stPromptInput');
-      if (inp) { inp.value = text; stSubmitPrompt(); }
     } else {
       stPlaceCanvasText(text);
     }
@@ -5020,6 +5123,12 @@ function stInitCanvas() {
     if (obj.scaleX === 1 && obj.scaleY === 1) return;
     var newFontSize = Math.max(12, Math.round(obj.fontSize * obj.scaleY));
     var newWidth    = Math.max(40,  Math.round(obj.width   * obj.scaleX));
+    if (obj.styles) {
+      Object.keys(obj.styles).forEach(function(ln) {
+        if (!obj.styles[ln]) return;
+        Object.keys(obj.styles[ln]).forEach(function(ch) { delete obj.styles[ln][ch].fontSize; });
+      });
+    }
     obj.set({ fontSize: newFontSize, width: newWidth, scaleX: 1, scaleY: 1 });
     obj.initDimensions(); obj.setCoords(); st.fabricCanvas.renderAll();
   });
@@ -5676,21 +5785,6 @@ function stSubmitPrompt() {
   var sendBtn = document.getElementById('stPromptSend');
   sendBtn.disabled = true;
 
-  var imageBase64 = null;
-  var mimeType    = null;
-  if (st.fabricCanvas) {
-    var allObjs = st.fabricCanvas.getObjects();
-    var hasBg   = allObjs.some(function(o) { return o._isBackground; });
-    if (hasBg) {
-      allObjs.forEach(function(o) { if (!o._isBackground) o.visible = false; });
-      var dataUrl = st.fabricCanvas.toDataURL({ format: 'png', multiplier: 1 });
-      allObjs.forEach(function(o) { if (!o._isBackground) o.visible = true; });
-      st.fabricCanvas.renderAll();
-      imageBase64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
-      mimeType    = 'image/png';
-    }
-  }
-
   var thumbsEl = document.getElementById('stGenThumbs');
   thumbsEl.insertAdjacentHTML('afterbegin',
     '<div class="iw-gen-spinner" id="stGenSpinner">Generating…</div>');
@@ -5726,7 +5820,7 @@ function stSubmitPrompt() {
       sendBtn.disabled = false;
       showToast('Generation failed', true);
     })
-    .generateBackground(prompt, imageBase64, mimeType, ratioMap[st.ratio] || '9:16');
+    .generateBackground(prompt, null, null, ratioMap[st.ratio] || '9:16');
 }
 
 function stSetBgTab(btn, paneId) {
@@ -5794,11 +5888,16 @@ function stAccOpen(section) {
 function stRenderRailGuests() {
   var body = document.getElementById('stAccBodyDesign');
   if (!body) return;
-  var eps = (state && state.episodes) ? state.episodes : [];
+  var eps = (state && state.episodes) ? state.episodes.slice() : [];
   if (!eps.length) {
     body.innerHTML = '<div class="st-acc-stub">No guests loaded</div>';
     return;
   }
+  eps.sort(function(a, b) {
+    var da = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
+    var db = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
+    return da - db;
+  });
   body.innerHTML = '';
   eps.forEach(function(ep) {
     var uid   = ep.Episode_UID;
@@ -5922,8 +6021,10 @@ function stRenderRailReelList() {
     var card    = document.createElement('div');
     card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
     card.setAttribute('data-reel-id', id);
+    var summary = String(r.Reel_Summary || '');
     card.innerHTML =
       '<div class="st-reel-card-name">' + esc(name) + '</div>' +
+      (summary ? '<div class="st-reel-card-summary">' + esc(summary) + '</div>' : '') +
       (caption ? '<div class="st-reel-card-caption">' + esc(caption) + '</div>' : '');
     card.addEventListener('click', function() { stSelectRailReel(id); });
     list.appendChild(card);
@@ -6018,6 +6119,7 @@ function stInitReelCaptionPersistence() {
 
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
 function stSetDesignTab(tab) {
+  if (tab === 'reels') tab = 'qg'; // Reels disabled
   st.designTab = tab;
   var isQg = (tab === 'qg');
 
@@ -6119,48 +6221,70 @@ function stRenderHqPanel() {
   panel.innerHTML = html;
 
   panel.querySelectorAll('.st-hq-item[data-hq-text]').forEach(function(el) {
-    var text = el.getAttribute('data-hq-text');
-    el.addEventListener('click', function() { stDropText(text); });
+    var text   = el.getAttribute('data-hq-text');
+    var isHook = el.classList.contains('hook');
+    el.addEventListener('click', function() { stDropText(text, isHook); });
   });
 }
 
-function stDropText(text) {
+function stDropText(text, isHook) {
   if (!st.fabricCanvas) return;
-  // Collapse the H&Q tray — pick happened, move to composing
   stCollapseHqTray();
 
-  var cw   = st.fabricCanvas.getWidth();
-  var ch   = st.fabricCanvas.getHeight();
+  var canvas = st.fabricCanvas;
+  var cw   = canvas.getWidth();
+  var ch   = canvas.getHeight();
   var fill = st.activeColor || '#FFFFFF';
-  var guestAttr = st.guestName ? '\n— ' + st.guestName : '';
-  var fullText  = text + guestAttr;
 
   stPushHistory();
-  var existing = st.fabricCanvas.getObjects().find(function(o) { return o._isText; });
-  if (existing) {
-    existing.set('text', fullText);
-    st.fabricCanvas.setActiveObject(existing);
+
+  var existingQuote = canvas.getObjects().find(function(o) { return o._isText && o._textType !== 'attribution'; });
+  var existingAttr  = canvas.getObjects().find(function(o) { return o._isText && o._textType === 'attribution'; });
+
+  // Main text box
+  if (existingQuote) {
+    existingQuote.set('text', text);
+    canvas.setActiveObject(existingQuote);
   } else {
-    var t = new fabric.Textbox(fullText, {
-      left:           cw / 2,
-      top:            ch * 0.41,
-      originX:        'center',
-      originY:        'center',
-      width:          cw - 48,
-      fontSize:       100,
-      fontFamily:     'Libre Baskerville',
-      fontWeight:     'normal',
-      fill:           fill,
-      textAlign:      'center',
+    var t = new fabric.Textbox(text, {
+      left: cw / 2, top: ch / 2 - 40,
+      originX: 'center', originY: 'bottom',
+      width: cw - 48, fontSize: 100,
+      fontFamily: 'Libre Baskerville', fontWeight: 'normal',
+      fill: fill, textAlign: 'center',
       lockUniScaling: true,
-      _isText: true
+      _isText: true, _textType: 'quote'
     });
     t.setControlsVisibility({ mt: false, mb: false });
-    st.fabricCanvas.add(t);
-    st.fabricCanvas.bringToFront(t);
-    st.fabricCanvas.setActiveObject(t);
+    canvas.add(t);
+    canvas.bringToFront(t);
+    canvas.setActiveObject(t);
   }
-  st.fabricCanvas.renderAll();
+
+  // Attribution box — quotes only, separate text object
+  if (!isHook && st.guestName) {
+    var attrText = '— ' + st.guestName;
+    if (existingAttr) {
+      existingAttr.set('text', attrText);
+    } else {
+      var a = new fabric.Textbox(attrText, {
+        left: cw / 2, top: ch / 2 + 40,
+        originX: 'center', originY: 'top',
+        width: cw - 48, fontSize: 55,
+        fontFamily: 'Libre Baskerville', fontWeight: 'normal',
+        fill: fill, textAlign: 'center',
+        lockUniScaling: true,
+        _isText: true, _textType: 'attribution'
+      });
+      a.setControlsVisibility({ mt: false, mb: false });
+      canvas.add(a);
+      canvas.bringToFront(a);
+    }
+  } else if (existingAttr) {
+    canvas.remove(existingAttr);
+  }
+
+  canvas.renderAll();
   stUpdateTextBtns();
 }
 

@@ -1,5 +1,5 @@
 # DWYP_Codebase_Map.md
-**Version:** 1.0 | May 2026
+**Version:** 1.1 | May 2026
 **Purpose:** Hub-session orientation. Describes what each file owns, what its major functions do, and how the pipeline flows end to end. Written at responsibility level — not implementation detail — so it stays accurate across code iterations.
 
 ---
@@ -82,22 +82,19 @@
 
 ---
 
-**`vert_fairy.js`** — Show notes + content pipeline agent. Owns three pipeline tracks plus the original show notes pass.
+**`vert_fairy.js`** — Content pipeline agent. Owns three pipeline tracks (A/B/C) and the Reel Editorial pass. All tracks auto-triggered by `dailyPulse()` Loop D except Track C (manual).
 
 | Function | One-line responsibility |
 |---|---|
-| `runVertFairy(epUid)` | Pass 1 orchestrator: Vertex RAG query → show notes doc → Episode Index → Artist handoff. |
 | `gatherVertContext(epUid, agentName)` | Assembles transcript, guest brief, manifest, and staging folder for a run. |
-| `queryVertexShowNotes(context, agentName, epUid)` | Sends Vertex RAG + Claude call to generate raw show notes. |
-| `generateEpisodeIndex(context, showNotesContent, agentName, epUid)` | Pass 2: generates the Episode Index doc (deep knowledge, searchable). |
-| `buildEpisodeIndexV2(epUid, opts)` | **Track A.** Produces a structured, timestamped Episode Index v2 document with speaker attribution and topic segmentation. |
-| `runEditorialPass(epUid, opts)` | **Track B.** Rewrites show notes in JT's voice using brand voice corpus + Episode Index v2 as input. |
-| `materializeQuoteGraphicAssets(epUid, opts)` | **Track C (Bridge).** Reads Episode Index v2 for ranked hooks/quotes; writes Asset_Library rows (Slot_Tags, Quality_Score, Caption_Draft with signoff) for quote graphics and reel caption stubs. Slide_Index write retired. |
+| `buildEpisodeIndexPrompt(context)` | Builds the structured prompt for Track A index generation. |
+| `buildEpisodeIndexV2(epUid, opts)` | **Track A.** Reads injected transcript via Claude; produces structured Episode Index v2 (.md) with speaker attribution, topic segments, ranked hooks/quotes. Patches `manifest.episode_index_v2`. |
+| `runEditorialPass(epUid, opts)` | **Track B.** Rewrites show notes in JT's voice using in-template brand voice sections + Episode Index v2. Patches `manifest.show_notes`. |
+| `materializeQuoteGraphicAssets(epUid, opts)` | **Track C (Bridge).** Reads Episode Index v2 for ranked hooks/quotes; writes Asset_Library rows (Slot_Tags, Quality_Score, Caption_Draft with signoff) for quote graphics and reel caption stubs. |
 | `runReelEditorialPass(epUid, {force=false})` | **Reel Editorial.** Batches all Reel-type AL rows for episode into one Claude call; writes cleaned Reel_Summary + Slot_Tags + Quality_Score. Idempotent (skips scored rows unless force:true). |
 | `_bridgeParseRankedItems_(sectionText, labelPrefix)` | Parses v2.3 HOOK N: / QUOTE N: blocks with inline SLOT_TAGS + QUALITY_SCORE; defensive defaults, vocabulary validation, clamping, all anomalies logged. |
 | `_parseReelEditorialOutput_(responseText)` | Parses Claude's reel editorial response into {asset_id, summary, slot_tags, quality_score} objects; same defensive rules as bridge parser. |
 | `_appendCaptionSignoff_(captionText)` | Reads CAPTION_SIGNOFF from governance; appends to caption text; idempotent (no double-append). |
-| `cleanHooksWithClaude(content, agentName, epUid)` | Post-processes raw hook list for format consistency. |
 
 ---
 
@@ -146,7 +143,7 @@
 
 **`dev_tools.js`** — Manual test wrappers. Not deployed to production users. Safe to call from Apps Script editor.
 
-Contains test entry points for all three pipeline tracks (`buildEpisodeIndexV2`, `runEditorialPass`, `materializeQuoteGraphicAssets`) plus individual fairy invocations by episode UID. All wrappers use `IW_TEST_UID` or prompt for a UID.
+Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before running any wrapper. Covers: system triggers (`dailyPulse`, `checkCalendarForInterviews`), all three pipeline tracks + Reel Editorial pass, and Artist Fairy + PNG export.
 
 ---
 
@@ -180,13 +177,12 @@ Contains test entry points for all three pipeline tracks (`buildEpisodeIndexV2`,
 Surfaces:
 - **Episodes tab** — episode list, episode detail, review workflow
 - **Contacts tab** — contact list, contact detail
-- **Studio tab** — Publish surface: week view, asset canvas, caption editor, scheduling
+- **Studio tab** — Design surface (sole landing route): canvas editor, H&Q chips, QG/Reels sub-tabs, day picker, export; Write surface (backend wired, UI pending)
 
 Key client-side patterns:
 - `google.script.run.withSuccessHandler(...).withFailureHandler(...)` — all server calls
-- `pb` object — global publisher state (selected episode, asset canvases, slot assignments)
-- `pb.cardCanvases[assetId]` — full base64 canvas JSON per asset (in-memory only; stripped version sent to server)
-- Render-on-send: Canvas_State JSON is the authored artifact; PNG rendered at dispatch time, not save time
+- `st` object / `stRagContext` — global Studio state; `stRagContext` holds raw Episode Index v2 blob loaded by `stLoadEpisodeIndex()` for all Claude chat calls
+- Render-on-send: Canvas_State JSON is the authored artifact; PNG rendered at export time via `exportAssetToDrive()`, not at save time
 - Version cache: client stores domain versions; checks `getAllVersions()` on load and before stale reads
 
 ---
@@ -209,25 +205,18 @@ RESEARCH
     → runHeraldBrief() — generates guest brief Google Doc → Contact Library
     → spawns Review_Guest_Brief task for JT
 
-RECORDING → (human step: Audra uploads finished episode to Staging/Episode/)
+RECORDING → (human step: Audra uploads finished transcript to Staging/Episode/)
 
-PRODUCTION TRIGGER
-  fairy_circle.js: dailyPulse() Loop D
-    → detects Video_Status = "ready"
-    → spawns Review_Episode task for JT
-    → JT approves → triggers Vert Fairy
+TRANSCRIPT PIPELINE — auto-triggered by dailyPulse() Loop D
+  fairy_circle.js: dailyPulse()
+    → scans each non-complete episode's Staging/Episode/ folder for a transcript file
+    → Condition A: transcript present + episode_index_v2 absent → buildEpisodeIndexV2 (Track A)
+    → Condition B: episode_index_v2 set + show_notes absent → runEditorialPass (Track B)
+    → At most one condition fires per episode per pulse run
+    (Track C — materializeQuoteGraphicAssets — not yet auto-triggered; run manually via dev_tools.js)
 
-SHOW NOTES (Pass 1)
-  vert_fairy.js: runVertFairy(epUid)
-    → gatherVertContext() — transcript + guest brief + manifest
-    → queryVertexShowNotes() — Vertex RAG grounding + Claude generation
-    → writes Show Notes Google Doc to Staging root
-    → generateEpisodeIndex() — Pass 2: Episode Index doc in index folder
-    → patchManifest() — show_notes doc ID locked
-    → runArtistFairy() handoff
-
-IMAGE PRODUCTION
-  artist_fairy.js: runArtistFairy(epUid)
+IMAGE PRODUCTION — manual
+  artist_fairy.js: runArtistFairy(epUid)  [invoked via dev_tools.js or manual trigger]
     → buildPlaceholderMap() — hooks, quotes, image prompts, headshots
     → populateSlideDeck() × N — each template type (host graphics, guest graphics, thumbnails)
     → exportSlidesToPng() → writes PNGs to Staging/Images/
@@ -249,13 +238,11 @@ TRACK C — Bridge (Quote Graphic Assets)
     → Writes Asset_Library rows: type=Quote_Graphic, status=candidate
     → Writes reel caption stubs to existing Asset_Library Reel rows
 
-PUBLISH (Studio — JT)
+DESIGN (Studio — JT)
   dwyp_ui.html + dwyp_app.js
-    → Studio tab: week view shows Social_Assets schedule
-    → Asset canvas: JT edits quote graphic, caption, background
-    → saveAssetDraft() → dual-JSON: full base64 stays client-side, stripped JSON → server
-    → exportAssetToDrive() → PNG rendered server-side → Drive → Social_Assets row
-    → placeAssetInSlot() → schedules post
+    → Studio Design tab: JT edits quote graphic canvas, caption, background
+    → exportAssetToDrive() → PNG + .txt companion rendered server-side → Manual_Exports/ subfolder
+    → placeAssetInSlot() → schedules post in Social_Assets
 
 ARCHIVE
   filing_fairy.js: runFilingFairy(epUid)  [triggered via AppSheet webhook → clerk_fairy.js doPost()]

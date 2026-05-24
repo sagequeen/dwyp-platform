@@ -1,5 +1,5 @@
 # DWYP App Structure
-**Version: 1.3 | May 2026**
+**Version: 1.4 | May 2026**
 **Status: Foundation document — principles + refinements layer for Phase 2 design work**
 **Companion documents:** `DWYP_Surface_Principle.md` · `DWYP_Performance_Principle.md` · `DWYP_User_Flows.md` · `DWYP_Build_Playbook.md` · `DWYP_Platform_State.md`
 
@@ -34,6 +34,12 @@ The eight reframes are the spine of this document. They don't change in v1.3; th
 | Hard-commit / soft-commit / cutoff state distinctions on slots | Slot is filled or empty; Make reads at post time | v1.3 (S2) |
 | Audra's revision queue as a separate ops surface | Same left rail, role-filtered icon semantics | v1.3 (S2 + S5) |
 | Cross-session navigation persistence | Within-session persists; cross-session resets to priority | v1.3 (S5) |
+| Publish tab as Studio entry point | Design is sole active landing tab; Schedule is a separate future surface | AD #116 (May 2026) |
+| Suggestions written to Asset_Library at materialization | Suggestions live in self-clearing store; Asset_Library holds kept things only | Hub, May 2026 |
+| Chained per-card create→schedule flow | Two rooms: Design (make) ↔ Schedule (place); bidirectional ID-passing doorways | Hub, May 2026 |
+| Slot lock implied at Make's read (unspecified render state) | Locked/grayed is a derived render state; slot stays visible read-only | Hub, May 2026 |
+| (Considered, rejected) Finalize week-level commit | Per-slot lock-on-read; no commit gesture | Hub, May 2026 |
+| Left rail = episodes-as-tabs only | Episodes-as-tabs (task feed) + surface-first accordion (browse path); both coexist | Hub, May 2026 |
 | Emotional load lens framing | Lens 11 — Cognitive Load | v1.3 (S1) |
 | Audit user = JT only | Audit user = JT + Audra | v1.3 (S1) |
 
@@ -89,6 +95,12 @@ A slot is filled or empty. Make pulls slot contents at post time. There is no co
 
 **Caveat (reels only):** *Cannot schedule a reel if revision pending.* `Asset_Library.Availability` (separate from Status — Status governs lifecycle, Availability governs schedulability) blocks reels with active revision requests from entering slots. Once v2 lands, reel returns to available.
 
+**Clarifications (Hub, May 2026):**
+- **Lock is per-slot, derived from Make's read.** When Make pulls a slot at its post time, that slot renders locked and grayed — derived from `Scheduler_Status` (`queued`/`posted`). No Finalize button; no week-level commit. Slots whose post time hasn't arrived stay editable.
+- **Locked slots stay visible.** Grayed, read-only, asset + caption shown — supports themed-week planning.
+- **Guest export is a point-in-time snapshot.** Post-export edits do not trigger re-sync or notification — the guest copy was a courtesy snapshot, never a guarantee.
+- **Finalize rejected.** A week-level commit would lock Saturday along with earlier slots, contradicting last-minute editability. Per-slot lock-on-read is the mechanism.
+
 ### Pending Is Derived, Not Stored *(S4)*
 
 Slot states like "Pending" are computed at render time from the join between a slot recipe table and Asset_Library presence. They are not values in a Status enum.
@@ -99,11 +111,64 @@ Implications:
 - Same logic generalizes across asset types
 - `Asset_Library.Availability` has exactly two values: `available` / `placed`. No `pending`. No `bank`.
 
+**Three derived slot render states (Hub, May 2026):**
+- **Filled** — an available Asset_Library row is placed in the slot
+- **Pending** — slot recipe exists, no available asset yet
+- **Locked/grayed** — derived from `Scheduler_Status` = `queued`/`posted`; read-only render
+
+No Status enum growth. Lock is computed at render time, not stored. Closes gap S4-10 (visual distinction of pending vs locked slots in week view).
+
 ### Sibling, Not Sibling Surface *(S4)*
 
 Non-episode-scoped content that follows the same scheduling pattern lives in the same surface as episode content. The distinction between scoped and unscoped is a data-layer fact (nullable foreign key), not a UI boundary.
 
 Sits under Cognitive Offloading (no second mental model for JT) and Generic In Name, Specific In Build (don't generalize until forced).
+
+### Library Holds Kept Things Only *(Hub, May 2026)*
+
+The Asset_Library holds only what JT **made and kept** — never what the platform merely **offered**. Claude generates an abundance of hooks and quotes so JT has choices; selecting and composing one is the act of creation, and saving is the act of keeping. Suggestions are not assets until a tap turns an offer into work.
+
+**Three-tier persistence:**
+
+| Tier | Holds | Persistence | Reason |
+|---|---|---|---|
+| **Transcript** | Episode source text | Permanent | Durable source of truth; suggestions derive from it |
+| **Suggestion store** (side sheet, keyed by EUID) | Hooks + quotes + starter captions | Self-clearing (~1 week after release date) | Regenerable from transcript; disposable because re-drawable |
+| **Asset_Library** | What JT made + kept (composed quote graphics, reels) | Permanent | Kept work; canonical editable object |
+| **Finished folder** | As-posted assets | Permanent | Archive of record — what actually went out |
+
+**Regenerate, don't archive.** Unused suggestions aren't precious because they aren't scarce — Claude redraws from the transcript in seconds. Worst case after a self-clear is a few seconds of regeneration, not lost work.
+
+**Reels vs Quote Graphics — different on-ramps, same library rule:**
+
+| | Reels | Quote graphics / hooks |
+|---|---|---|
+| Count | Few | Many (buffet) |
+| Origin | Made upstream (Audra grabs, JT marks in/outs) | Claude offers; JT taps to compose |
+| Library entry | Born into Asset_Library (durable, identity matters) | Enters Asset_Library only on Save (after tap + compose) |
+| Disposability | Not disposable | Disposable by design — regenerable from transcript |
+
+**Feed-default aspect ratio:** Quote-graphic compose defaults to Feed (4:5 / 1080×1350). JT picks a ratio only when deviating — one fewer decision per asset. Reels are exempt (9:16 by nature). Ratio-pick is a quote-graphic affordance only.
+
+⚠ **Code confirm required before implementing:** AD #109 has `materializeQuoteGraphicAssets` writing one Asset_Library row per hook/quote at materialization. Under this principle, those suggestions should land in the suggestion store, and only saved ones become Asset_Library rows. Whether that's a rename (candidate rows are already lightweight) or a rewire (downstream reads depend on them) is an inspection question — do not implement until Code sizes the change.
+
+### Two-Room Model — Design ↔ Schedule *(Hub, May 2026)*
+
+Create and schedule are two surfaces, not one chained flow. The chained per-card flow is retired.
+
+- **Design** = where assets are made and edited (canvas + caption). The only place Canvas_State is written.
+- **Schedule** = placement only. Drag/drop (desktop) or tap-to-place (mobile) assets into week slots; view thumbnail + caption/summary in slot. Not an editor.
+
+**Doorways pass intent + ID, never state:**
+
+| Door | From → To | Mechanism |
+|---|---|---|
+| **Go to Schedule** | Design → Schedule | Optional bridge (offer, not march). Eases creation→placement friction. |
+| **Edit in Design** | Schedule → Design | Opens asset by `Asset_Library_ID`. Jump, not inline edit. Suppressed on locked slots. |
+
+**Live-reference consequence:** editing an asset in Design that is placed in a slot updates the slot — Social_Assets foreign-keys to Asset_Library; no per-slot copy. Suppressed only when slot is locked. Recommended UI cue: when opening an asset currently placed in an unlocked slot, signal "this asset is scheduled [day] — editing changes the scheduled post." Not a lock; awareness only.
+
+**Resolves Q11** — Schedule is its own global surface, grouped by guest/week.
 
 ---
 
@@ -148,7 +213,7 @@ Tapping a task swaps the center pane — does not navigate to a new surface. **M
 | Pane | Width | Content |
 |---|---|---|
 | Left — Episode tabs | Half-size (compact) | Episode list, free workspace, contacts, loose tasks, (Audra) ops |
-| Center-left — Canvas | Largest, primary | Active workspace (Publish week, Writer doc, Design canvas, episode review, task surface) |
+| Center-left — Canvas | Largest, primary | Active workspace (Schedule view, Write doc, Design canvas, episode review, task surface) |
 | Center-right — Contextual / expanded menu | Variable | Whatever the rail icon expanded |
 | Right — Rail | Narrow icon column | Canvas-aware tools; Claude is one icon |
 
@@ -223,16 +288,16 @@ What survives:
 
 | Surface | Role | Used for |
 |---|---|---|
-| **Publish** | Schedule (pre-composed slots, refined and queued) | All outbound scheduled content |
-| **Writer** | Compose written work (docs) | Interview prep, show notes, episode copy, newsletters, emails, outreach, brainstorming |
-| **Design** | Compose visual work (canvas) | Quote graphics, hook images, custom slot backgrounds |
+| **Design** | Compose visual work (canvas) | Quote graphics, hook images, custom slot backgrounds. Sole active Studio landing tab. |
+| **Write** | Compose written work (docs) | Interview prep, show notes, episode copy, newsletters, emails, outreach, brainstorming |
+| **Schedule** | Assign pre-composed assets to day slots | All outbound scheduled content. Not yet built — separate surface from Studio tabs. |
 
 The seven-mode list collapses:
-- Show Notes / Episode Copy / Brainstorm → Writer with a doc
-- Interview Prep → Writer on episode tab, episode docs pinned
-- Social Media → Publish
-- Newsletter / Email → Writer doc + Publish slot
-- Outreach → Writer doc + Send-to-Drafts action
+- Show Notes / Episode Copy / Brainstorm → Write with a doc
+- Interview Prep → Write on episode tab, episode docs pinned
+- Social Media → Schedule surface (not yet built)
+- Newsletter / Email → Write doc + Schedule slot (future)
+- Outreach → Write doc + Send-to-Drafts action
 
 JT never picks a mode. She taps a task; the center pane assembles.
 
@@ -244,8 +309,8 @@ The assistant on every surface knows what the user is currently looking at, plus
 
 | Surface | Foreground (what the user sees) | Background |
 |---|---|---|
-| Publish per-slot chat | The slot + its siblings | Corpus, always available |
-| Writer | Pinned episode docs + open canvas + user-added docs | Corpus, always available |
+| Design per-asset chat | The asset in focus | Corpus, always available |
+| Write | Pinned episode docs + open canvas + user-added docs | Corpus, always available |
 | Help Desk | App state (tasks, episodes, contacts, schedule) | Audit_Trail recency window |
 
 **Pinning is a Drive folder convention, not a UI state.** Secretary writes episode-scoped docs to a new `Episode_Copy/` subfolder. Writer, opened on an episode tab, reads that folder. No pin/unpin toggle exists. Naming/structure is the contract.
@@ -256,7 +321,7 @@ Known relationships (guest brief from `CONTACT_LIBRARY/{contact_id}/`, transcrip
 
 **Empty Writer canvas is a chooser.** Quick-start buttons (Newsletter / Email / Outreach / Brainstorm / ...) pre-seed half the prompt and pull a doc template. The seven blank Scribe template keys in Governance_Config finally have a home.
 
-**S5 implementation: Claude lives in the right rail.** Right-rail icon column adapts to whatever canvas is currently open (Riverside-style). Claude is one icon among canvas-aware tools. Contextual, accessible from any canvas, never a separate destination. Center-right pane = the expanded panel of whatever right-rail icon was activated. Right-rail icon registry per canvas type is Q15.
+**S5 design target (Phase 2.4 — not yet built): Claude lives in the right rail.** Right-rail icon column adapts to whatever canvas is currently open (Riverside-style). Claude is one icon among canvas-aware tools. Contextual, accessible from any canvas, never a separate destination. Center-right pane = the expanded panel of whatever right-rail icon was activated. Right-rail icon registry per canvas type is Q15.
 
 ### 8. Pipeline Emails Become Writer Tasks *(confirmed S3)*
 
@@ -316,7 +381,7 @@ Every surface answers to exactly one role. If a surface wants to do two things, 
 | Role | Purpose | Surfaces |
 |---|---|---|
 | Triage | What needs you right now | Left rail with state icons; per-tab Resume By Priority |
-| Schedule | Pre-composed week, refined and queued | Publish (canvas inside episode tab) |
+| Schedule | Pre-composed assets assigned to day slots | Schedule surface (not yet built — separate from Studio tabs) |
 | Compose | Sit-down creative work | Writer, Design (canvases inside episode tab or free workspace) |
 | Browse | Reference and state lookup | Contacts, episode tab summary view |
 
@@ -335,12 +400,14 @@ Audra: same rhythms + pipeline ops (filing, herald, debug) via role-filtered ico
 - Loose tasks (Personal / Launch / untethered) — smaller container now that episode-scoped tasks live in their episode tabs
 - (Audra only) Ops drawer or right-rail Ops icon (placement Q16)
 
+**Browse path (additional, coexists with task feed):** Left rail supports a surface-first accordion (Design / Write / Schedule / Tasks) as an alternate entry for going straight to a surface. Task-driven assembly — tap task → surface assembles — remains the default. Accordion is additive, not a replacement for episodes-as-tabs.
+
 ### Three AI Surfaces
 All three follow Reframe #7 (context = surface). All three sit in the same chat-bubble + chip primitives spec.
 
 | Surface | LLM | Scope |
 |---|---|---|
-| Publish per-slot | Claude (per Phase 4.4 plan) | Refinement of pre-composed content; mouth of the Playbook |
+| Design per-asset | Claude (Phase 4.4 — not yet built) | Refinement of asset-in-focus; companion scoped to active asset only |
 | Writer canvas | Claude | Writing assistance scoped to pinned + open docs |
 | Help Desk | Gemini (per Phase 4.5 plan) | Informational ops chat — read-only across app state |
 
@@ -491,7 +558,7 @@ Capture target is an Open Question (Q12).
 | Q8 | Default center pane when episode tab is selected and has no pending task | Open | Phase 2.4 |
 | Q9 | Pinned-docs context budget — default-pinned ≠ default-injected vs whole-panel-injects-with-truncation | Open | Phase 2.4 + Publish AI Companion design |
 | Q10 | Templates location — seven Scribe template keys + new ones; storage scheme | Open *(S3 confirmed migration to Writer quick-starts; storage scheme still TBD)* | Phase 2.1 + Writer spoke |
-| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | Open | Phase 2.4 |
+| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved Hub, May 2026** — Schedule is its own global surface, grouped by guest/week. | — |
 | Q12 | Feedback loop capture target — Interactions tab vs Audit_Trail append vs Asset_Library chat_history column | Open | Phase 2 schema review |
 | Q13 | Background image strategy at pre-compose — library-first with Gemini fallback, or fresh per slot | Open | Vert Fairy job spec |
 | **Q14** *(new S4)* | Slot recipe table storage location — Master Sheet tab vs Governance_Config | Open | Build-time decision |
@@ -511,7 +578,7 @@ Listed explicitly so future sessions don't drift into assuming any of these:
 - The desktop chrome details beyond the four-pane structure + left rail shape (Phase 2.4)
 - The schedule panel visual design (Phase 3.3)
 - The Writer canvas chooser visual (Phase 3.x)
-- Whether the schedule view is per-project, global, or both (Q11)
+- ~~Whether the schedule view is per-project, global, or both (Q11)~~ **Resolved** — global surface, grouped by guest/week
 - Project_Types registry, multi-project routing, generic data model — **do not build until a second project appears**
 - Slot-type recipes for non-social types — **do not build until those slot types ship**
 - Bank_Clip pool (flagged S4 as deferred; future feature, architecture already supports it via nullable Episode_UID)
@@ -537,6 +604,10 @@ In addition to the three foundation principles (Surface, Performance, Cognitive 
 
 **Sibling, not sibling surface.** *(v1.3, S4)* Same scheduling pattern → same surface. Nullable foreign keys, not parallel UIs.
 
+**Library holds kept things only.** *(v1.4, Hub May 2026)* Asset_Library is the permanent record of things JT chose. Suggestions live in a self-clearing store; only tapped/accepted work crosses into Asset_Library.
+
+**Two-room model.** *(v1.4, Hub May 2026)* Design (make/edit) and Schedule (place/assign) are separate rooms with bidirectional ID-passing doorways. No chained flow; no modal within modal.
+
 ---
 
 ## Sequencing Impact on Build Playbook v5
@@ -544,12 +615,12 @@ In addition to the three foundation principles (Surface, Performance, Cognitive 
 This document remains input to Phase 2 work. Specifically:
 
 - **Phase 2.0 (Action-Completeness Audit)** — **complete.** Saturation marker locked S5. Output: this v1.3 + `DWYP_User_Flows.md` v1.0.
-- **Phase 2.1 (Component Library)** — card design reflects: episode-tab-as-card, pre-composed options inside Publish slots, refinement-chat-as-chip, three-surface mental model, Edit Is A Mode pattern, three-color icon state machine, Pending slot canvas (Next + Poke buttons), 3-state Edit Reel button
+- **Phase 2.1 (Component Library)** — card design reflects: episode-tab-as-card, Design canvas interaction, refinement-chat-as-chip, Edit Is A Mode pattern, three-color icon state machine, Pending slot canvas (Next + Poke buttons), 3-state Edit Reel button
 - **Phase 2.3 (Mobile IA)** — Reframe #3 is the spine; mobile verb inventory locked S1
-- **Phase 2.4 (Desktop Chrome)** — four-pane structure locked S5; resolve Q6, Q8, Q9, Q11, Q15, Q16, Q17
+- **Phase 2.4 (Desktop Chrome)** — four-pane structure locked S5; resolve Q6, Q8, Q9, Q15, Q16, Q17
 - **Phase 3.3 (Schedule Panel)** — Pending-as-derived render pattern; option chooser UX (resolve Q3, Q13)
 - **Phase 4.2 (Playbook Strategic Content)** — load-bearing; `Why` cell content is where this lands
-- **Phase 4.4 (Publish Companion)** — refinement-only scope confirmed
+- **Phase 4.4 (Design Companion)** — per-asset chat in Design tab; refinement-only scope confirmed. Publish tab retired; companion targets Design surface.
 
 Build Playbook v5 sequencing otherwise unchanged. Phase 1 (perf foundation) and Phase 0 (housekeeping) are unaffected.
 
@@ -557,4 +628,4 @@ Build Playbook v5 sequencing otherwise unchanged. Phase 1 (perf foundation) and 
 
 ---
 
-*DWYP_App_Structure v1.3 — May 2026. Phase 2.0 saturation integrated. Three foundation principles (Surface, Performance, Cognitive Offloading). Thirteen corollaries under Cognitive Offloading. Three operational principles. Eight reframes refined inline. Five Open Questions resolved; four new Open Questions added. Companion: `DWYP_User_Flows.md` v1.0.*
+*DWYP_App_Structure v1.4 — May 2026. Companion: `DWYP_User_Flows.md` v1.1.*

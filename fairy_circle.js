@@ -2499,10 +2499,11 @@ function dailyPulse() {
     }
 
     // =========================================================================
-    // LOOP D: Transcript Detection — Vert Fairy (Show Notes)
+    // LOOP D: Transcript Detection — Track A (Index Build) + Track B (Editorial)
     // Scans Staging/Episode/ subfolder for a finished transcript file.
-    // If found and manifest.show_notes is not set: runs runVertFairy().
-    // Idempotency: manifest.show_notes is the dedup signal — set on success.
+    // Condition A: transcript present + episode_index_v2 not set → buildEpisodeIndexV2
+    // Condition B: episode_index_v2 set + show_notes not set → runEditorialPass
+    // An episode satisfies at most one condition per pulse run.
     // Only reads manifest when a transcript is confirmed present (minimizes
     // Drive API calls across the episode roster).
     // =========================================================================
@@ -2511,7 +2512,7 @@ function dailyPulse() {
 
     if (prodFolCol === -1) {
       logToAuditTrail(agentName, "error", "", "",
-        "[WARNING] Production_Folder_ID column not found. Skipping Vert Fairy transcript scan.", "WARNING");
+        "[WARNING] Production_Folder_ID column not found. Skipping transcript pipeline scan.", "WARNING");
     } else {
       for (let i = 1; i < data.length; i++) {
         const epUid        = data[i][uidCol];
@@ -2552,22 +2553,30 @@ function dailyPulse() {
 
           // Transcript found — check manifest before making the extra Drive read
           const manifest = getManifest(prodFolderId);
-          if (manifest && manifest.show_notes) continue; // already generated
 
-          // Transcript present + show_notes not set → run Vert Fairy
-          logToAuditTrail(agentName, "state_change", epUid, "",
-            `[INFO] Transcript detected for ${guestName}. show_notes not set. Running Vert Fairy.`, "INFO");
-          runVertFairy(epUid);
-          vertRun++;
+          // Condition A — Track A: transcript present + index not built → build index
+          if (!manifest || !manifest.episode_index_v2) {
+            logToAuditTrail(agentName, "state_change", epUid, "",
+              `[INFO] Transcript detected for ${guestName}. episode_index_v2 not set. Running buildEpisodeIndexV2.`, "INFO");
+            buildEpisodeIndexV2(epUid, { force: false });
+            vertRun++;
+
+          // Condition B — Track B: index built + show notes not set → editorial pass
+          } else if (!manifest.show_notes) {
+            logToAuditTrail(agentName, "state_change", epUid, "",
+              `[INFO] episode_index_v2 set for ${guestName}. show_notes not set. Running runEditorialPass.`, "INFO");
+            runEditorialPass(epUid, { force: false });
+            vertRun++;
+          }
 
         } catch (e) {
           logToAuditTrail(agentName, "error", epUid, "",
-            `[ERROR] Vert Fairy transcript scan failed for ${epUid}: ${e.message}`, "ERROR");
+            `[ERROR] Transcript pipeline scan failed for ${epUid}: ${e.message}`, "ERROR");
         }
       }
 
       logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Vert Fairy scan complete. Episodes scanned: ${vertScanned}. Vert Fairy runs: ${vertRun}.`, "INFO");
+        `[INFO] Transcript pipeline scan complete. Episodes scanned: ${vertScanned}. Pipeline runs: ${vertRun}.`, "INFO");
     }
 
     /* SUPERSEDED — Loop 3b replaced by Loop A (file-based proxy detection).

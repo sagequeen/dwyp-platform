@@ -5,9 +5,23 @@
 
 ---
 
-## Preservation Mandate
+> ⚠️ **REFRESH REQUIRED BEFORE EXECUTION**
+>
+> This spoke was written before the May 2026 sprint. The following items are stale and must be corrected before opening a spoke thread:
+>
+> 1. **"Preservation Mandate" section** — retired (AD #101). Replace with: *"Nothing is removed without an explicit decision. Renames and dead code removal require explicit approval. Active function behavior is never changed without a confirmed design decision."*
+> 2. **`Caption_Draft`** → `Caption_Host` (Asset_Library col 10) throughout this doc and all generated code.
+> 3. **`Caption_Final`** → `Caption_Guest` (Asset_Library col 11) throughout this doc and all generated code.
+> 4. **Schema section** — column list is wrong. Correct Asset_Library schema is 20 columns: `Asset_ID, Episode_UID, Asset_Type, Drive_File_ID, Display_Name, Slide_Index, Quote_Text, Reel_Summary, Image_Prompt, Caption_Host, Caption_Guest, Notes, Background_ID, Canvas_State, Status, Availability, Created_At, Created_By, Quality_Score, Slot_Tags`. Cross-check against Reference v3.3 before opening spoke.
+> 5. **"Reference v2.9"** reference in Constraints — Reference is now v3.3.
+> 6. **Context section** references "Vert Fairy Pass 2" and "Daily Pulse (Mending Fairy)" for reel detection — pipeline has been rewired. Track A/B/C language and `syncReelAssets` are the current model. Verify against Platform State before writing reel detection logic.
+> 7. **Publish tab** is retired. This spoke's surface entry point description references "Studio Publish" — update framing to "Studio Design."
 
-Do not simplify, rename, remove, or thin any existing function, variable, handler, or UI element not explicitly listed in this prompt's scope. Read the full current state of both files before writing a single line. Confirm your understanding of existing structure before proceeding.
+---
+
+## Code Integrity Mandate
+
+Nothing is removed without an explicit decision. Renames and dead code removal require explicit approval. Active function behavior is never changed without a confirmed design decision. Read the full current state of both files before writing a single line. Confirm your understanding of existing structure before proceeding.
 
 ---
 

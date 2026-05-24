@@ -6,125 +6,34 @@
 //
 // Replaces: Marcom Fairy (retired — AD #89).
 //
-// Trigger: Daily Pulse Loop D (finished transcript detection) or manual via
-//          "Generate Show Notes" button on Fairy Remote Control.
-// Entry point: runVertFairy(epUid)
+// Trigger: Daily Pulse Loop D (transcript detected, episode_index_v2 not set).
+//          Manual: dev_tools.js → test_buildEpisodeIndexV2.
+// Entry points: buildEpisodeIndexV2(epUid, opts) — Track A
+//               runEditorialPass(epUid, opts)     — Track B
 //
-// Job: Reads finished transcript + guest brief. Queries Vertex AI RAG corpus
-//      (us-south1, generation via us-central1) to ground output in the show's
-//      brand voice and content standards. Generates three-pass show notes per
-//      the DWYP template. Writes a Show Notes Google Doc to the Staging root.
-//      Patches manifest.show_notes with the doc ID. Hands off to Artist Fairy.
+// Track A: Reads finished transcript + guest brief via gatherVertContext.
+//           Calls Claude to build Episode Knowledge Index v2 (neutral,
+//           extract-not-interpret posture). Writes markdown file to
+//           EPISODE_SEARCH_INDEX_KEY folder. Patches manifest.episode_index_v2.
 //
-// Output format: DWYP PIPELINE DATA block (template: vert_fairy_show_notes.md).
-//   PODCAST PLAYER COPY → episode description for podcast platforms
-//   KEY TAKEAWAY        → 5 listener takeaways
-//   HOOKS               → 10 synthesized hooks (numbered, max 20 words each)
-//   QUOTES              → 10 verbatim quotes: 1–5 guest, 6–10 host
-//   IMAGE PROMPTS       → 5 art-direction prompts for background images
-//
-// Artist Fairy reads from manifest.show_notes (falls back to episode_card).
-// Section parsing: extractSectionFromProse() reads HOOKS and QUOTES sections.
-//   HOOKS: numbered list → Artist Fairy strips "N. " prefix.
-//   QUOTES: 1–5 = guest, 6–10 = host → split by HOST_NAME attribution.
+// Track B: Reads Episode Index v2. Calls Claude with Master Template structure
+//           to generate full show notes. Patches manifest.show_notes.
 //
 // Cross-file dependencies (all compiled together in same GAS project):
 //   fairy_circle.gs   — getGovernance, getStagingFolderIdByUid, getManifest,
 //                       patchManifest, getContactIdByEpisodeUid,
 //                       getContactLibraryFolderIdByContactId, logToAuditTrail,
-//                       spawnTask, callClaudeAPI
+//                       spawnTask, callClaudeAPI, bumpVersion, getMasterSheetId
 //   filing_fairy.gs   — findGuestBriefInContactLibrary
-//   artist_fairy.gs   — runArtistFairy
 //
 // Governance keys required:
-//   STUDIO_CORPUS_ID         — full Vertex AI RAG corpus resource name (us-south1)
 //   EPISODE_SEARCH_INDEX_KEY — Drive folder ID for Episode Index docs
 //   PODCAST_NAME             — "Don't Waste Your Pain"
-//   HOST_NAME                — used to split QUOTES into guest vs host
 //   ASSIGNEE_PRODUCER        — Audra's email (for error task spawn)
 //   CLAUDE_MODEL             — Claude model (via callClaudeAPI in fairy_circle.gs)
 //   CLAUDE_API_KEY           — Anthropic API key (via callClaudeAPI in fairy_circle.gs)
 // =============================================================================
 
-
-// =============================================================================
-// ENTRY POINT
-// =============================================================================
-
-/**
- * Main entry point. Replaces runMarcom().
- * Orchestrates context gathering, Vertex RAG query, Show Notes doc write,
- * manifest patch, and Artist Fairy handoff.
- *
- */
-function runVertFairy(epUid) {
-  const agentName = "Vert_Fairy";
-  logToAuditTrail(agentName, "state_change", epUid, null,
-    `Vert Fairy awakens for: ${epUid}`, "info");
-
-  try {
-    const context = gatherVertContext(epUid, agentName);
-    if (!context) throw new Error("Could not gather episode context. Vert Fairy cannot proceed.");
-
-    const rawContent = queryVertexShowNotes(context, agentName, epUid);
-    if (!rawContent) throw new Error("Show notes generation returned empty content.");
-
-    const showNotesContent = cleanHooksWithClaude(rawContent, agentName, epUid);
-
-    // Create or overwrite Show Notes doc in Staging root
-    let showNotesDocId = context.manifest.show_notes || null;
-
-    if (showNotesDocId) {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        `Existing Show Notes doc found (${showNotesDocId}). Overwriting.`, "info");
-      writeShowNotesDoc(showNotesDocId, showNotesContent, context, agentName, epUid);
-    } else {
-      showNotesDocId = createShowNotesDoc(
-        context.stagingFolderId, context.guestName, epUid, agentName
-      );
-      writeShowNotesDoc(showNotesDocId, showNotesContent, context, agentName, epUid);
-    }
-
-    // Patch manifest — show_notes is now locked as the Google Doc ID
-    patchManifest(context.stagingFolderId, {
-      show_notes:         showNotesDocId,
-      phase:              "3_Curation_Complete",
-      status:             "in_progress",
-      fairies_dispatched: [...(context.manifest.fairies_dispatched || []), "Vert_Fairy"]
-    });
-
-    // Pass 2 — Episode Index (full knowledge doc in dedicated index folder)
-    const indexFolderId = getGovernance("EPISODE_SEARCH_INDEX_KEY");
-    if (indexFolderId) {
-      const indexContent = generateEpisodeIndex(context, showNotesContent, agentName, epUid);
-      if (indexContent) {
-        createEpisodeIndexDoc(context, indexContent, agentName, epUid, indexFolderId);
-      }
-    } else {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        "EPISODE_SEARCH_INDEX_KEY not configured — Episode Index skipped.", "warning");
-    }
-
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Show Notes complete for ${context.guestName}. Handing off to Artist Fairy.`, "info");
-
-    runArtistFairy(epUid);
-
-  } catch (err) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `runVertFairy failed: ${err.message}`, "error");
-    spawnTask({
-      episodeUid:       epUid,
-      workflowStep:     "Produce_Episode",
-      actionTitle:      `Show Notes generation failed: ${epUid}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "urgent",
-      executiveSummary: `Vert Fairy threw an error: ${err.message}. Check Audit_Trail and retry via Fairy Remote Control → Generate Show Notes.`
-    });
-  }
-}
 
 
 // =============================================================================
@@ -185,9 +94,19 @@ function gatherVertContext(epUid, agentName) {
       transcriptText = findTranscriptInFolder(stagingFolder, agentName, epUid, "Staging root");
     }
 
+    if (!transcriptText && manifest.raw_folder_id) {
+      try {
+        const rawFolder = DriveApp.getFolderById(manifest.raw_folder_id);
+        transcriptText  = findTranscriptInFolder(rawFolder, agentName, epUid, "Raw Production");
+      } catch (e) {
+        logToAuditTrail(agentName, "error", epUid, null,
+          `Raw Production folder lookup failed: ${e.message}`, "warning");
+      }
+    }
+
     if (!transcriptText) {
       logToAuditTrail(agentName, "error", epUid, null,
-        "No transcript found in Episode/ or Staging root. Vert Fairy cannot run without a finished transcript.", "error");
+        "No transcript found in Episode/, Staging root, or Raw Production. Vert Fairy cannot run without a finished transcript.", "error");
       throw new Error("No transcript found. Vert Fairy cannot proceed.");
     }
 
@@ -259,377 +178,36 @@ function findTranscriptInFolder(driveFolder, agentName, epUid, folderLabel) {
 }
 
 
-// =============================================================================
-// VERTEX RAG RETRIEVAL + CLAUDE GENERATION
-// Two-phase pipeline: Vertex AI RAG retrieval (us-south1) → Claude generation.
-// Vertex is retrieval only. Claude handles all prose output.
-// If retrieval fails, Claude generates without corpus context.
-// =============================================================================
 
 /**
- * Phase 1 + Phase 2 orchestrator.
- * Retrieves corpus context from Vertex RAG, then generates with Claude.
+ * Builds the prompt for the Episode Knowledge Index.
+ * Transcript injected directly — Claude reads source, extract-not-interpret posture.
+ * No show notes required at this stage; hooks/quotes are Track C.
  */
-function queryVertexShowNotes(context, agentName, epUid) {
-  const queryText     = `${context.guestName}: ${context.transcriptText.substring(0, 1000)}`;
-  const corpusContext = retrieveVertexRAGContext(queryText, agentName, epUid);
-  return generateShowNotesWithClaude(context, corpusContext, agentName, epUid);
-}
-
-/**
- * Calls the Vertex AI RAG retrieval API (pure retrieval — no generation).
- * Returns a formatted string of corpus chunks for Claude to use as context.
- * On failure: logs warning and returns empty string — generation still proceeds.
- */
-function retrieveVertexRAGContext(queryText, agentName, epUid) {
-  const corpusName = getGovernance("STUDIO_CORPUS_ID");
-  if (!corpusName) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "STUDIO_CORPUS_ID not configured — skipping Vertex RAG retrieval.", "warning");
-    return "";
-  }
-
-  const project  = corpusName.split("/")[1];
-  const location = "us-south1";
-  const token    = ScriptApp.getOAuthToken();
-  const url      = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${project}/locations/${location}:retrieveContexts`;
-
-  const payload = {
-    vertexRagStore: {
-      ragResources: [{ ragCorpus: corpusName }]
-    },
-    query: { text: queryText, similarityTopK: 10 }
-  };
-
-  try {
-    const response = UrlFetchApp.fetch(url, {
-      method:             "post",
-      contentType:        "application/json",
-      headers:            { Authorization: "Bearer " + token },
-      payload:            JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-
-    const code = response.getResponseCode();
-    const body = response.getContentText();
-
-    if (code !== 200) {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        `Vertex RAG retrieval returned ${code}: ${body.substring(0, 300)}. Proceeding without corpus context.`, "warning");
-      return "";
-    }
-
-    const json     = JSON.parse(body);
-    const contexts = (json.contexts && json.contexts.contexts) || [];
-
-    if (!contexts.length) {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        "Vertex RAG retrieval returned no contexts. Proceeding without corpus context.", "warning");
-      return "";
-    }
-
-    const formatted = contexts
-      .map(function(c, i) { return `[Source ${i + 1}]\n${c.text || ""}`; })
-      .join("\n\n");
-
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Vertex RAG retrieval: ${contexts.length} chunks (${formatted.length} chars).`, "info");
-
-    return formatted;
-
-  } catch (e) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Vertex RAG retrieval threw: ${e.message}. Proceeding without corpus context.`, "warning");
-    return "";
-  }
-}
-
-/**
- * Generates show notes via Claude API.
- * corpusContext: Vertex RAG retrieved chunks (may be empty string if retrieval failed).
- */
-function generateShowNotesWithClaude(context, corpusContext, agentName, epUid) {
-  const systemInstruction = buildShowNotesSystemInstruction();
-  const prompt            = buildShowNotesPrompt(context, corpusContext);
-
-  const result = callClaudeAPI(prompt, systemInstruction, agentName, null, { maxTokens: 8192 });
-  if (!result) throw new Error("Claude returned empty content for show notes generation.");
-
-  const source = corpusContext
-    ? "Claude + Vertex RAG corpus context"
-    : "Claude (no corpus context — retrieval unavailable)";
-  logToAuditTrail(agentName, "state_change", epUid, null,
-    `Show Notes generated via ${source} (${result.length} chars).`, "info");
-
-  return result;
-}
-
-
-// =============================================================================
-// HOOK CLEANUP PASS
-// Targeted second Claude call to strip names and pronouns from hooks.
-// Extracts HOOKS block, sends it alone, splices cleaned version back in.
-// Failures degrade gracefully — original content returned unchanged.
-// =============================================================================
-
-/**
- * Sends the HOOKS section to Claude for a targeted cleanup pass.
- * Extracts the block between HOOKS: and QUOTES:, calls Claude with a
- * constrained prompt, then splices the cleaned list back into the full content.
- */
-function cleanHooksWithClaude(content, agentName, epUid) {
-  const hooksMatch = content.match(/(HOOKS:\n)([\s\S]*?)(\n*QUOTES:)/);
-  if (!hooksMatch) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "cleanHooksWithClaude: HOOKS section not found. Skipping cleanup pass.", "info");
-    return content;
-  }
-
-  const hooksBlock = hooksMatch[2].trim();
-  const cleanupPrompt =
-    "Rewrite any hook that describes a person or event. Talk about the concept or insight instead, not what happened.\n" +
-    "Wrong: A dying individual refused pain medication to remain awake and say goodbye.\n" +
-    "Right: Sometimes, being present means pain. Purpose gives that pain meaning.\n" +
-    "Do not use names, pronouns, or generic stand-ins like \"individual,\" \"person,\" or \"a thirteen-year-old.\" " +
-    "Keep it simple but significant, at home in a social media feed. " +
-    "Return the same numbered list. No preamble, no explanation — just the list.\n\n" +
-    hooksBlock;
-
-  try {
-    const cleaned = callClaudeAPI(cleanupPrompt, null, agentName, null, { maxTokens: 2048 });
-    if (!cleaned) {
-      logToAuditTrail(agentName, "error", epUid, null,
-        "cleanHooksWithClaude: Claude returned empty response. Original hooks preserved.", "warning");
-      return content;
-    }
-
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "Hook cleanup pass complete.", "info");
-
-    return content.replace(
-      hooksMatch[0],
-      hooksMatch[1] + cleaned.trim() + "\n\n" + "QUOTES:"
-    );
-
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `cleanHooksWithClaude failed: ${e.message}. Original hooks preserved.`, "warning");
-    return content;
-  }
-}
-
-
-// =============================================================================
-// PROMPT BUILDERS
-// =============================================================================
-
-/**
- * Builds the system instruction for the Vert Fairy.
- * Reads PODCAST_NAME from Governance_Config so it stays current without
- * code changes. Specifies three-pass output structure and all voice rules.
- *
- */
-function buildShowNotesSystemInstruction() {
-  var podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
-  var hostName    = getGovernance("HOST_NAME")    || "JT";
-  var hookCount   = parseInt(getGovernance("STUDIO_HOOK_GENERATE_COUNT"),  10) || 10;
-  var quoteCount  = parseInt(getGovernance("STUDIO_QUOTE_GENERATE_COUNT"), 10) || 10;
-
-  var hooksOutput = [];
-  for (var h = 1; h <= hookCount; h++) hooksOutput.push(h + '.');
-  var hooksOutputList = hooksOutput.join('\n');
-
-  var guestEnd   = Math.ceil(quoteCount / 2);
-  var quotesOutput = [];
-  for (var qi = 1; qi <= guestEnd; qi++) quotesOutput.push(qi + '. "..." — [Guest Name]');
-  for (var qi2 = guestEnd + 1; qi2 <= quoteCount; qi2++) quotesOutput.push(qi2 + '. "..." — ' + hostName);
-  var quotesOutputList = quotesOutput.join('\n');
-
-  return `You are The Vert Fairy for "${podcastName}" — a podcast about what lives on the other side of pain, grief, and the moments that break and remake a person.
-
-Your corpus contains the show's Brand Voice document, past Episode Cards, and content standards. Use them. Ground every voice decision in this show's actual standards, not generic podcast copy conventions.
-
-YOUR JOB: Produce a complete three-pass content package for one episode. Everything you write must sound like it came from inside this show — not from a podcast content template.
-
-VOICE PROHIBITIONS — these are automatic failures. If any appear in your output, rewrite before returning:
-- Forbidden phrases: "heart-centered," "transformative journey," "profound exploration," "safe space," "deeply moving," "inspires us to," "in a world where," "sit with," "holds space," "unpacks," "dives deep," "game-changer," "paradigm shift," "on this journey," "resonates," "impactful," "journey," "faith-based"
-- This show is never to be described or categorized as faith-based. Do not imply it.
-- Forbidden register: wellness-poster language, inspirational-calendar tone, Goop newsletter aesthetics, church bulletin
-- Forbidden patterns: opening with a rhetorical question, bullet points that restate the same idea in different words, CTAs that use the word "tune in"
-
-WHAT THIS SHOW SOUNDS LIKE:
-- Short declarative sentences that land like a fist
-- Specificity over generality — name the pain, do not describe it from a distance
-- Darkness and humor are allowed to coexist
-- The listener should feel seen, not inspired
-- If a sentence could appear on a motivational poster, kill it
-
-CRITICAL OUTPUT RULES:
-- Output the entire content package inside the DWYP PIPELINE DATA block below
-- Use ALL CAPS section headings followed by a colon (e.g., HOOKS:) — this is required for downstream parsing
-- Hooks and quotes use numbered lists (1. 2. 3. ...) — one item per line
-- Do not skip any section. Do not add sections not listed below.
-- Do not use markdown asterisks, JSON, or code fences
-- This output is written directly to a Google Doc and parsed by automated systems
-
-PASS 1 — PODCAST PLAYER COPY + TAKEAWAYS:
-
-PODCAST PLAYER COPY (130–160 words):
-- Lead with the pain or the question this episode answers — not the guest's biography
-- The first sentence should make a listener feel seen before they know who the guest is
-- The body names what this guest lived, built, or learned — specifically, not generally
-- One sentence may name the guest directly
-- The final sentence is the Medicine: what does a listener carry out of this episode?
-- Do not sanitize emotions or truth. Humor lives alongside grief. The copy should reflect that.
-Hard rules for this section: Do not begin with the guest's name. Do not use rhetorical questions. Write for someone scrolling at midnight who needs exactly what this episode offers. If any sentence could describe any episode on any podcast about this topic, rewrite it.
-
-KEY TAKEAWAY (5 specific takeaways from this episode):
-- These are what a listener carries out, not generic themes
-- Each is specific to this guest and this conversation
-
-PASS 2 — HOOKS AND QUOTES:
-
-HOOKS (${hookCount} total, numbered 1–${hookCount}):
-- Synthesized from the main themes in the source material. Maximum 25 words each.
-- Plain text — no "HOOK:" prefix, no quotation marks.
-
-QUOTES (${quoteCount} total, numbered 1–${quoteCount}):
-- 1–${guestEnd}: Guest quotes. ${guestEnd + 1}–${quoteCount}: ${hostName} (host) quotes.
-- Verbatim from source material — you may remove filler words, repeated words
-- You may use ellipsis to bridge sentences if context is preserved
-- Always include attribution at end: — [Speaker Name]
-- Maximum 20 words each (excluding attribution)
-- Format each line exactly: "Quote text here." — Speaker Name
-
-PASS 3 — ART DIRECTION FOR IMAGE PROMPTS:
-
-IMAGE PROMPTS (5 total, numbered 1–5):
-- Use the hooks and quotes as thematic inspiration
-- Vary your approach: some with people, some nature, some symbolic objects, some environments
-- Describe what to see in the image — specific, evocative, filmlike
-- NEVER describe: wellness retreat, church bulletin, factory, fantasy, trite landscapes, soft light rays, clouds, silhouettes with open arms, glowing objects, warm beige or cream palettes, bright even lighting, arranged smiles
-
-OUTPUT FORMAT — copy this structure exactly:
-
---- DWYP PIPELINE DATA ---
-
-GUEST: [Full guest name]
-
-PODCAST PLAYER COPY:
-[Your 130–160 word description here]
-
-KEY TAKEAWAY:
-1.
-2.
-3.
-4.
-5.
-
-HOOKS:
-${hooksOutputList}
-
-QUOTES:
-${quotesOutputList}
-
-IMAGE PROMPTS:
-1.
-2.
-3.
-4.
-5.
-
---- END PIPELINE DATA ---`;
-}
-
-/**
- * Builds the user-facing prompt for show notes generation.
- * Transcript is truncated at 25,000 characters.
- * corpusContext: retrieved Vertex RAG chunks (empty string if unavailable).
- */
-function buildShowNotesPrompt(context, corpusContext) {
-  var podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
-
-  var transcriptPreview = context.transcriptText
-    ? context.transcriptText.substring(0, 25000)
-    : "Transcript not available.";
-
-  var truncationNote = (context.transcriptText && context.transcriptText.length > 25000)
-    ? `\nNOTE: Transcript truncated at 25,000 characters. Full transcript is ${context.transcriptText.length} characters.`
-    : "";
-
-  var corpusSection = corpusContext
-    ? `\nCORPUS CONTEXT — retrieved from the show's brand voice corpus. Ground your voice decisions here:\n${corpusContext}\n`
-    : "\nCORPUS CONTEXT: Not available for this run. Rely on voice rules in your system instruction.\n";
-
-  return `Generate the complete show notes content package for the following episode of "${podcastName}."
-
-GUEST: ${context.guestName}
-EPISODE UID: ${context.epUid}
-${corpusSection}
-GUEST BRIEF (Herald Research — treat as highest-trust context about this guest):
-${context.guestBriefText || "Not available — work from transcript only."}
-
-FINISHED TRANSCRIPT:
-${transcriptPreview}${truncationNote}
-
-Your directive:
-Find the moments that would make someone stop what they are doing and listen.
-Produce every section completely. This document is the permanent content record for this episode.`;
-}
-
-
-// =============================================================================
-// EPISODE INDEX (Pass 2)
-// Full knowledge index document for Studio. Created in the dedicated index folder
-// (EPISODE_SEARCH_INDEX_KEY). Studio reads it on open to pre-populate all tabs.
-// manifest.episode_index is patched with the doc ID on creation.
-// Reel descriptions section is left blank — Daily Pulse fills it (Spoke 8).
-// =============================================================================
-
-/**
- * Generates the full Episode Index content via Claude.
- * Extracts hooks/quotes/image prompts from show notes rather than regenerating.
- * Generates new sections: summary, guest profile, caption seeds, transcript map.
- */
-function generateEpisodeIndex(context, showNotesContent, agentName, epUid) {
-  const systemInstruction =
-    "You are building the Episode Knowledge Index for Studio — a permanent reference document " +
-    "that loads on Studio open for this episode. Return only the markdown document. " +
-    "No preamble, no explanation. Section headers must be exact — Studio parses them.";
-
-  const prompt = buildEpisodeIndexPrompt(context, showNotesContent);
-
-  try {
-    const result = callClaudeAPI(prompt, systemInstruction, agentName, null, { maxTokens: 4096 });
-
-    if (!result) {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        "generateEpisodeIndex: Claude returned empty. Index skipped.", "warning");
-      return null;
-    }
-
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Episode index generated (${result.length} chars).`, "info");
-    return result;
-
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `generateEpisodeIndex failed: ${e.message}. Index skipped.`, "warning");
-    return null;
-  }
-}
-
-/**
- * Builds the prompt for Episode Index generation.
- * Show notes passed in full — hooks, quotes, image prompts extracted, not regenerated.
- * Transcript truncated at 15,000 chars for the transcript map section.
- */
-function buildEpisodeIndexPrompt(context, showNotesContent) {
+function buildEpisodeIndexPrompt(context) {
   const podcastName = getGovernance("PODCAST_NAME") || "Don't Waste Your Pain";
 
-  const transcriptPreview = context.transcriptText
-    ? context.transcriptText.substring(0, 15000)
-    : "Not available.";
+  const transcriptText = context.transcriptText || "Not available.";
+
+  // AI Search Index — appended after substrate sections, fenced by boundary.
+  // Composes # Pillars + # Voice Prohibitions as context for the curatorial block.
+  var aiSearchIndexBlock = "";
+  try {
+    var aiSearchIndex = extractPrompt("# AI Search Index");
+    var pillars       = extractPrompt("# Pillars");
+    var voiceProhibs  = extractPrompt("# Voice Prohibitions");
+    var composed      = [pillars, voiceProhibs, aiSearchIndex]
+      .filter(function(s) { return s && s.trim(); }).join('\n\n');
+    if (composed.trim()) {
+      aiSearchIndexBlock =
+        "\n\n---\n" +
+        "The sections above are literal transcript extraction. " +
+        "The following is interpretive/curatorial indexing — judgment is expected here and only here.\n\n" +
+        composed;
+    }
+  } catch (e) {
+    // AI Search Index section unavailable — proceed without
+  }
 
   return `Create the Episode Knowledge Index for "${podcastName}" — a permanent reference document Studio loads on open.
 
@@ -639,11 +217,10 @@ GUEST: ${context.guestName}
 GUEST BRIEF:
 ${context.guestBriefText || "Not available."}
 
-SHOW NOTES (extract hooks, quotes, image prompts from here — do not regenerate them):
-${showNotesContent}
+FINISHED TRANSCRIPT:
+${transcriptText}
 
-TRANSCRIPT EXCERPT (for transcript map):
-${transcriptPreview}
+Posture: Extract, do not interpret. Record what speakers said in language close to their own. Do not attribute intent, motivation, or causation the speaker did not express. Synthesis and characterization belong downstream — this index stays neutral.
 
 Produce the index in this exact structure:
 
@@ -652,22 +229,13 @@ UID: ${context.epUid}
 GUEST: ${context.guestName}
 
 ## EPISODE SUMMARY
-[2–3 paragraphs. What this episode is about. Why someone would listen. What the guest brought in and what shifted.]
+[2–3 paragraphs. What this episode is about. Why someone would listen. What the guest brought in and what shifted. Neutral — no hooks, no marketing language.]
 
 ## GUEST PROFILE
 [1–2 paragraphs. Guest background, expertise, what brought them to this topic. Source from guest brief and transcript.]
 
 ## KEY THEMES
 [5 bullet points — the core concepts this episode explores]
-
-## HOOKS
-[Extract all hooks from the HOOKS section of the show notes. Same text, same numbering.]
-
-## QUOTES
-[Extract all quotes from the QUOTES section of the show notes. Format: N. "Text." — Speaker]
-
-## IMAGE PROMPTS
-[Extract all image prompts from the IMAGE PROMPTS section of the show notes. Same numbering.]
 
 ## CAPTION SEEDS
 [5–7 short social captions. 1–2 sentences each. Written for Instagram/Threads. No emojis. No rhetorical questions. Hook in the first clause.]
@@ -676,119 +244,16 @@ GUEST: ${context.guestName}
 [Landmark-dense outline of the episode as it flows. 8–12 bullets. Each bullet: a key moment, topic shift, or emotional turn. Ordered as they appear. No timestamps — sequence is what matters.]
 
 ## REEL DESCRIPTIONS
-[Leave blank]`;
-}
-
-/**
- * Creates the Episode Index Google Doc in the dedicated index folder.
- * Patches manifest.episode_index with the new doc ID so Studio can load it.
- */
-function createEpisodeIndexDoc(context, indexContent, agentName, epUid, indexFolderId) {
-  try {
-    const folder = DriveApp.getFolderById(indexFolderId);
-    const doc    = DocumentApp.create(`EpisodeIndex_${epUid}_${context.guestName}`);
-    DriveApp.getFileById(doc.getId()).moveTo(folder);
-
-    const body = doc.getBody();
-    body.clear();
-
-    const lines = indexContent.split("\n");
-    lines.forEach(function(line) { body.appendParagraph(line); });
-
-    doc.saveAndClose();
-
-    patchManifest(context.stagingFolderId, { episode_index: doc.getId() });
-
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Episode index doc created: ${doc.getId()}`, "info");
-
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `createEpisodeIndexDoc failed: ${e.message}.`, "warning");
-  }
+[Leave blank]${aiSearchIndexBlock}`;
 }
 
 
 // =============================================================================
-// DOCUMENT WRITER
-// =============================================================================
-
-/**
- * Creates the Show Notes doc in the Staging folder.
- * This is the primary creation path — Vert Fairy is the authority for Show Notes
- * creation. The doc ID is written to manifest.show_notes on success.
- *
- */
-function createShowNotesDoc(stagingFolderId, guestName, epUid, agentName) {
-  try {
-    const folder = DriveApp.getFolderById(stagingFolderId);
-    const doc    = DocumentApp.create(`ShowNotes_${epUid}_${guestName}`);
-    DriveApp.getFileById(doc.getId()).moveTo(folder);
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Show Notes doc created: ${doc.getId()}`, "info");
-    return doc.getId();
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `createShowNotesDoc failed: ${e.message}`, "error");
-    throw e;
-  }
-}
-
-/**
- * Clears and writes the Show Notes doc with the generated content.
- * Content is appended line-by-line to preserve newlines in Google Docs
- * (appendParagraph strips \n characters — splitting first is required).
- *
- */
-function writeShowNotesDoc(docId, content, context, agentName, epUid) {
-  try {
-    const doc  = DocumentApp.openById(docId);
-    const body = doc.getBody();
-
-    body.clear();
-
-    body.appendParagraph("SHOW NOTES")
-      .setHeading(DocumentApp.ParagraphHeading.HEADING1);
-    body.appendParagraph(
-      `Episode UID: ${epUid} | Guest: ${context.guestName} | Generated: ${new Date().toDateString()}`
-    );
-    body.appendParagraph("");
-
-    // Append content line by line — same pattern as writeEpisodeCard()
-    const lines = (content || "Show notes generation did not return content. Re-run via Fairy Remote Control and check Audit_Trail.").split("\n");
-    lines.forEach(line => body.appendParagraph(line));
-
-    doc.saveAndClose();
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      `Show Notes doc written for: ${context.guestName}`, "info");
-
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, null,
-      `writeShowNotesDoc failed: ${e.message}`, "error");
-    throw e;
-  }
-}
-
-
-// =============================================================================
-// EPISODE INDEX V2 — Marker-Driven Build
-// No Claude calls. No Show Notes Doc writes. No Asset_Library writes.
+// EPISODE INDEX V2 — Claude-Based Build (Track A)
 // Entry: buildEpisodeIndexV2(epUid, opts)
-// Retirement of v1 passes is a separate spoke — this adds alongside, not over.
+// Reads transcript directly via gatherVertContext. Claude synthesizes neutral
+// knowledge index (extract-not-interpret). No Vertex RAG calls.
 // =============================================================================
-
-const EPISODE_INDEX_V2_MARKERS = [
-  { id: 'vulnerability',  label: 'First-Person Vulnerability',     prompt: 'Passages where the guest reveals something tender or vulnerable about themselves, speaking in first-person present tense. Moments of personal disclosure, admitted struggle, or emotional honesty about ongoing experience.' },
-  { id: 'pivot',          label: 'Narrative Pivots',               prompt: 'Moments in the conversation where the guest\'s framing shifts mid-thought, where a previously held understanding changes, or where the narrative arc turns toward unexpected insight. Verbal markers of realization or reversal.' },
-  { id: 'distinctive',    label: 'Distinctive Phrasing',           prompt: 'Memorable, quotable lines with idiosyncratic word choice or distinctive phrasing. Sentences that crystallize an idea in unusual language. Sticky statements that stand on their own outside context.' },
-  { id: 'emotional_peak', label: 'Emotional Peaks',                prompt: 'High-affect moments where strong emotion surfaces in the conversation — grief, anger, joy, fear, awe. Passages where the emotional register intensifies visibly through word choice, pacing, or admission.' },
-  { id: 'reframing',      label: 'Reframing Language',             prompt: 'Moments where the guest takes a commonly held idea, assumption, or framing and tilts it — offers a counter-frame, complicates a binary, or reveals a hidden dimension. Patterns like "actually," "but really," "what people miss."' },
-  { id: 'anecdote',       label: 'Concrete Stories and Anecdotes', prompt: 'Specific stories or anecdotes with sensory detail, named people or places, time-bound events. Narrative beats grounded in concrete experience rather than abstract reflection.' },
-  { id: 'wisdom',         label: 'Wisdom Statements',              prompt: 'Articulated insights presented as hard-won lessons or theses. Lines where the guest summarizes a learning, principle, or truth they\'ve arrived at through experience.' },
-  { id: 'turn_density',   label: 'Speaker-Turn Density Shifts',    prompt: 'Sections where speaker turn rhythm shifts noticeably — back-and-forth dialogue giving way to extended monologue, or vice versa. Moments where one speaker holds the floor uninterrupted, or where rapid exchange picks up after long stretches.' },
-  { id: 'callbacks',      label: 'Callbacks',                      prompt: 'Passages where an earlier moment, phrase, or theme is referenced again later in the conversation. Returning motifs, repeated phrases, ideas revisited with new context.' },
-  { id: 'boundaries',     label: 'Topic and Phase Boundaries',     prompt: 'Moments where the conversation transitions from one topic, theme, or phase to another. Verbal markers like "so let\'s talk about," "that brings me to," or natural shifts in subject matter.' }
-];
 
 /**
  * Builds a permanent Episode Index v2 for the given episode.
@@ -882,333 +347,70 @@ function buildEpisodeIndexV2(epUid, opts) {
     }
   }
 
-  // ── 3. Transcript file ID (for doc header) ───────────────────────────────────
-  // Primary: Staging/Episode/ subfolder. Fallback: Raw folder (Production_Folder_ID sibling).
-  var transcriptFileId = "—";
-  try {
-    var _transcriptMimeMatch = function(mime, name) {
-      return mime === MimeType.PLAIN_TEXT || mime === MimeType.GOOGLE_DOCS || name.endsWith(".txt");
-    };
-    var _scanFolderForTranscript = function(folder) {
-      var it = folder.getFiles();
-      while (it.hasNext()) {
-        var f = it.next(); var fn = f.getName().toLowerCase(); var fm = f.getMimeType();
-        if (fn.startsWith("proxy_")) continue;
-        if (fn.includes("transcript") && _transcriptMimeMatch(fm, fn)) return f.getId();
-      }
-      return null;
-    };
-
-    // Primary: Staging/Episode/
-    var stagingFolder = DriveApp.getFolderById(stagingFolderId);
-    var epFolderIt    = stagingFolder.getFoldersByName("Episode");
-    if (epFolderIt.hasNext()) {
-      transcriptFileId = _scanFolderForTranscript(epFolderIt.next()) || "—";
-    }
-
-    // Fallback: Raw folder
-    if (transcriptFileId === "—") {
-      var rawFolderId = getRawFolderIdByUid(epUid);
-      if (rawFolderId) {
-        transcriptFileId = _scanFolderForTranscript(DriveApp.getFolderById(rawFolderId)) || "—";
-      }
-    }
-  } catch (e) {
-    errors.push("Transcript file scan failed: " + e.message);
+  // ── 3. Gather full episode context (transcript, guest brief) ─────────────────
+  var context = gatherVertContext(epUid, agentName);
+  if (!context) {
+    throw new Error("buildEpisodeIndexV2: Could not gather episode context for " + epUid);
   }
 
-  if (transcriptFileId === "—") {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "buildEpisodeIndexV2: No transcript found in Staging/Episode/ or Raw folder. Corpus queries run whole-corpus.", "warning");
+  // ── 4. Build prompt + call Claude ────────────────────────────────────────────
+  var systemInstruction =
+    "You are building the Episode Knowledge Index for Studio — a permanent reference document " +
+    "that loads on Studio open for this episode. Return only the markdown document. " +
+    "No preamble, no explanation. Section headers must be exact — Studio parses them.";
+
+  var prompt       = buildEpisodeIndexPrompt(context);
+  var claudeResult = callClaudeAPI(prompt, systemInstruction, agentName, null, { maxTokens: 8192 });
+
+  if (!claudeResult) {
+    throw new Error("buildEpisodeIndexV2: Claude returned empty content for " + epUid);
   }
 
-  // ── 4. Influence_Tier from Contacts ─────────────────────────────────────────
-  var influenceTier = "—";
-  if (contactId) {
-    try {
-      var cSheet = ss.getSheetByName("Contacts");
-      if (cSheet) {
-        var cData    = cSheet.getDataRange().getValues();
-        var cHeaders = cData[0];
-        var cIdCol   = cHeaders.indexOf("Contact_ID");
-        var cTierCol = cHeaders.indexOf("Influence_Tier");
-        if (cIdCol !== -1 && cTierCol !== -1) {
-          for (var ci = 1; ci < cData.length; ci++) {
-            if (String(cData[ci][cIdCol]) === contactId) {
-              influenceTier = String(cData[ci][cTierCol] || "") || "—";
-              break;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      errors.push("Influence_Tier lookup failed: " + e.message);
-    }
-  }
+  logToAuditTrail(agentName, "state_change", epUid, null,
+    "EPISODE_INDEX_V2_CLAUDE_COMPLETE: " + claudeResult.length + " chars", "info");
 
-  // ── 5. Vertex RAG config ────────────────────────────────────────────────────
-  var corpusName = getGovernance("STUDIO_CORPUS_ID");
-  if (!corpusName) throw new Error("buildEpisodeIndexV2: STUDIO_CORPUS_ID not configured.");
-
-  // VERTEX_RAG_REGION governance key — falls back to hardcoded region until key is populated.
-  var region  = getGovernance("VERTEX_RAG_REGION") || "us-south1";
-  var project = corpusName.split("/")[1];
-  var token   = ScriptApp.getOAuthToken();
-
-  // ── 6. Run 10 marker queries (Pattern A — guest name + epUid prefix) ─────────
-  // Prefix biases corpus retrieval toward this episode's speaker labels without
-  // embedding opener-transcript content (which would penalize mid-episode peaks).
-  var buckets      = {};  // markerID → [{text, score}] after truncation
-  var markerCounts = {};
-
-  for (var mi = 0; mi < EPISODE_INDEX_V2_MARKERS.length; mi++) {
-    var marker    = EPISODE_INDEX_V2_MARKERS[mi];
-    var queryText = "[Episode: " + guestName + " (" + epUid + ")] " + marker.prompt;
-    var chunks    = _vertexMarkerQuery_(queryText, corpusName, project, region, token, 15, agentName, epUid);
-
-    if (chunks === null) {
-      errors.push("Marker query returned null: " + marker.id);
-      buckets[marker.id] = [];
-    } else {
-      // Sort by similarity score descending; fall back to response order if score absent
-      chunks.sort(function(a, b) { return (b.score || 0) - (a.score || 0); });
-
-      // Truncate to 8000 estimated tokens per bucket
-      var kept        = [];
-      var accumulated = 0;
-      for (var ki = 0; ki < chunks.length; ki++) {
-        var est = _estimateTokens_(chunks[ki].text);
-        if (accumulated + est > 8000) break;
-        kept.push(chunks[ki]);
-        accumulated += est;
-      }
-      buckets[marker.id] = kept;
-    }
-    markerCounts[marker.id] = buckets[marker.id].length;
-  }
-
-  // If every marker came back empty, abort — no doc written, no manifest update
-  var anySuccess = EPISODE_INDEX_V2_MARKERS.some(function(m) {
-    return buckets[m.id] && buckets[m.id].length > 0;
-  });
-  if (!anySuccess) {
-    throw new Error("buildEpisodeIndexV2: all 10 marker queries returned empty. No doc written for " + epUid);
-  }
-
-  // ── 7. Assemble markdown ────────────────────────────────────────────────────
-  var releaseDateStr = "—";
-  if (releaseDate) {
-    releaseDateStr = (releaseDate instanceof Date)
-      ? releaseDate.toISOString().slice(0, 10)
-      : String(releaseDate).slice(0, 10);
-  }
-  var indexCreated = new Date().toISOString().slice(0, 10);
-  var guestSlug    = guestName.toLowerCase()
-                      .replace(/[^a-z0-9]+/g, "-")
-                      .replace(/^-+|-+$/g, "")
-                      .slice(0, 30);
-
-  var md = [];
-
-  // Header
-  md.push("# Episode Index v2 — " + epUid);
-  md.push("");
-  md.push("**Guest:** " + (guestName || "—"));
-  md.push("**Release Date:** " + releaseDateStr);
-  md.push("**Influence Tier:** " + influenceTier);
-  md.push("**Index Created:** " + indexCreated);
-  md.push("**Index Version:** 2.0");
-  md.push("**Transcript Source:** " + transcriptFileId);
-  md.push("");
-  md.push("---");
-  md.push("");
-
-  // Annotated TOC — driven by the boundaries marker bucket
-  md.push("## Annotated Table of Contents");
-  md.push("");
-  md.push("*Conversation phase boundaries with marker presence per window.*");
-  md.push("");
-
-  var boundaryChunks = buckets["boundaries"] || [];
-  if (!boundaryChunks.length) {
-    md.push("TOC unavailable — boundaries marker returned no results.");
-    md.push("");
-  } else {
-    // Sort chronologically by parsed timestamp
-    var sortedBoundaries = boundaryChunks.slice().sort(function(a, b) {
-      return _parseTimestampSecs_(a.text) - _parseTimestampSecs_(b.text);
-    });
-
-    sortedBoundaries.forEach(function(bc) {
-      var bTs   = _parseTimestamp_(bc.text);
-      var bSecs = _parseTimestampSecs_(bc.text);
-      var brief = _extractFirstSentence_(bc.text);
-
-      // Scan the other 9 markers for chunks within ±60 seconds of this boundary
-      var nearby = [];
-      EPISODE_INDEX_V2_MARKERS.forEach(function(m) {
-        if (m.id === "boundaries") return;
-        var hit = (buckets[m.id] || []).some(function(mc) {
-          return Math.abs(_parseTimestampSecs_(mc.text) - bSecs) <= 60;
-        });
-        if (hit) nearby.push(m.label);
-      });
-
-      md.push("### [" + bTs + "] — " + brief);
-      md.push("Markers present in this window: " + (nearby.length ? nearby.join(", ") : "none"));
-      md.push("");
-    });
-  }
-
-  md.push("---");
-  md.push("");
-
-  // Marker Buckets — first 9 in spec order (boundaries drives TOC only)
-  md.push("## Marker Buckets");
-  md.push("");
-
-  EPISODE_INDEX_V2_MARKERS.forEach(function(marker) {
-    if (marker.id === "boundaries") return;
-    md.push("### " + marker.label);
-    md.push("");
-    var mChunks = buckets[marker.id] || [];
-    if (!mChunks.length) {
-      md.push("*No chunks matched this marker for this episode.*");
-      md.push("");
-    } else {
-      mChunks.forEach(function(c) {
-        var ts      = _parseTimestamp_(c.text);
-        var speaker = _parseSpeaker_(c.text);
-        var body    = (c.text || "").trim();
-        md.push("**[" + ts + "]** " + speaker + ": " + body);
-        md.push("");
-      });
-    }
-  });
-
-  // Reel Descriptions stub — Daily Pulse owns this section
-  md.push("---");
-  md.push("");
-  md.push("## Reel Descriptions");
-  md.push("");
-  md.push("*Managed by Daily Pulse — updated when reels are added or removed.*");
-  md.push("");
-  md.push("**Last Reel Sync:** —");
-  md.push("");
-  md.push("---");
-  md.push("");
-  md.push("*Reel sections appended here by Daily Pulse. Do not edit manually.*");
-
-  var markdownContent = md.join("\n");
-
-  // ── 8. Write to Drive ───────────────────────────────────────────────────────
+  // ── 5. Write to Drive ───────────────────────────────────────────────────────
   var indexFolderId = getGovernance("EPISODE_SEARCH_INDEX_KEY");
   if (!indexFolderId) throw new Error("buildEpisodeIndexV2: EPISODE_SEARCH_INDEX_KEY not configured.");
 
+  var guestSlug = (context.guestName || "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 30);
   var fileName    = "Episode_Index_v2_" + epUid + "_" + guestSlug + ".md";
   var indexFolder = DriveApp.getFolderById(indexFolderId);
-  var newFile     = indexFolder.createFile(fileName, markdownContent, "text/markdown");
+  var newFile     = indexFolder.createFile(fileName, claudeResult, "text/markdown");
   var newFileId   = newFile.getId();
 
-  // ── 9. Patch manifest ───────────────────────────────────────────────────────
+  // ── 6. Patch manifest ───────────────────────────────────────────────────────
   patchManifest(stagingFolderId, { episode_index_v2: newFileId });
 
-  // ── 10. Audit log + return ──────────────────────────────────────────────────
-  var totalTokens = EPISODE_INDEX_V2_MARKERS.reduce(function(sum, m) {
-    return sum + (buckets[m.id] || []).reduce(function(s, c) {
-      return s + _estimateTokens_(c.text);
-    }, 0);
-  }, 0);
+  // ── 7. Audit log + version bump ─────────────────────────────────────────────
+  var sizeTokens = Math.ceil(claudeResult.length / 4);
 
   logToAuditTrail(agentName, "state_change", epUid, null,
     "EPISODE_INDEX_V2_BUILT: fileId=" + newFileId + " fileName=" + fileName +
-    " sizeTokens=" + totalTokens + " markerCounts=" + JSON.stringify(markerCounts) +
-    (errors.length ? " errors=" + JSON.stringify(errors) : ""), "info");
+    " sizeTokens=" + sizeTokens + (errors.length ? " errors=" + JSON.stringify(errors) : ""), "info");
+
+  bumpVersion("manifests", "buildEpisodeIndexV2");
 
   return {
-    status:       "built",
-    fileId:       newFileId,
-    fileName:     fileName,
-    markerCounts: markerCounts,
-    sizeTokens:   totalTokens,
-    errors:       errors
+    status:     "built",
+    fileId:     newFileId,
+    fileName:   fileName,
+    sizeTokens: sizeTokens,
+    errors:     errors
   };
-}
-
-/**
- * Runs one Vertex RAG marker query. Returns [{text, score}] or null on fatal failure.
- */
-function _vertexMarkerQuery_(queryText, corpusName, project, region, token, topK, agentName, epUid) {
-  var url = "https://" + region + "-aiplatform.googleapis.com/v1beta1/projects/" + project +
-            "/locations/" + region + ":retrieveContexts";
-  var payload = {
-    vertexRagStore: { ragResources: [{ ragCorpus: corpusName }] },
-    query: { text: queryText, similarityTopK: topK }
-  };
-  try {
-    var resp = UrlFetchApp.fetch(url, {
-      method:             "post",
-      contentType:        "application/json",
-      headers:            { Authorization: "Bearer " + token },
-      payload:            JSON.stringify(payload),
-      muteHttpExceptions: true
-    });
-    var code = resp.getResponseCode();
-    var body = resp.getContentText();
-    if (code !== 200) {
-      logToAuditTrail(agentName, "state_change", epUid, null,
-        "_vertexMarkerQuery_ HTTP " + code + ": " + body.substring(0, 200), "warning");
-      return null;
-    }
-    var json     = JSON.parse(body);
-    var contexts = (json.contexts && json.contexts.contexts) || [];
-    return contexts.map(function(c) { return { text: c.text || "", score: c.score || 0 }; });
-  } catch (e) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "_vertexMarkerQuery_ threw: " + e.message, "warning");
-    return null;
-  }
-}
-
-/** Extracts [HH:MM:SS] or HH:MM:SS from chunk text. Returns "HH:MM:SS" or "--:--:--". */
-function _parseTimestamp_(text) {
-  var m = (text || "").match(/\[?(\d{1,2}:\d{2}:\d{2})\]?/);
-  return m ? m[1] : "--:--:--";
-}
-
-/** Returns timestamp as total seconds for numeric comparison. */
-function _parseTimestampSecs_(text) {
-  var m = (text || "").match(/\[?(\d{1,2}):(\d{2}):(\d{2})\]?/);
-  if (!m) return 0;
-  return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseInt(m[3], 10);
-}
-
-/** Extracts speaker name from chunk text. Expects "SPEAKER: text" or "[HH:MM:SS] SPEAKER: text". */
-function _parseSpeaker_(text) {
-  var m = (text || "").match(/^\[?[\d:]+\]?\s*([A-Z][A-Za-z\s\-'.]+?):/);
-  return m ? m[1].trim() : "Unknown";
-}
-
-/** Returns first sentence of chunk text for use as a TOC brief phrase. */
-function _extractFirstSentence_(text) {
-  // Strip timestamp + speaker prefix, then take first sentence
-  var clean = (text || "").replace(/^\[?[\d:]+\]?\s*[A-Za-z][A-Za-z\s\-'.]+?:\s*/, "").trim();
-  var m     = clean.match(/^(.{10,80}[.!?])/);
-  return m ? m[1] : (clean.slice(0, 60) + (clean.length > 60 ? "…" : ""));
-}
-
-function _estimateTokens_(text) {
-  return Math.ceil((text || "").length / 4);
 }
 
 
 // =============================================================================
 // EDITORIAL PASS (Track B)
 // Entry: runEditorialPass(epUid, opts)
-// Reads Episode Index v2, calls Claude with Master Template v2.1 structure,
-// writes complete Show Notes Doc to the episode's Staging folder.
-// No transcript reads. No Vertex calls. No Asset_Library writes.
-// Retirement of old Vert passes is a separate spoke — this adds alongside, not over.
+// Reads transcript directly (same loader as Track A). Neither pass is downstream
+// of the other. Calls Claude with Master Template v2.1 structure, writes complete
+// Show Notes Doc to the episode's Staging folder.
+// No Vertex calls. No Asset_Library writes.
 // =============================================================================
 
 /**
@@ -1264,7 +466,6 @@ function runEditorialPass(epUid, opts) {
   // ── 2. Manifest + idempotency check ─────────────────────────────────────────
   var manifest            = getManifest(stagingFolderId);
   var existingShowNotesId = manifest ? (manifest.show_notes || null) : null;
-  var indexV2Id           = manifest ? (manifest.episode_index_v2 || null) : null;
 
   if (existingShowNotesId) {
     var fileExists = false;
@@ -1287,20 +488,13 @@ function runEditorialPass(epUid, opts) {
     }
   }
 
-  // ── 3. Verify Index v2 ───────────────────────────────────────────────────────
-  if (!indexV2Id) {
-    throw new Error("runEditorialPass: Episode Index v2 not built — run buildEpisodeIndexV2 first");
-  }
+  // ── 3. Read inputs ───────────────────────────────────────────────────────────
 
-  // ── 4. Read inputs ───────────────────────────────────────────────────────────
-
-  // Episode Index v2 — plain markdown file written by buildEpisodeIndexV2
-  var episodeIndexV2Text;
-  try {
-    episodeIndexV2Text = DriveApp.getFileById(indexV2Id).getBlob().getDataAsString();
-  } catch (e) {
-    throw new Error("runEditorialPass: Could not read Episode Index v2 (" + indexV2Id + "): " + e.message);
-  }
+  // Transcript + guest brief — shared context gatherer (same loader as Track A)
+  var vertCtx = gatherVertContext(epUid, agentName);
+  if (!vertCtx) throw new Error("runEditorialPass: Could not load episode context — see audit trail.");
+  var transcriptText = vertCtx.transcriptText;
+  var guestBriefText = vertCtx.guestBriefText || "";
 
   // Content Sensitivity doc
   var contentSensitivityText = "";
@@ -1310,23 +504,6 @@ function runEditorialPass(epUid, opts) {
   } catch (e) {
     logToAuditTrail(agentName, "state_change", epUid, null,
       "runEditorialPass: Content Sensitivity doc unreadable: " + e.message + ". Continuing without.", "warning");
-  }
-
-  // Guest Brief — best effort via Contact Library
-  var guestBriefText = "";
-  try {
-    if (contactId) {
-      var contactLibraryFolderId = getContactLibraryFolderIdByContactId(contactId);
-      if (contactLibraryFolderId) {
-        guestBriefText = findGuestBriefInContactLibrary(contactLibraryFolderId, epUid, agentName) || "";
-      } else {
-        logToAuditTrail(agentName, "state_change", epUid, contactId,
-          "Contact_Library_Folder_ID not found. Guest Brief unavailable.", "warning");
-      }
-    }
-  } catch (e) {
-    logToAuditTrail(agentName, "state_change", epUid, null,
-      "runEditorialPass: Guest Brief lookup failed: " + e.message + ". Continuing without.", "warning");
   }
 
   // Master Template — compose voice + mechanics + structure from named sections
@@ -1357,7 +534,7 @@ function runEditorialPass(epUid, opts) {
   // ── 6. Build prompt ──────────────────────────────────────────────────────────
   var systemInstruction = _buildEditorialPassSystemInstruction_(templatePrompt);
   var userPrompt        = _buildEditorialPassPrompt_(
-    epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text
+    epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, transcriptText
   );
 
   // ── 7. Call Claude ───────────────────────────────────────────────────────────
@@ -1435,20 +612,20 @@ function _buildEditorialPassSystemInstruction_(masterTemplateStructure) {
 
 /**
  * Builds the user-facing prompt for the editorial pass.
- * Full Episode Index v2 sent without truncation — it is curated and within budget.
+ * Full transcript injected directly — quotes selected from real words, not paraphrase.
  */
-function _buildEditorialPassPrompt_(epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, episodeIndexV2Text) {
+function _buildEditorialPassPrompt_(epUid, guestName, releaseDateStr, guestBriefText, contentSensitivityText, transcriptText) {
   return "Build the complete audience-facing content package for this episode.\n\n" +
     "GUEST: " + guestName + "\n" +
     "EPISODE UID: " + epUid + "\n" +
     "RELEASE DATE: " + releaseDateStr + "\n\n" +
     "GUEST BRIEF (Concierge Research):\n" +
-    (guestBriefText || "Not available — work from the Episode Index.") + "\n\n" +
+    (guestBriefText || "Not available.") + "\n\n" +
     "CONTENT SENSITIVITY GUIDE:\n" +
     (contentSensitivityText || "Not available.") + "\n\n" +
-    "EPISODE INDEX V2:\n" +
-    episodeIndexV2Text + "\n\n" +
-    "You are reading a curated Episode Index, not a raw transcript. The Index has been organized by editorial markers — vulnerability, narrative pivots, distinctive phrasing, emotional peaks, reframing language, concrete anecdotes, wisdom statements, speaker dynamics, callbacks, and topic boundaries. Use it. Trust the markers. Find the moments that will make someone stop what they are doing and listen.\n\n" +
+    "FINISHED TRANSCRIPT:\n" +
+    (transcriptText || "Not available.") + "\n\n" +
+    "You are reading the raw transcript. Guest quotes must be verbatim — select from the speaker's actual words on the page. Every hook, caption, and quote in your output must be sourceable to a specific line in this transcript.\n\n" +
     "Surface the Medicine. Write copy that earns trust, not clicks. Complete every section.";
 }
 
@@ -2094,11 +1271,3 @@ function runReelEditorialPass(epUid, opts) {
 }
 
 
-// =============================================================================
-// TEST WRAPPER
-// =============================================================================
-
-function testRunVertFairy() {
-  const TEST_EP_UID = "EP-260428-1928"; // Carrie Sipe — replace with real UID before running
-  runVertFairy(TEST_EP_UID);
-}

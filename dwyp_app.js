@@ -1198,16 +1198,15 @@ function runMarcomForEpisode(episodeUid) {
 }
 
 /**
- * Manual trigger for Vert Fairy from Fairy Remote Control.
- * Replaces the dead runMarcomForEpisode() path with a live call to runVertFairy().
- * runVertFairy() generates Show Notes via Vertex RAG, writes the Show Notes doc,
- * patches manifest.show_notes, and hands off to Artist Fairy.
+ * Manual trigger for Track A (Episode Index build) from Fairy Remote Control.
+ * Calls buildEpisodeIndexV2 — Claude reads transcript directly, writes neutral
+ * knowledge index, patches manifest.episode_index_v2.
  */
 function runVertFairyForEpisode(episodeUid) {
   try {
     logToAuditTrail("DWYP_App", "human_action", episodeUid, "",
-      "[INFO] Manual Vert Fairy trigger from Fairy Remote Control.");
-    runVertFairy(episodeUid);
+      "[INFO] Manual Track A trigger from Fairy Remote Control.");
+    buildEpisodeIndexV2(episodeUid, { force: false });
     return { success: true };
   } catch (e) {
     logToAuditTrail("DWYP_App", "error", episodeUid, "",
@@ -2101,11 +2100,9 @@ var STUDIO_MODE_INSTRUCTIONS = {
   "images":
     "You are a social media expert going through transcripts of podcast episodes to create striking and interesting feed graphics.\n\n" +
     "Return hooks as: [[HOOK: the hook text]]\n" +
-    "Return quotes as: [[QUOTE: \"the quote text\" — Full Guest Name]]\n" +
-    "Return image prompts as: [[PROMPT: the prompt text]]\n\n" +
+    "Return quotes as: [[QUOTE: \"the quote text\" — Full Guest Name]]\n\n" +
     "HOOK — Synthesized from the main themes in the source material. Talk about the concept or insight, not what happened — never describe a person or event. No names, pronouns, or generic stand-ins like \"individual\" or \"person.\" Simple but significant, at home in a social media feed. Maximum 25 words.\n\n" +
-    "QUOTE — Verbatim from the source material. You may remove filler words and repeated words, and use ellipsis to bridge sentences as long as context is preserved. Always include attribution with em-dash and full guest name. Wrapped in quotation marks. Maximum 20 words.\n\n" +
-    "PROMPT — Cinematic, realistic direction for a background image. Must not look like it comes from a wellness retreat, church bulletin, or fantasy setting.",
+    "QUOTE — Verbatim from the source material. You may remove filler words and repeated words, and use ellipsis to bridge sentences as long as context is preserved. Always include attribution with em-dash and full guest name. Wrapped in quotation marks. Maximum 20 words.",
 
   "episode-copy":
     "MODE: Writer. Draft episode copy, social posts, newsletter sections, or any written content for DWYP. " +
@@ -2302,37 +2299,29 @@ function saveBackgroundToLibrary(base64Data, mimeType, guestSlug) {
 
 
 /**
- * Loads the Episode Index doc for Studio context.
- * Primary: searches EPISODE_SEARCH_INDEX_KEY folder for a file whose name contains the epUid.
- * Fallback: reads manifest.episode_index doc ID.
- * Returns doc text, or empty string if not found.
+ * Loads transcript for Studio companion context (stRagContext).
+ * Uses gatherVertContext — same three-tier lookup as Track A/B (Episode/ → Staging root → Raw Production).
+ * Falls back to Episode Index v2 if transcript not found.
  * @param {string} episodeUid
  * @returns {string}
  */
 function stLoadEpisodeIndex(episodeUid) {
   if (!episodeUid) return '';
   try {
-    var indexFolderId = getGovernance("EPISODE_SEARCH_INDEX_KEY");
-    if (indexFolderId) {
-      var folder = DriveApp.getFolderById(indexFolderId);
-      var files  = folder.getFiles();
-      while (files.hasNext()) {
-        var file = files.next();
-        if (file.getName().indexOf(episodeUid) !== -1) {
-          return DocumentApp.openById(file.getId()).getBody().getText();
-        }
-      }
-    }
-    // Fallback: manifest.episode_index
+    var vertCtx = gatherVertContext(episodeUid, "Studio");
+    if (vertCtx && vertCtx.transcriptText) return vertCtx.transcriptText;
+  } catch (e) {
+    logToAuditTrail("Studio", "state_change", episodeUid, "", "stLoadEpisodeIndex transcript: " + e.message, "warning");
+  }
+  try {
     var stagingFolderId = getStagingFolderIdByUid(episodeUid);
-    if (stagingFolderId) {
-      var manifest = getManifest(stagingFolderId);
-      if (manifest && manifest.episode_index) {
-        return DocumentApp.openById(manifest.episode_index).getBody().getText();
-      }
+    if (!stagingFolderId) return '';
+    var manifest = getManifest(stagingFolderId);
+    if (manifest && manifest.episode_index_v2) {
+      return DriveApp.getFileById(manifest.episode_index_v2).getBlob().getDataAsString();
     }
   } catch (e) {
-    logToAuditTrail("Studio", "state_change", episodeUid, "", "stLoadEpisodeIndex: " + e.message, "warning");
+    logToAuditTrail("Studio", "state_change", episodeUid, "", "stLoadEpisodeIndex fallback: " + e.message, "warning");
   }
   return '';
 }
@@ -3224,6 +3213,278 @@ function addPostingSlot(day, platform, assetType) {
   } catch (e) {
     return { success: false, error: e.message };
   }
+}
+
+
+// ── REEL ASSET SYNC ───────────────────────────────────────────────────────────
+
+/**
+ * Uploads a Drive video to the Gemini Files API and returns a verbose
+ * description using the configured Gemini model. Returns null on any failure.
+ * Flow: resumable upload → poll until ACTIVE → generateContent → DELETE temp file.
+ * Size limit: 45 MB (Files API practical limit for GAS payload).
+ * @private
+ */
+function callGeminiVideoAnalysis_(driveFileId, prompt, apiKey) {
+  try {
+    var file     = DriveApp.getFileById(driveFileId);
+    var fileSize = file.getSize();
+    var mimeType = file.getMimeType() || 'video/mp4';
+    var fileName = file.getName();
+    if (fileSize > 45 * 1024 * 1024) {
+      Logger.log('[callGeminiVideoAnalysis_] Skipping — too large (' + Math.round(fileSize / 1048576) + 'MB): ' + fileName);
+      return null;
+    }
+
+    // Initiate resumable upload
+    var initResp = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable&key=' + apiKey,
+      {
+        method: 'POST', contentType: 'application/json',
+        headers: {
+          'X-Goog-Upload-Protocol':              'resumable',
+          'X-Goog-Upload-Command':               'start',
+          'X-Goog-Upload-Header-Content-Length': String(fileSize),
+          'X-Goog-Upload-Header-Content-Type':   mimeType
+        },
+        payload: JSON.stringify({ file: { display_name: fileName } }),
+        muteHttpExceptions: true
+      }
+    );
+    if (initResp.getResponseCode() !== 200) {
+      Logger.log('[callGeminiVideoAnalysis_] Init failed ' + initResp.getResponseCode() + ': ' + initResp.getContentText().slice(0, 200));
+      return null;
+    }
+    var hdrs      = initResp.getHeaders();
+    var uploadUrl = hdrs['location'] || hdrs['Location'] || hdrs['x-goog-upload-url'];
+    if (!uploadUrl) { Logger.log('[callGeminiVideoAnalysis_] No upload URL in response headers'); return null; }
+
+    // Upload bytes
+    var uploadResp = UrlFetchApp.fetch(uploadUrl, {
+      method: 'POST', contentType: mimeType,
+      headers: { 'X-Goog-Upload-Command': 'upload, finalize', 'X-Goog-Upload-Offset': '0' },
+      payload: file.getBlob(),
+      muteHttpExceptions: true
+    });
+    if (uploadResp.getResponseCode() !== 200) {
+      Logger.log('[callGeminiVideoAnalysis_] Upload failed ' + uploadResp.getResponseCode());
+      return null;
+    }
+
+    var gemFile = JSON.parse(uploadResp.getContentText()).file;
+    if (!gemFile || !gemFile.uri) { Logger.log('[callGeminiVideoAnalysis_] No file URI in upload response'); return null; }
+
+    // Poll until ACTIVE (max ~60s at 5s intervals)
+    var state = gemFile.state || 'PROCESSING';
+    var polls = 0;
+    while (state !== 'ACTIVE' && polls < 12) {
+      Utilities.sleep(5000);
+      var pollResp = UrlFetchApp.fetch(
+        'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
+        { muteHttpExceptions: true }
+      );
+      state = (JSON.parse(pollResp.getContentText()).state) || 'PROCESSING';
+      polls++;
+    }
+    if (state !== 'ACTIVE') { Logger.log('[callGeminiVideoAnalysis_] File never became ACTIVE after ' + polls + ' polls'); return null; }
+
+    // Generate content
+    var model     = getGovernance('MODEL_NAME') || 'gemini-2.5-flash';
+    var genResp   = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey,
+      {
+        method: 'POST', contentType: 'application/json',
+        payload: JSON.stringify({ contents: [{ parts: [
+          { file_data: { mime_type: mimeType, file_uri: gemFile.uri } },
+          { text: prompt }
+        ]}]}),
+        muteHttpExceptions: true
+      }
+    );
+    var genResult = JSON.parse(genResp.getContentText());
+    var text = genResult.candidates && genResult.candidates[0] &&
+               genResult.candidates[0].content && genResult.candidates[0].content.parts &&
+               genResult.candidates[0].content.parts[0] && genResult.candidates[0].content.parts[0].text;
+
+    // Delete temp file from Gemini — non-fatal
+    try {
+      UrlFetchApp.fetch(
+        'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
+        { method: 'DELETE', muteHttpExceptions: true }
+      );
+    } catch (e) {}
+
+    return text || null;
+  } catch (err) {
+    Logger.log('[callGeminiVideoAnalysis_] Error: ' + err.message);
+    return null;
+  }
+}
+
+
+/**
+ * Scans Staging/Reels/ (and Approved/ subfolder) for MP4 files, creates
+ * Asset_Library rows for any not yet registered, then runs Gemini video
+ * analysis to populate Reel_Summary on rows that lack one.
+ *
+ * Idempotent: skips files already in AL; skips rows with Reel_Summary unless
+ * force:true. Has a 4.5-minute timeout guard — re-run if timedOut:true.
+ *
+ * After this runs: call runReelEditorialPass(epUid) to have Claude clean the
+ * summaries and assign Slot_Tags + Quality_Score.
+ *
+ * @param {string} epUid
+ * @param {Object} [opts]
+ * @param {boolean} [opts.force=false] — reprocess rows that already have Reel_Summary
+ * @returns {{ status, created, summarized, skipped, timedOut, errors }}
+ */
+function syncReelAssets(epUid, opts) {
+  var force     = !!(opts && opts.force === true);
+  var agentName = 'SyncReelAssets';
+  var errors    = [];
+  var MAX_MS    = 4.5 * 60 * 1000;
+  var startTime = Date.now();
+
+  // ── 1. Staging folder + guest name ──────────────────────────────────────
+  var stagingId = getStagingFolderIdByUid(epUid);
+  if (!stagingId) return { status: 'error', errors: ['Staging folder not found for: ' + epUid] };
+
+  var manifest  = getManifest(stagingId);
+  var guestName = (manifest && manifest.guest_name) || '';
+
+  // ── 2. Read existing reel rows, indexed by Drive_File_ID ─────────────────
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+  var alSheet = ss.getSheetByName(alName);
+  if (!alSheet) return { status: 'error', errors: ['Asset_Library tab not found'] };
+
+  var alData       = alSheet.getDataRange().getValues();
+  var numCols      = alSheet.getLastColumn();
+  var existingRows = {};
+
+  for (var i = 1; i < alData.length; i++) {
+    var row = alData[i];
+    if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(epUid)) continue;
+    var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
+    if (normType !== 'reel' && normType !== 'bankclip') continue;
+    var fid = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+    if (fid) existingRows[fid] = {
+      rowNum:     i + 1,
+      assetId:    String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1]),
+      hasSummary: !!String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1]).trim()
+    };
+  }
+
+  // ── 3. Collect MP4s from Staging/Reels/ (Approved/ first, then root) ─────
+  var reelsFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Reels');
+  if (!reelsFolderIt.hasNext()) {
+    logToAuditTrail(agentName, 'state_change', epUid, null, 'SYNC_REEL_ASSETS: No Reels/ folder found', 'INFO');
+    return { status: 'done', created: 0, summarized: 0, skipped: 0, timedOut: false, errors: [] };
+  }
+  var reelsFolder  = reelsFolderIt.next();
+  var scanFolders  = [];
+  var apprvIt      = reelsFolder.getFoldersByName('Approved');
+  if (apprvIt.hasNext()) scanFolders.push(apprvIt.next());
+  scanFolders.push(reelsFolder);
+
+  var seen = {};
+  var mp4s = [];
+  for (var sf = 0; sf < scanFolders.length; sf++) {
+    var it = scanFolders[sf].getFiles();
+    while (it.hasNext()) {
+      var f = it.next();
+      if (f.getMimeType() !== 'video/mp4') continue;
+      if (seen[f.getId()]) continue;
+      seen[f.getId()] = true;
+      mp4s.push(f);
+    }
+  }
+
+  if (!mp4s.length) {
+    logToAuditTrail(agentName, 'state_change', epUid, null, 'SYNC_REEL_ASSETS: No MP4 files found in Reels/', 'INFO');
+    return { status: 'done', created: 0, summarized: 0, skipped: 0, timedOut: false, errors: [] };
+  }
+
+  // ── 4. Create AL rows for unregistered files ─────────────────────────────
+  var now     = new Date();
+  var created = 0;
+
+  for (var m = 0; m < mp4s.length; m++) {
+    var mp4file    = mp4s[m];
+    var mp4FileId  = mp4file.getId();
+    if (existingRows[mp4FileId]) continue;
+
+    var displayName = mp4file.getName().replace(/\.mp4$/i, '').replace(/[_-]/g, ' ').trim().slice(0, 80);
+    var assetId     = Utilities.getUuid();
+    var newRow      = new Array(numCols).fill('');
+    newRow[ASSET_LIBRARY_COLS.Asset_ID      - 1] = assetId;
+    newRow[ASSET_LIBRARY_COLS.Episode_UID   - 1] = epUid;
+    newRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'Reel';
+    newRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = mp4FileId;
+    newRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = displayName;
+    newRow[ASSET_LIBRARY_COLS.Status        - 1] = 'candidate';
+    newRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
+    newRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
+    newRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
+
+    alSheet.getRange(alSheet.getLastRow() + 1, 1, 1, numCols).setValues([newRow]);
+    existingRows[mp4FileId] = { rowNum: alSheet.getLastRow(), assetId: assetId, hasSummary: false };
+    created++;
+  }
+
+  if (created > 0) bumpVersion('asset_library', 'syncReelAssets');
+
+  // ── 5. Gemini summary for rows with empty Reel_Summary ───────────────────
+  var apiKey = getGovernance('GEMINI_API_KEY');
+  var videoPrompt =
+    "Watch this video clip carefully. This is a reel clip from the podcast 'Don't Waste Your Pain'" +
+    (guestName ? ', featuring ' + guestName : '') + '.\n\n' +
+    'Describe in full detail:\n' +
+    '1. What is being said — key phrases and direct quotes verbatim\n' +
+    '2. The emotional tone and energy of the speaker\n' +
+    '3. The main point or takeaway\n' +
+    '4. Any compelling story beats or turning points\n\n' +
+    'Be verbose and thorough — this summary will be used by Claude to write social media captions.';
+
+  var summarized = 0;
+  var skipped    = 0;
+  var timedOut   = false;
+
+  for (var n = 0; n < mp4s.length; n++) {
+    if (Date.now() - startTime > MAX_MS) { timedOut = true; break; }
+
+    var entry = existingRows[mp4s[n].getId()];
+    if (!entry) { skipped++; continue; }
+    if (entry.hasSummary && !force) { skipped++; continue; }
+
+    var summary = callGeminiVideoAnalysis_(mp4s[n].getId(), videoPrompt, apiKey);
+    if (!summary) {
+      errors.push('Gemini returned null for file ' + mp4s[n].getId() + ' (' + mp4s[n].getName() + ')');
+      skipped++;
+      continue;
+    }
+
+    alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
+    summarized++;
+    Utilities.sleep(2000);
+  }
+
+  if (summarized > 0) bumpVersion('asset_library', 'syncReelAssets');
+
+  logToAuditTrail(agentName, 'state_change', epUid, null,
+    'SYNC_REEL_ASSETS COMPLETE: created=' + created + ' summarized=' + summarized +
+    ' skipped=' + skipped + (timedOut ? ' TIMED_OUT=true — re-run to continue' : '') +
+    (errors.length ? ' errors=' + JSON.stringify(errors) : ''), 'INFO');
+
+  return {
+    status:     timedOut ? 'timed_out' : 'done',
+    created:    created,
+    summarized: summarized,
+    skipped:    skipped,
+    timedOut:   timedOut,
+    errors:     errors
+  };
 }
 
 

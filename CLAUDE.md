@@ -47,7 +47,7 @@ Big-picture context, design decisions, documentation. Audra leads; Claude reason
 - **No code is written in Hub threads.** Surface implementation questions; do not generate code.
 - Output is structured markdown (handoff docs, design specs, playbook updates).
 - Decisions get locked, then handed off to Spoke threads.
-- **Spoke prompts authored by Hub include:** Code Integrity Mandate reference, scope statement (in/out), explicit clasp push checkpoints, and fully self-contained context. Audra works intermittently between recording sessions — spokes that omit these slip scope or stall.
+- **Spoke prompts authored by Hub include:** Code Integrity Mandate reference, scope statement (in/out), and explicit clasp push checkpoints. Audra works intermittently between recording sessions — spokes that omit these slip scope or stall.
 
 ### Spoke mode
 One focused unit of implementation work. Spoke prompt provides scope; Claude executes.

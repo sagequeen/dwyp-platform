@@ -1454,11 +1454,11 @@ function exportReelToDrive(episodeUid, day, reelAssetId, titleText, caption) {
     }
     if (!driveFileId) return { success: false, error: 'No Drive file ID found for reel: ' + reelAssetId };
 
-    var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
-    var dayPrefix = day ? (String(day).toUpperCase() + '_') : '';
-    var reelFile  = DriveApp.getFileById(driveFileId);
-    var ext       = reelFile.getName().split('.').pop() || 'mp4';
-    var baseName  = dayPrefix + 'reel_' + reelAssetId + '_' + timestamp;
+    var timestamp  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
+    var reelFile   = DriveApp.getFileById(driveFileId);
+    var ext        = reelFile.getName().split('.').pop() || 'mp4';
+    var titleSlug  = titleText ? String(titleText).trim().replace(/[\\/:*?"<>|#%&{}]/g, '').replace(/\s+/g, ' ').trim().substring(0, 120) : '';
+    var baseName   = titleSlug || ('reel_' + reelAssetId + '_' + timestamp);
 
     // Move the reel file into Manual_Exports — evacuates Reels/ root, silencing Loop C
     reelFile.setName(baseName + '.' + ext);
@@ -3022,7 +3022,7 @@ function getReelStreamUrl(fileId) {
   try {
     var file = DriveApp.getFileById(fileId);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return { url: 'https://drive.google.com/uc?id=' + fileId };
+    return { url: 'https://drive.google.com/file/d/' + fileId + '/preview' };
   } catch(e) {
     return { url: '', error: e.message };
   }

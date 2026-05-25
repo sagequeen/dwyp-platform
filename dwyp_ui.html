@@ -1178,13 +1178,15 @@ svg { display: block; flex-shrink: 0; }
 .modal-backdrop {
   display: none;
   position: fixed;
+  z-index: 400;
   inset: 0;
   background: rgba(0,0,0,0.45);
-  z-index: 200;
   align-items: flex-end;
   justify-content: center;
 }
 .modal-backdrop.open { display: flex; }
+#reelRevisionModal { align-items: center; }
+#reelRevisionModal .modal { border-radius: var(--radius); padding: 20px; }
 
 .modal {
   background: var(--surface);
@@ -2887,13 +2889,15 @@ body.studio-open .app-header { display: none; }
   border-bottom: 1px solid var(--border);
 }
 /* Reel card enhancements */
+.st-reel-card-inner  { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; }
+.st-reel-thumb-col   { flex: 0 0 33%; }
+.st-reel-body-col    { flex: 1; min-width: 0; }
 .st-reel-card-thumb {
   width: 100%; aspect-ratio: 9/16; object-fit: cover;
-  border-radius: 4px; margin-bottom: 6px; display: block;
+  border-radius: 4px; display: block; background: var(--surface-2);
 }
 .st-reel-card-summary {
-  font-size: 10px; color: rgba(255,255,255,0.4); line-height: 1.4; margin-top: 2px;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  font-size: 10px; color: var(--text-3); line-height: 1.4; margin-top: 4px;
 }
 /* Chat hist — light column */
 .st-chat-hist { color: var(--text); }
@@ -3402,7 +3406,7 @@ body.studio-open .app-header { display: none; }
 }
 .st-reel-card:hover  { background: var(--surface-2); }
 .st-reel-card.active { background: var(--surface-2); border-color: var(--gold); }
-.st-reel-card-inner  { display: flex; flex-direction: column; gap: 2px; }
+
 .st-reel-card-name    { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .st-reel-card-caption { font-size: 11px; color: var(--text-3); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-reel-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; align-items: center; justify-content: flex-start; background: #f0f0f0; padding-top: 12px; gap: 0; }
@@ -3416,14 +3420,13 @@ body.studio-open .app-header { display: none; }
 .st-gen-caption-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .st-reel-player-empty { font-size: 12px; color: rgba(0,0,0,0.4); text-align: center; padding: 20px; }
 .st-reel-phone-frame {
-  height: min(72vh, 560px); aspect-ratio: 9/16; flex-shrink: 0;
+  height: min(72vh, 560px); max-height: 100%; aspect-ratio: 9/16; flex-shrink: 0;
   border-radius: 14px; overflow: hidden; position: relative;
   box-shadow: 0 4px 24px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.08);
   background: #111;
 }
 #stReelPlayerFrame {
-  position: absolute; top: -52px; left: 0;
-  width: 100%; height: calc(100% + 100px); border: none;
+  position: absolute; inset: 0; width: 100%; height: 100%; border: none; display: block;
 }
 
 /* ── STUDIO — snap guides ──────────────────────────────────── */
@@ -3942,24 +3945,12 @@ body.studio-open .app-header { display: none; }
         <div class="st-reel-player-area" id="stReelPlayerArea">
           <div class="st-reel-player-empty" id="stReelPlayerEmpty">Select a reel from the panel to preview it here.</div>
           <div class="st-reel-phone-frame" id="stReelPhoneFrame" style="display:none">
-            <iframe id="stReelPlayerFrame" allowfullscreen allow="autoplay"></iframe>
+            <iframe id="stReelPlayerFrame" allowfullscreen></iframe>
           </div>
         </div>
         <!-- Reel action bar — shown when a reel is selected -->
         <div class="st-reel-actions" id="stReelActions" style="display:none">
-          <div class="st-reel-export-wrap" id="stReelExportWrap">
-            <button class="st-export-btn-red" id="stReelExportBtn" onclick="stToggleReelDayPicker()">Export</button>
-            <div class="st-day-picker" id="stReelDayPicker" style="display:none">
-              <button class="st-day-pill" onclick="stPickReelDay(this,'MON')">Mon</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'TUE')">Tue</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'WED')">Wed</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'THU')">Thu</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'FRI')">Fri</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'SAT')">Sat</button>
-              <button class="st-day-pill" onclick="stPickReelDay(this,'SUN')">Sun</button>
-            </div>
-          </div>
-          <button class="st-reel-action-btn" id="stEditVidsBtn" onclick="stEditWithVids()">Edit with Vids</button>
+          <button class="st-export-btn-red" id="stReelExportBtn" onclick="stExportReel(st.episodeUid)">Export</button>
           <button class="st-reel-action-btn" id="stRequestRevisionBtn" onclick="stRequestRevision()">Request Revision</button>
         </div>
       </div>
@@ -6173,11 +6164,22 @@ function stRenderRailReelList() {
     var card    = document.createElement('div');
     card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
     card.setAttribute('data-reel-id', id);
-    var summary = String(r.Reel_Summary || '');
+    var summary  = String(r.Reel_Summary || '');
+    var thumbSrc = r.Drive_File_ID
+      ? 'https://drive.google.com/thumbnail?id=' + r.Drive_File_ID + '&sz=w200'
+      : '';
     card.innerHTML =
-      '<div class="st-reel-card-name">' + esc(name) + '</div>' +
-      (summary ? '<div class="st-reel-card-summary">' + esc(summary) + '</div>' : '') +
-      (caption ? '<div class="st-reel-card-caption">' + esc(caption) + '</div>' : '');
+      '<div class="st-reel-card-inner">' +
+        '<div class="st-reel-thumb-col">' +
+          (thumbSrc
+            ? '<img class="st-reel-card-thumb" src="' + thumbSrc + '" onerror="this.style.visibility=\'hidden\'">'
+            : '<div class="st-reel-card-thumb"></div>') +
+        '</div>' +
+        '<div class="st-reel-body-col">' +
+          '<div class="st-reel-card-name">' + esc(name) + '</div>' +
+          (summary ? '<div class="st-reel-card-summary">' + esc(summary) + '</div>' : '') +
+        '</div>' +
+      '</div>';
     card.addEventListener('click', function() { stSelectRailReel(id); });
     list.appendChild(card);
   });
@@ -6212,9 +6214,25 @@ function stSelectRailReel(id) {
   var playerEmpty = document.getElementById('stReelPlayerEmpty');
   var driveFileId = reel.Drive_File_ID || '';
   if (driveFileId) {
-    if (playerFrame) playerFrame.src = 'https://drive.google.com/file/d/' + encodeURIComponent(driveFileId) + '/preview';
     if (phoneFrame)  phoneFrame.style.display  = 'flex';
     if (playerEmpty) playerEmpty.style.display = 'none';
+    if (playerFrame) {
+      playerFrame.src = '';
+      playerFrame.removeAttribute('src');
+      if (reel._streamUrl) {
+        playerFrame.src = reel._streamUrl;
+      } else {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.url && document.getElementById('stReelPlayerFrame') === playerFrame) {
+              reel._streamUrl = res.url;
+              playerFrame.src = res.url;
+            }
+          })
+          .withFailureHandler(function() {})
+          .getReelStreamUrl(driveFileId);
+      }
+    }
   }
 
   // Show action bar
@@ -6294,36 +6312,7 @@ function stGenerateReelCaption() {
     .generateReelCaption(st.selectedReelId);
 }
 
-// ── REELS — Export day picker ─────────────────────────────────
-function stToggleReelDayPicker() {
-  var p = document.getElementById('stReelDayPicker');
-  if (p) p.style.display = p.style.display === 'none' ? 'flex' : 'none';
-}
-
-function stPickReelDay(btn, day) {
-  document.querySelectorAll('#stReelDayPicker .st-day-pill').forEach(function(b) { b.classList.remove('active'); });
-  btn.classList.add('active');
-  document.getElementById('stReelDayPicker').style.display = 'none';
-  stExportReel(st.episodeUid, day);
-}
-
-// ── REELS — Edit with Vids (stub) ─────────────────────────────
-function stEditWithVids() {
-  if (!st.selectedReelId || !st.episodeUid) { showToast('Select a reel first.'); return; }
-  var btn = document.getElementById('stEditVidsBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Spawning…'; }
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Edit with Vids'; }
-      if (!res || !res.ok) { showToast('Failed: ' + (res && res.error ? res.error : 'unknown'), true); return; }
-      showToast('Edit task sent to Audra.');
-    })
-    .withFailureHandler(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Edit with Vids'; }
-      showToast('Failed: ' + (err && err.message ? err.message : err), true);
-    })
-    .spawnReelEditTask(st.episodeUid, st.selectedReelId, 'edit_vids');
-}
+// ── REELS — Export ────────────────────────────────────────────
 
 // ── REELS — Request Revision ──────────────────────────────────
 function stRequestRevision() {
@@ -6402,7 +6391,7 @@ function stSetDesignTab(tab) {
     var playerFrame = document.getElementById('stReelPlayerFrame');
     if (phoneFrame)  phoneFrame.style.display  = 'none';
     if (playerEmpty) playerEmpty.style.display = 'block';
-    if (playerFrame) playerFrame.src = '';
+    if (playerFrame) { playerFrame.src = ''; playerFrame.removeAttribute('src'); }
     var actionsBar = document.getElementById('stReelActions');
     if (actionsBar) actionsBar.style.display = 'none';
   }
@@ -6666,7 +6655,7 @@ function stExportDesign() {
   var day = st.exportDay || 'MON';
   if (!uid) { showToast('Select an episode first.'); return; }
   if (st.designTab === 'reels') {
-    stExportReel(uid, day);
+    stExportReel(uid);
   } else {
     stExportQg(uid, day);
   }
@@ -6701,8 +6690,9 @@ function stExportQg(uid, day) {
     .exportAssetToDrive(uid, null, null, b64, null, day, canvasText, caption);
 }
 
-function stExportReel(uid, day) {
+function stExportReel(uid) {
   if (!st.selectedReelId) { showToast('Select a reel first.'); return; }
+  if (!uid) { showToast('Select an episode first.'); return; }
   var exportBtn = document.getElementById('stReelExportBtn');
   if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Exporting…'; }
 
@@ -6721,7 +6711,7 @@ function stExportReel(uid, day) {
       if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
       showToast('Export failed: ' + ((err && err.message) || err), true);
     })
-    .exportReelToDrive(uid, day, st.selectedReelId, titleText, caption);
+    .exportReelToDrive(uid, null, st.selectedReelId, titleText, caption);
 }
 
 // ── DOC VIEW ─────────────────────────────────────────────────

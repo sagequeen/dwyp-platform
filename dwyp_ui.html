@@ -2416,6 +2416,113 @@ body.workshop-open .bottom-nav { display: none; }
 .btn-send-notes:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-send-notes:active { opacity: 0.85; }
 
+/* ── EPISODE REVIEW — NATIVE PLAYER + COMPOSE LOOP ──────────── */
+.rv-player-wrap video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  display: block;
+}
+.ep-composer-ts {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  min-height: 16px;
+}
+.ep-composer-ts.has-ts { color: var(--red); }
+.ep-composer-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+  outline: none;
+  min-height: 72px;
+  transition: border-color var(--transition);
+}
+.ep-composer-textarea:focus { border-color: var(--red); }
+.ep-composer-textarea:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--surface-2);
+}
+.ep-composer-actions { display: flex; gap: 8px; }
+.ep-btn-send {
+  flex: 1;
+  padding: 9px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+.ep-btn-send:disabled { opacity: 0.35; cursor: not-allowed; }
+.ep-btn-cancel {
+  padding: 9px 14px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.ep-btn-cancel:disabled { opacity: 0.35; cursor: not-allowed; }
+.ep-composer-locked-notice {
+  font-size: 12px;
+  color: var(--text-3);
+  font-style: italic;
+  text-align: center;
+  padding: 4px 0;
+}
+.ep-receipt {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ep-receipt-header {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ep-receipt-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.ep-receipt-sealed {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  padding: 4px 0 2px;
+}
+
 /* ── SCROLL SORTER (Images + Reels shared) ───────────────────── */
 .rv-sorter-submit-row {
   padding-bottom: 6px;
@@ -3573,6 +3680,23 @@ body.studio-open .app-header { display: none; }
   </div>
 </div>
 
+<!-- Reel Revision Request Modal -->
+<div class="modal-backdrop" id="reelRevisionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Request Revision</span>
+    </div>
+    <p style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:4px">
+      Describe what needs to change. Audra will receive a task with your note.
+    </p>
+    <textarea class="ep-composer-textarea" id="reelRevisionNotes" placeholder="What needs to change in this reel?" rows="4" style="margin-bottom:4px"></textarea>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="ep-btn-send" id="reelRevisionSubmitBtn" onclick="stSubmitReelRevisionPopup()">Send</button>
+      <button class="ep-btn-cancel" style="flex:0 0 auto" onclick="stCloseReelRevisionPopup()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Studio Overlay -->
 <div id="studioOverlay" style="display:none">
@@ -4227,11 +4351,11 @@ function loadDomain(domain, callback) {
     .getDomainsBatch([domain]);
 }
 
-var reviewSession = {
-  episodeUid: null,
-  startTime:  null,
-  markedTime: null,
-  notes:      []
+var epReviewState = {
+  episodeUid:      null,
+  frozenTimestamp: null,
+  revisionRound:   0,
+  composerLocked:  false
 };
 
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
@@ -6204,19 +6328,34 @@ function stEditWithVids() {
 // ── REELS — Request Revision ──────────────────────────────────
 function stRequestRevision() {
   if (!st.selectedReelId || !st.episodeUid) { showToast('Select a reel first.'); return; }
-  var btn = document.getElementById('stRequestRevisionBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  var textarea = document.getElementById('reelRevisionNotes');
+  if (textarea) textarea.value = '';
+  var submitBtn = document.getElementById('reelRevisionSubmitBtn');
+  if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send'; }
+  document.getElementById('reelRevisionModal').classList.add('open');
+}
+
+function stCloseReelRevisionPopup() {
+  document.getElementById('reelRevisionModal').classList.remove('open');
+}
+
+function stSubmitReelRevisionPopup() {
+  var textarea  = document.getElementById('reelRevisionNotes');
+  var notes     = textarea ? textarea.value.trim() : '';
+  if (!notes) { showToast('Describe what needs to change.', true); return; }
+  var submitBtn = document.getElementById('reelRevisionSubmitBtn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending…'; }
   google.script.run
     .withSuccessHandler(function(res) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Request Revision'; }
+      stCloseReelRevisionPopup();
       if (!res || !res.ok) { showToast('Failed: ' + (res && res.error ? res.error : 'unknown'), true); return; }
       showToast('Revision request sent to Audra.');
     })
     .withFailureHandler(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Request Revision'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Send'; }
       showToast('Failed: ' + (err && err.message ? err.message : err), true);
     })
-    .requestReelRevision(st.episodeUid, st.selectedReelId);
+    .requestReelRevision(st.episodeUid, st.selectedReelId, notes);
 }
 
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
@@ -7413,65 +7552,80 @@ function showImagesReview(episodeUid) {
 
 function renderEpisodeReview(ep) {
   var uid = esc(ep.Episode_UID);
-  initReviewSession(ep.Episode_UID);
+  epReviewState.episodeUid      = ep.Episode_UID;
+  epReviewState.frozenTimestamp = null;
+  epReviewState.revisionRound   = 0;
+  epReviewState.composerLocked  = ep.Video_Status === 'revision_requested';
 
   var html = "";
 
-  // Player card — filled async below
+  // Player card — filled async
   html += '<div class="rv-player-card" id="rvPlayerCard">';
   html += '<div class="rv-player-notice"><div class="spinner" style="margin:0 auto"></div></div>';
   html += "</div>";
 
-  // Note builder
-  html += '<div class="rv-notes-card">';
-  html += '<div class="rv-notes-label">Notes</div>';
-  html += '<div class="rv-time-row">';
-  html += '<div class="rv-marked-time" id="rvMarkedTimeDisplay">No time marked</div>';
-  html += '<button class="btn-mark-time" onclick="rvMarkTime()">Mark Time</button>';
-  html += "</div>";
-  html += '<div class="rv-input-row">';
-  html += '<input type="text" id="rvNoteInput" placeholder="Add a note…" onkeydown="if(event.key===\'Enter\')rvAddNote()">';
-  html += '<button class="btn-add-note" onclick="rvAddNote()">Add</button>';
-  html += "</div>";
-  html += '<div class="rv-note-list" id="rvNoteList"></div>';
-  html += '<button class="btn-send-notes" id="rvSendBtn" onclick="rvSendNotes(\'' + uid + '\')" disabled>Send to Audra</button>';
+  // Compose loop rail
+  html += '<div class="rv-notes-card" id="epComposerCard">';
+  html += '<div class="rv-notes-label">Leave a note</div>';
+  if (epReviewState.composerLocked) {
+    html += '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
+  } else {
+    html += '<div class="ep-composer-ts" id="epComposerTs">—</div>';
+    html += '<textarea class="ep-composer-textarea" id="epComposerText" placeholder="Note about this moment…" onfocus="epComposerFocus()" rows="3"></textarea>';
+    html += '<div class="ep-composer-actions">';
+    html += '<button class="ep-btn-cancel" onclick="epComposerCancel()">Cancel</button>';
+    html += '<button class="ep-btn-send" id="epComposerSendBtn" onclick="epComposerSend(\'' + uid + '\')">Send</button>';
+    html += "</div>";
+  }
   html += "</div>";
 
-  // Approve / Request Revisions (preserved)
-  html += '<div class="task-card">';
-  html += '<div class="task-actions">';
-  html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
-  html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
-  html += '<button class="btn btn-complete" id="epReviewReviseBtn" onclick="toggleRevisionField()">';
-  html += '<svg width="12" height="12" data-lucide="message-square"></svg> Request Revisions</button>';
-  html += "</div>";
-  html += '<div class="revision-field" id="revisionField">';
-  html += '<textarea class="form-input form-textarea" id="revisionNotes" placeholder="Describe what needs to change…"></textarea>';
-  html += '<button class="btn-submit" id="revisionSubmitBtn" onclick="submitRevisionRequest(\'' + uid + '\')">Submit Revision Request</button>';
-  html += "</div>";
-  html += "</div>";
+  // Revision history rail — populated async
+  html += '<div id="epRevisionRail"></div>';
+
+  // Approve / Request Revisions
+  html += '<div class="task-card"><div class="task-actions">';
+  if (ep.Video_Status !== 'revision_requested') {
+    html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
+    html += '<button class="btn btn-complete" id="epReviewReviseBtn" onclick="epRequestRevisions(\'' + uid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="message-square"></svg> Request Revisions</button>';
+  }
+  html += "</div></div>";
 
   document.getElementById("episodeReviewContent").innerHTML = html;
   lucide.createIcons();
 
-  // Async: load proxy file for player
+  // Async: load native video via streaming URL
   google.script.run
-    .withSuccessHandler(function(fileId) {
+    .withSuccessHandler(function(res) {
       var card = document.getElementById("rvPlayerCard");
       if (!card) return;
-      if (fileId) {
-        card.innerHTML = '<div class="rv-player-wrap">' +
-          '<iframe src="https://drive.google.com/file/d/' + fileId + '/preview" allowfullscreen></iframe>' +
+      if (res && res.url) {
+        card.innerHTML =
+          '<div class="rv-player-wrap">' +
+          '<video id="epReviewVideo" src="' + res.url + '" controls playsinline preload="metadata"></video>' +
           '</div>';
       } else {
-        card.innerHTML = '<div class="rv-player-notice">No proxy file found. Check Staging folder.</div>';
+        card.innerHTML = '<div class="rv-player-notice">No video found. Check Episode folder.</div>';
       }
     })
     .withFailureHandler(function() {
       var card = document.getElementById("rvPlayerCard");
-      if (card) card.innerHTML = '<div class="rv-player-notice">Could not load proxy file.</div>';
+      if (card) card.innerHTML = '<div class="rv-player-notice">Could not load video.</div>';
     })
-    .getProxyFileId(ep.Episode_UID);
+    .getProxyStreamUrl(ep.Episode_UID);
+
+  // Async: load revision history into rail
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.rows && res.rows.length) {
+        var last = res.rows[res.rows.length - 1];
+        epReviewState.revisionRound = last.revisionRound || 0;
+      }
+      epRenderRailFromHistory(res);
+    })
+    .withFailureHandler(function() {})
+    .getEpisodeRevisionHistory(ep.Episode_UID);
 }
 
 function renderReelsReview(ep) {
@@ -7843,84 +7997,157 @@ function decideFile(fileId, episodeUid, type, decision) {
     .moveReviewFile(fileId, episodeUid, type, decision);
 }
 
-// ── REVIEW SESSION (Episode notes) ───────────────────────────
-function initReviewSession(episodeUid) {
-  reviewSession.episodeUid = episodeUid;
-  reviewSession.startTime  = Date.now();
-  reviewSession.markedTime = null;
-  reviewSession.notes      = [];
-}
-
-function rvMarkTime() {
-  var elapsed = Math.floor((Date.now() - (reviewSession.startTime || Date.now())) / 1000);
-  var mins    = Math.floor(elapsed / 60);
-  var secs    = elapsed % 60;
-  reviewSession.markedTime = mins + ":" + String(secs).padStart(2, "0");
-  var display = document.getElementById("rvMarkedTimeDisplay");
-  if (display) {
-    display.textContent = "Marked: " + reviewSession.markedTime;
-    display.classList.add("has-time");
+// ── EPISODE REVIEW — COMPOSE LOOP ────────────────────────────
+function epComposerFocus() {
+  var video = document.getElementById("epReviewVideo");
+  if (!video || video.paused) return;
+  video.pause();
+  epReviewState.frozenTimestamp = video.currentTime;
+  var s  = Math.floor(epReviewState.frozenTimestamp);
+  var ts = document.getElementById("epComposerTs");
+  if (ts) {
+    ts.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    ts.classList.add("has-ts");
   }
 }
 
-function rvAddNote() {
-  var input = document.getElementById("rvNoteInput");
-  if (!input) return;
-  var text = input.value.trim();
-  if (!text) return;
-  reviewSession.notes.push({ timestamp: reviewSession.markedTime || "—", note: text });
-  input.value          = "";
-  reviewSession.markedTime = null;
-  var display = document.getElementById("rvMarkedTimeDisplay");
-  if (display) {
-    display.textContent = "No time marked";
-    display.classList.remove("has-time");
+function epComposerCancel() {
+  var textarea = document.getElementById("epComposerText");
+  if (textarea) textarea.value = "";
+  epReviewState.frozenTimestamp = null;
+  var ts = document.getElementById("epComposerTs");
+  if (ts) { ts.textContent = "—"; ts.classList.remove("has-ts"); }
+  var video = document.getElementById("epReviewVideo");
+  if (video && video.paused) video.play();
+}
+
+function epComposerSend(episodeUid) {
+  var textarea = document.getElementById("epComposerText");
+  var body     = textarea ? textarea.value.trim() : "";
+  if (!body) { epComposerCancel(); return; }
+
+  var ts    = epReviewState.frozenTimestamp;
+  var round = (epReviewState.revisionRound || 0) + 1;
+  var tsStr = null;
+  if (ts != null) {
+    var s = Math.floor(ts);
+    tsStr = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }
-  rvRenderNoteList();
-  var sendBtn = document.getElementById("rvSendBtn");
-  if (sendBtn) sendBtn.disabled = reviewSession.notes.length === 0;
-}
 
-function rvRenderNoteList() {
-  var list = document.getElementById("rvNoteList");
-  if (!list) return;
-  if (!reviewSession.notes.length) { list.innerHTML = ""; return; }
-  var html = "";
-  reviewSession.notes.forEach(function(n) {
-    html += '<div class="rv-note-item">';
-    html += '<span class="rv-note-ts">'   + esc(n.timestamp) + "</span>";
-    html += '<span class="rv-note-text">' + esc(n.note)      + "</span>";
-    html += "</div>";
-  });
-  list.innerHTML = html;
-}
+  // Optimistic append
+  epRailAppendRow(tsStr, body, round);
 
-function rvSendNotes(episodeUid) {
-  if (!reviewSession.notes.length) return;
-  var sendBtn = document.getElementById("rvSendBtn");
-  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = "Sending…"; }
+  // Clear composer and resume
+  if (textarea) textarea.value = "";
+  epReviewState.frozenTimestamp = null;
+  var tsEl = document.getElementById("epComposerTs");
+  if (tsEl) { tsEl.textContent = "—"; tsEl.classList.remove("has-ts"); }
+  var video = document.getElementById("epReviewVideo");
+  if (video && video.paused) video.play();
+
   google.script.run
-    .withSuccessHandler(function(result) {
-      if (result && result.success !== false) {
-        reviewSession.notes = [];
-        rvRenderNoteList();
-        showToast("Notes sent to Audra");
-      } else {
-        showToast("Error sending notes", true);
-      }
-      if (sendBtn) {
-        sendBtn.textContent = "Send to Audra";
-        sendBtn.disabled    = reviewSession.notes.length === 0;
-      }
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) showToast("Note failed to save — please re-send.", true);
     })
     .withFailureHandler(function(err) {
       showToast("Error: " + ((err && err.message) || err), true);
-      if (sendBtn) {
-        sendBtn.textContent = "Send to Audra";
-        sendBtn.disabled    = reviewSession.notes.length === 0;
-      }
     })
-    .submitEpisodeComments(episodeUid, reviewSession.notes, new Date().toLocaleDateString());
+    .submitEpisodeCommentRow(episodeUid, tsStr, body, round, APP_CONFIG.userEmail);
+}
+
+function epRailAppendRow(tsStr, body, round) {
+  var rail = document.getElementById("epRevisionRail");
+  if (!rail) return;
+  var roundId = "ep-round-" + round;
+  var section = document.getElementById(roundId);
+  if (!section) {
+    section = document.createElement("div");
+    section.className = "ep-receipt";
+    section.id        = roundId;
+    var header        = document.createElement("div");
+    header.className  = "ep-receipt-header";
+    header.textContent = "Round " + round;
+    section.appendChild(header);
+    rail.appendChild(section);
+  }
+  var displayBody = tsStr ? "[" + tsStr + "] " + body : body;
+  var row = document.createElement("div");
+  row.className   = "rv-note-item";
+  row.innerHTML   = '<span class="rv-note-text">' + esc(displayBody) + "</span>";
+  section.appendChild(row);
+}
+
+function epRenderRailFromHistory(res) {
+  var rail = document.getElementById("epRevisionRail");
+  if (!rail || !res || !res.rows || !res.rows.length) return;
+  var byRound = {};
+  res.rows.forEach(function(r) {
+    var rn = r.revisionRound || 1;
+    if (!byRound[rn]) byRound[rn] = [];
+    byRound[rn].push(r);
+  });
+  var html = "";
+  Object.keys(byRound).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(rn) {
+    html += '<div class="ep-receipt" id="ep-round-' + rn + '">';
+    html += '<div class="ep-receipt-header">Round ' + rn + "</div>";
+    byRound[rn].forEach(function(r) {
+      var b = r.body || "";
+      var m = b.match(/^\[(\d+:\d+)\]\s*/);
+      var displayBody = m ? b : b;
+      html += '<div class="rv-note-item"><span class="rv-note-text">' + esc(displayBody) + "</span></div>";
+    });
+    if (res.videoStatus === "revision_requested") {
+      html += '<div class="ep-receipt-sealed">Sealed — Revisions requested</div>';
+    }
+    html += "</div>";
+  });
+  rail.innerHTML = html;
+}
+
+function epRequestRevisions(episodeUid) {
+  var revBtn = document.getElementById("epReviewReviseBtn");
+  var appBtn = document.getElementById("epReviewApproveBtn");
+  if (revBtn) { revBtn.disabled = true; revBtn.textContent = "Sealing…"; }
+  if (appBtn) { appBtn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast("Error: " + (res && res.error ? res.error : "unknown"), true);
+        if (revBtn) { revBtn.disabled = false; revBtn.textContent = "Request Revisions"; }
+        if (appBtn) { appBtn.disabled = false; }
+        return;
+      }
+      epReviewState.composerLocked = true;
+      var composerCard = document.getElementById("epComposerCard");
+      if (composerCard) {
+        composerCard.innerHTML =
+          '<div class="rv-notes-label">Leave a note</div>' +
+          '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
+      }
+      var taskActions = revBtn && revBtn.closest(".task-card") && revBtn.closest(".task-card").querySelector(".task-actions");
+      if (taskActions) taskActions.innerHTML = "";
+      var round   = res.round;
+      var section = document.getElementById("ep-round-" + round);
+      if (section) {
+        var sealed = document.createElement("div");
+        sealed.className   = "ep-receipt-sealed";
+        sealed.textContent = "Sealed — Revisions requested";
+        section.appendChild(sealed);
+      }
+      var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+      if (ep) ep.Video_Status = "revision_requested";
+      if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+        state.currentEpisode.Video_Status = "revision_requested";
+      }
+      showToast("Revisions requested — Audra has been notified.");
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + ((err && err.message) || err), true);
+      if (revBtn) { revBtn.disabled = false; revBtn.textContent = "Request Revisions"; }
+      if (appBtn) { appBtn.disabled = false; }
+    })
+    .requestEpisodeRevisions(episodeUid, APP_CONFIG.userEmail);
 }
 
 // ── READY FOR RELEASE ─────────────────────────────────────────
@@ -7997,41 +8224,24 @@ function approveEpisodeVideo(episodeUid) {
     .writeVideoStatus(episodeUid, "approved");
 }
 
-function toggleRevisionField() {
-  var field = document.getElementById("revisionField");
-  if (field) field.classList.toggle("visible");
-}
-
-function submitRevisionRequest(episodeUid) {
-  var notes = document.getElementById("revisionNotes");
-  var body  = notes ? notes.value.trim() : "";
-  if (!body) { showToast("Please describe the revision needed", true); return; }
-
-  var submitBtn = document.getElementById("revisionSubmitBtn");
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Submitting…"; }
-  setButtonLoading("epReviewApproveBtn", true);
-  setButtonLoading("epReviewReviseBtn",  true);
-
-  function onError(err) {
-    showToast("Error: " + ((err && err.message) || err || "Unknown error"), true);
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Submit Revision Request"; }
-    setButtonLoading("epReviewApproveBtn", false);
-    setButtonLoading("epReviewReviseBtn",  false);
-  }
-
+function completeEpisodeRevisionTask(taskId, episodeUid) {
+  setButtonLoading("complete-" + taskId, true);
   google.script.run
-    .withSuccessHandler(function(r) {
-      if (!r.success) { onError(r.error); return; }
-      var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
-      if (ep) ep.Video_Status = "revision_requested";
-      if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
-        state.currentEpisode.Video_Status = "revision_requested";
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast("Error: " + (res && res.error ? res.error : "unknown"), true);
+        setButtonLoading("complete-" + taskId, false);
+        return;
       }
-      showToast("Revision request submitted — Revise_Episode task created for Audra.");
-      showEpisodeDetail(episodeUid);
+      removeTaskFromState(taskId);
+      showToast("Revision complete — episode ready for review.");
+      refreshCurrentView();
     })
-    .withFailureHandler(onError)
-    .submitEpisodeRevisionRequest(episodeUid, body, APP_CONFIG.userEmail);
+    .withFailureHandler(function(err) {
+      showToast("Error: " + ((err && err.message) || err), true);
+      setButtonLoading("complete-" + taskId, false);
+    })
+    .completeEpisodeRevision(episodeUid, taskId);
 }
 
 // ── FAIRY REMOTE CONTROL ─────────────────────────────────────
@@ -8233,7 +8443,12 @@ function renderTaskButtons(task) {
   // Complete button
   var completeSteps = ["Produce_Episode", "Custom_Images", "Post_Social", "Filing",
                        "Revise_Reels", "Revise_Images", "Revise_Episode"];
-  if (completeSteps.indexOf(ws) !== -1 || task.Assigned_By !== "The Fairy Team") {
+  if (ws === "Revise_Episode") {
+    var revEpUid = esc(task.Episode_UID || "");
+    html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeEpisodeRevisionTask(\'' + tid + "','" + revEpUid + '\')">';
+    html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
+    html += "</button>";
+  } else if (completeSteps.indexOf(ws) !== -1 || task.Assigned_By !== "The Fairy Team") {
     html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeTask(\'' + tid + "'," + ridx + ')">';
     html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
     html += "</button>";

@@ -36,7 +36,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 20. **`createEpisodeFolder()` is private to `secretary_fairy`.** Not promoted to `fairy_circle`.
 21. **Initial manifest shape locked.** Fields: `episode_uid, contact_id, guest_name, recording_date, raw_folder_id, staging_folder_id, status, phase, created_at, herald_form_data`.
 22. **Approval state authority is Episodes tab.** `Video_Status` and `Images_Status` written by web app on JT action. GAS does not independently verify.
-23. **`Workflow_Step` values locked.** `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Filing` | `Produce_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
+23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
 24. **`clerk_fairy.gs` owns `doPost()`.** Routes: `filing` → `runFilingFairy()`, `invite` → `scribeLetSchedule()`. `filing_fairy` exposes `runFilingFairy()` as callable entry point only. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
 25. **Scribe Fairy is a new file, not a port.** Five defined touchpoints. No `doPost()`.
 26. **Filing and Scribe stay separate files.**
@@ -210,7 +210,7 @@ FK, `revision_requested` status — tracked in Build Playbook, not resolved here
 | 7 | G | Due_Date | Date | Optional. |
 | 8 | H | Contact_ID | String | Foreign key → Contacts. Optional. |
 | 9 | I | Episode_UID | String | Foreign key → Episodes. Optional (manual tasks may be episode-agnostic). |
-| 10 | J | Workflow_Step | Enum | See AD #23 for locked values. Blank for manual tasks. |
+| 10 | J | Workflow_Step | String | System-written by GAS. Open vocabulary — see AD #23 for known values. Blank for manual tasks. |
 | 11 | K | Executive_Summary | LongText | Context for the assignee. |
 | 12 | L | Payload_Link | URL | Optional. Drive doc, review link, etc. |
 | 13 | M | Revision_Notes | LongText | Optional. Context for revision tasks. |

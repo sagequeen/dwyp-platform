@@ -92,17 +92,18 @@ function validatePin(pin) {
 
 // ── COLUMN MAPS ──────────────────────────────────────────────────────────────
 
-// Episode_Log tab column map (9 columns)
+// Episode_Log tab column map (10 columns)
 var EPISODE_LOG_COLS = {
-  Log_ID:      1,
-  Episode_UID: 2,
-  Timestamp:   3,
-  Author:      4,
-  Entry_Type:  5,
-  Asset_Type:  6,
-  Body:        7,
-  Resolved:    8,
-  Visible_To:  9
+  Log_ID:          1,
+  Episode_UID:     2,
+  Timestamp:       3,
+  Author:          4,
+  Entry_Type:      5,
+  Asset_Type:      6,
+  Body:            7,
+  Resolved:        8,
+  Visible_To:      9,
+  Revision_Round:  10
 };
 
 // Social_Assets tab column map (13 columns — scheduling + Make integration only)
@@ -620,7 +621,7 @@ function writeVideoStatus(episodeUid, status) {
  * @param {string} authorEmail — current user email passed from client
  * @returns {{ success: boolean, error?: string }}
  */
-function appendEpisodeLogEntry(episodeUid, entryType, assetType, body, visibleTo, authorEmail) {
+function appendEpisodeLogEntry(episodeUid, entryType, assetType, body, visibleTo, authorEmail, revisionRound) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
@@ -638,16 +639,17 @@ function appendEpisodeLogEntry(episodeUid, entryType, assetType, body, visibleTo
 
     var author = authorEmail || Session.getEffectiveUser().getEmail();
 
-    var row = new Array(9).fill("");
-    row[EPISODE_LOG_COLS.Log_ID      - 1] = logId;
-    row[EPISODE_LOG_COLS.Episode_UID - 1] = episodeUid;
-    row[EPISODE_LOG_COLS.Timestamp   - 1] = now;
-    row[EPISODE_LOG_COLS.Author      - 1] = author;
-    row[EPISODE_LOG_COLS.Entry_Type  - 1] = entryType;
-    row[EPISODE_LOG_COLS.Asset_Type  - 1] = assetType;
-    row[EPISODE_LOG_COLS.Body        - 1] = body;
-    row[EPISODE_LOG_COLS.Resolved    - 1] = false;
-    row[EPISODE_LOG_COLS.Visible_To  - 1] = visibleTo;
+    var row = new Array(10).fill("");
+    row[EPISODE_LOG_COLS.Log_ID          - 1] = logId;
+    row[EPISODE_LOG_COLS.Episode_UID     - 1] = episodeUid;
+    row[EPISODE_LOG_COLS.Timestamp       - 1] = now;
+    row[EPISODE_LOG_COLS.Author          - 1] = author;
+    row[EPISODE_LOG_COLS.Entry_Type      - 1] = entryType;
+    row[EPISODE_LOG_COLS.Asset_Type      - 1] = assetType;
+    row[EPISODE_LOG_COLS.Body            - 1] = body;
+    row[EPISODE_LOG_COLS.Resolved        - 1] = false;
+    row[EPISODE_LOG_COLS.Visible_To      - 1] = visibleTo;
+    row[EPISODE_LOG_COLS.Revision_Round  - 1] = (revisionRound != null ? Number(revisionRound) : "");
 
     sheet.appendRow(row);
     return { success: true };
@@ -2047,6 +2049,248 @@ function submitEpisodeComments(episodeUid, comments, sessionDate) {
     throw new Error("submitEpisodeComments failed for " + episodeUid + ": " + err.message);
   }
 }
+
+// ── EPISODE REVISION FLOW ────────────────────────────────────────────────────
+
+/**
+ * Returns the stream URL for the episode proxy (or any single video in Episode/).
+ * Sets Drive sharing to anyone-with-link so the native <video> element can load it.
+ * Prefers proxy_ prefix; falls back to any video/* file.
+ * @param {string} episodeUid
+ * @returns {{ url: string, error?: string }}
+ */
+function getProxyStreamUrl(episodeUid) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { url: '', error: 'Staging folder not found.' };
+    var epFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Episode');
+    if (!epFolderIt.hasNext()) return { url: '', error: 'Episode/ subfolder not found.' };
+    var epFolder = epFolderIt.next();
+    var files = epFolder.getFiles();
+    var proxyFile = null, anyVideoFile = null;
+    while (files.hasNext()) {
+      var f = files.next();
+      if (f.getName().indexOf('proxy_') === 0) { proxyFile = f; break; }
+      if (!anyVideoFile && f.getMimeType().indexOf('video/') === 0) anyVideoFile = f;
+    }
+    var target = proxyFile || anyVideoFile;
+    if (!target) return { url: '', error: 'No video file found in Episode/ folder.' };
+    target.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { url: 'https://drive.google.com/uc?id=' + target.getId() };
+  } catch (e) {
+    return { url: '', error: e.message };
+  }
+}
+
+/**
+ * Returns the Episode_Log revision history for the episode review rail, plus
+ * the current video state and staging folder URL for the deep-link payload.
+ * @param {string} episodeUid
+ * @returns {{ ok, videoStatus, rows, stagingFolderUrl }}
+ */
+function getEpisodeRevisionHistory(episodeUid) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    var epSheet = ss.getSheetByName('Episodes');
+    var epData  = epSheet.getDataRange().getValues();
+    var videoStatus = 'pending', stagingFolderId = '';
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      videoStatus     = String(epData[i][EPISODES_COLS.Video_Status        - 1] || 'pending');
+      stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
+      break;
+    }
+
+    var rows = [];
+    var logSheet = ss.getSheetByName('Episode_Log');
+    if (logSheet) {
+      var logData = logSheet.getDataRange().getValues();
+      for (var j = 1; j < logData.length; j++) {
+        var r = logData[j];
+        if (String(r[EPISODE_LOG_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        if (String(r[EPISODE_LOG_COLS.Entry_Type  - 1]) !== 'revision')         continue;
+        if (String(r[EPISODE_LOG_COLS.Asset_Type  - 1]) !== 'video')             continue;
+        var rr = r[EPISODE_LOG_COLS.Revision_Round - 1];
+        rows.push({
+          logId:         String(r[EPISODE_LOG_COLS.Log_ID    - 1]),
+          timestamp:     r[EPISODE_LOG_COLS.Timestamp - 1]
+            ? new Date(r[EPISODE_LOG_COLS.Timestamp - 1]).toISOString() : '',
+          body:          String(r[EPISODE_LOG_COLS.Body       - 1]),
+          revisionRound: (rr !== '' && rr != null) ? Number(rr) : null
+        });
+      }
+    }
+
+    var stagingFolderUrl = stagingFolderId
+      ? 'https://drive.google.com/drive/folders/' + stagingFolderId : '';
+
+    return { ok: true, videoStatus: videoStatus, rows: rows, stagingFolderUrl: stagingFolderUrl };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Writes a single Episode_Log revision row for the compose loop.
+ * Called per-comment (not batched); optimistic append on client.
+ * @param {string} episodeUid
+ * @param {string} timecode      — MM:SS captured at focus moment; empty string if unknown
+ * @param {string} body          — comment text
+ * @param {number} revisionRound — current round integer
+ * @param {string} authorEmail
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function submitEpisodeCommentRow(episodeUid, timecode, body, revisionRound, authorEmail) {
+  try {
+    if (!body || !body.trim()) return { ok: false, error: 'Empty comment.' };
+    var formattedBody = timecode ? '[' + timecode + '] ' + body.trim() : body.trim();
+    var res = appendEpisodeLogEntry(
+      episodeUid, 'revision', 'video', formattedBody, 'both', authorEmail, revisionRound
+    );
+    if (res && res.success === false) return { ok: false, error: res.error };
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Hard-seals the current revision round: spawns or appends to an open Revise_Episode
+ * task (with staging folder deep-link) and sets Video_Status = 'revision_requested'.
+ * @param {string} episodeUid
+ * @param {string} authorEmail
+ * @returns {{ ok: boolean, round: number, error?: string }}
+ */
+function requestEpisodeRevisions(episodeUid, authorEmail) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Determine sealed round: max Revision_Round in Episode_Log for this episode
+    var logSheet = ss.getSheetByName('Episode_Log');
+    var maxRound = 0;
+    if (logSheet) {
+      var logData = logSheet.getDataRange().getValues();
+      for (var j = 1; j < logData.length; j++) {
+        if (String(logData[j][EPISODE_LOG_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        if (String(logData[j][EPISODE_LOG_COLS.Entry_Type  - 1]) !== 'revision')         continue;
+        var rr = logData[j][EPISODE_LOG_COLS.Revision_Round - 1];
+        if (rr && Number(rr) > maxRound) maxRound = Number(rr);
+      }
+    }
+    var round = maxRound || 1;
+
+    // Staging folder URL for Payload_Link
+    var epSheet = ss.getSheetByName('Episodes');
+    var epData  = epSheet.getDataRange().getValues();
+    var stagingFolderId = '', guestName = episodeUid;
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
+      guestName       = String(epData[i][EPISODES_COLS.Guest_Name            - 1] || episodeUid);
+      break;
+    }
+    var folderUrl = stagingFolderId
+      ? 'https://drive.google.com/drive/folders/' + stagingFolderId : '';
+
+    // Spawn or append to open Revise_Episode task
+    var taskSheet     = ss.getSheetByName('Tasks');
+    var producerEmail = getGovernance('ASSIGNEE_PRODUCER');
+    var foundTask     = false;
+    if (taskSheet) {
+      var tData = taskSheet.getDataRange().getValues();
+      for (var r = 1; r < tData.length; r++) {
+        if (String(tData[r][TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid))  continue;
+        if (String(tData[r][TASKS_COLS.Workflow_Step - 1]) !== 'Revise_Episode')    continue;
+        if (String(tData[r][TASKS_COLS.Status        - 1]) === 'complete')          continue;
+        var existing = String(tData[r][TASKS_COLS.Revision_Notes - 1] || '');
+        var note     = 'Round ' + round + ' sealed.';
+        taskSheet.getRange(r + 1, TASKS_COLS.Revision_Notes).setValue(
+          existing ? existing + '\n' + note : note
+        );
+        foundTask = true;
+        break;
+      }
+    }
+    if (!foundTask) {
+      spawnTask({
+        actionTitle:      'Episode Revisions — ' + guestName,
+        assignee:         producerEmail,
+        assignedBy:       'The Fairy Team',
+        status:           'open',
+        priority:         'normal',
+        episodeUid:       episodeUid,
+        workflowStep:     'Revise_Episode',
+        payloadLink:      folderUrl,
+        revisionNotes:    'Round ' + round + ' sealed.',
+        executiveSummary: 'JT requested episode revisions. Open the Drive folder below, ' +
+                          'move the old video to Archive/, drop v2, then click Complete.'
+      });
+    }
+
+    writeVideoStatus(episodeUid, 'revision_requested');
+    bumpVersion('episodes', 'requestEpisodeRevisions');
+
+    logToAuditTrail('requestEpisodeRevisions', 'human_action', episodeUid, '',
+      '[INFO] Episode revision round ' + round + ' sealed by ' + (authorEmail || 'JT') + '.', 'INFO');
+
+    return { ok: true, round: round };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Complete handler for Revise_Episode tasks. Validates that exactly one video
+ * file exists in the Episode/ subfolder before completing. Resets Video_Status
+ * to 'pending' so JT can compose round N+1.
+ * @param {string} episodeUid
+ * @param {string} taskId       — TASK-... ID of the Revise_Episode task
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function completeEpisodeRevision(episodeUid, taskId) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { ok: false, error: 'Episode staging folder not found.' };
+
+    var epFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Episode');
+    if (!epFolderIt.hasNext()) return { ok: false, error: 'Episode/ subfolder not found.' };
+    var epFolder = epFolderIt.next();
+
+    var videoFiles = [];
+    var allFiles = epFolder.getFiles();
+    while (allFiles.hasNext()) {
+      var f = allFiles.next();
+      if (f.getMimeType().indexOf('video/') === 0) videoFiles.push(f);
+    }
+
+    if (videoFiles.length === 0) {
+      return { ok: false, error: 'Drop the revised video first.' };
+    }
+    if (videoFiles.length > 1) {
+      return { ok: false, error: 'More than one video found. Move the old one to Archive/ first.' };
+    }
+
+    // Exactly 1 video — reset episode state to ready-for-review
+    writeVideoStatus(episodeUid, 'pending');
+
+    // Complete the Revise_Episode task
+    if (taskId) updateTaskStatus(taskId, 'complete');
+
+    bumpVersion('episodes', 'completeEpisodeRevision');
+    logToAuditTrail('completeEpisodeRevision', 'state_change', episodeUid, '',
+      '[INFO] Episode v2 accepted. File: ' + videoFiles[0].getId() +
+      '. Video_Status reset to pending.', 'INFO');
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ── END EPISODE REVISION FLOW ────────────────────────────────────────────────
 
 /**
  * Checks whether both the Images/ and Reels/ staging roots have zero files.
@@ -3837,7 +4081,7 @@ function generateReelCaption(assetId) {
  * type: 'edit_vids' → action title for Vids edit request
  *       'request_revision' → action title for revision request (not called directly; use requestReelRevision)
  */
-function spawnReelEditTask(episodeUid, assetId, type) {
+function spawnReelEditTask(episodeUid, assetId, type, revisionNotes) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
@@ -3866,6 +4110,7 @@ function spawnReelEditTask(episodeUid, assetId, type) {
       episodeUid:       episodeUid,
       workflowStep:     'Revise_Reels',
       executiveSummary: 'JT requested a reel edit. Asset_ID: ' + assetId,
+      revisionNotes:    revisionNotes || '',
       assetId:          assetId
     });
 
@@ -3880,7 +4125,7 @@ function spawnReelEditTask(episodeUid, assetId, type) {
  * Completes the open Review_Reels task for this episode (JT's review pass is done),
  * then spawns a Revise_Reels task for Audra carrying the Asset_ID FK.
  */
-function requestReelRevision(episodeUid, assetId) {
+function requestReelRevision(episodeUid, assetId, revisionNotes) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
@@ -3904,8 +4149,8 @@ function requestReelRevision(episodeUid, assetId) {
       }
     }
 
-    // Spawn Revise_Reels task for Audra
-    var result = spawnReelEditTask(episodeUid, assetId, 'request_revision');
+    // Spawn Revise_Reels task for Audra with JT's fix text in Revision_Notes
+    var result = spawnReelEditTask(episodeUid, assetId, 'request_revision', revisionNotes || '');
     if (!result.ok) return result;
 
     logToAuditTrail('requestReelRevision', 'human_action', episodeUid, '',

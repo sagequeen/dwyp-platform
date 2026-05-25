@@ -921,7 +921,7 @@ function spawnTask(taskConfig, suppressBump) {
     Workflow_Step:     taskConfig.workflowStep     || "",
     Executive_Summary: taskConfig.executiveSummary || "",
     Payload_Link:      taskConfig.payloadLink      || "",
-    Revision_Notes:    "",
+    Revision_Notes:    taskConfig.revisionNotes || "",
     Created_At:        new Date(),
     Completed_At:      "",
     Asset_ID:          taskConfig.assetId          || ""
@@ -1595,7 +1595,8 @@ function appendEpisodeLog(logConfig) {
       assetType,
       logConfig.body        || "",
       false,
-      visibleTo
+      visibleTo,
+      (logConfig.revisionRound != null ? Number(logConfig.revisionRound) : "")
     ]);
 
     logToAuditTrail(

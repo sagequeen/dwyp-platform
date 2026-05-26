@@ -15,8 +15,9 @@
 - **Track B (CP3 — 2026-05-22):** `runEditorialPass` repointed to transcript. No longer requires index v2 to exist first (dependency removed). `_buildEditorialPassPrompt_` now injects `FINISHED TRANSCRIPT:` instead of `EPISODE INDEX V2:`. Guest brief now sourced from `gatherVertContext` (duplicate Contact Library lookup removed). Verbatim-quote rule is now honest — Claude selects from real words on the page.
 - **Reel Editorial — test pending.** `runReelEditorialPass` written and pushed. Needs an episode with Reel-type Asset_Library rows with `Reel_Summary` populated.
 - **`syncReelAssets` + Gemini video analysis (2026-05-22):** `syncReelAssets(epUid, opts)` added to `dwyp_app.js` — creates AL rows for MP4s in Staging/Reels/, runs `callGeminiVideoAnalysis_` per reel (45MB limit; 4.5-min timeout guard; resumes on re-run). `test_syncReelAssets` wrapper in `dev_tools.js`. Tested on Meenakshi — worked (one 3-min clip skipped at size limit, expected).
+- **Episode tab (Design) — live (2026-05-26).** Native `<video>` in `stEpView` fed by `getEpisodeStreamUrl` (V4-signed GCS GET URL, bucket `dwyp-review-playback`, path `episodes/{EUID}/proxy.mp4`, 8h expiry, signBlob via owner OAuth). Compose loop functional: focus-pause-freeze-timestamp, Send = optimistic rail append + `submitEpisodeCommentRow` + resume, Cancel = discard + resume. Request Revisions and Approve wired. Detection retired from Loop A (Drive folder-watch); producer marks `Upload_Produced_Episode` task complete → `completeUploadEpisode` flips `Video_Status → review` and spawns `Review_Episode`. Governance keys needed: `REVIEW_GCS_BUCKET`, `GCS_SIGNER_SA`, `GCS_EXPIRY_SECONDS`.
 - **Reels sub-tab (Design) — live (2026-05-24, refined 2026-05-25).** Drive `/preview` playback in phone frame. Caption box reads `Caption_Host`; Generate writes caption from `Reel_Summary` via Claude (`generateReelCaption`). Two verbs: Export (moves reel → `Manual_Exports/`, filename = title slug; paired `.txt`), Request Revision (popup task form → `requestReelRevision` → `Revision_Notes`). Edit with Vids and day-picker removed. `closeReelRevision`: swaps `Drive_File_ID` on AL row by `Asset_ID`, moves old file → `Reels/Superseded/`, completes open `Revise_Reels` task, `bumpVersion` both domains, next Pulse re-spawns `Review_Reels`. **Drive chrome shown** — two-person internal app; crop hack retired. `getReelStreamUrl` returns `/preview` URL (was `uc?id=`). Reel cards: thumbnail left 1/3 (Drive thumbnail API `?sz=w200`), name + full summary right 2/3, no truncation. Modal z-index bug fixed (duplicate `z-index:200` was overriding `400`, hiding modal behind Studio Overlay at z-index 300). Reel revision modal centered with full corner radius.
-- **Revision Flow spoke — live (2026-05-24).** Episode review: native `<video>` player via `getProxyStreamUrl` (was iframe; enables JS control). Compose loop: focus pauses video + freezes timestamp; Send = optimistic rail append + `submitEpisodeCommentRow` write + resume; Cancel = discard + resume; empty Send = no-op + resume. Rail receipts: round-grouped sealed cards (`Revision_Round` from Episode_Log). Request Revisions = hard-seal → `requestEpisodeRevisions` GAS call → composer locks → sealed notice appended to round card. `Revise_Episode` Complete button wired to `completeEpisodeRevisionTask` → validates Episode/ single-video invariant before completing. Reel revision: inline textarea replaced by popup task form; fix text → `Revision_Notes` via `requestReelRevision(epUid, assetId, notes)`. Episode_Log extended to 10 cols (`Revision_Round` col 10; header added manually). `spawnTask()` now reads `revisionNotes` from taskConfig (fixes blank-instruction bug on all revision tasks).
+- **Revision Flow spoke — live (2026-05-24).** Episode review compose loop: focus pauses video + freezes timestamp; Send = optimistic rail append + `submitEpisodeCommentRow` write + resume; Cancel = discard + resume; empty Send = no-op + resume. Rail receipts: round-grouped sealed cards (`Revision_Round` from Episode_Log). Request Revisions = hard-seal → `requestEpisodeRevisions` GAS call → composer locks → sealed notice appended to round card. `Revise_Episode` Complete button wired to `completeEpisodeRevisionTask` → validates Episode/ single-video invariant before completing. Reel revision: inline textarea replaced by popup task form; fix text → `Revision_Notes` via `requestReelRevision(epUid, assetId, notes)`. Episode_Log extended to 10 cols (`Revision_Round` col 10; header added manually). `spawnTask()` now reads `revisionNotes` from taskConfig (fixes blank-instruction bug on all revision tasks). Note: episode player source was Drive `uc?id=` (broken for large files) → repointed to GCS signed URL in the 2026-05-26 spoke.
 - **Tasks schema — col 17 added: `Asset_ID`** (FK to Asset_Library for revision tasks). `TASKS_COLS.Asset_ID = 17` in `dwyp_app.js`; `spawnTask()` in `fairy_circle.js` writes it header-driven. **Manual step required:** add `Asset_ID` header in column 17 of Tasks tab in production Master Sheet.
 - **Master Template — v3.0 live.** Paste + B6 #3 (ATTRIBUTION parser) + B6 #2 (extractPrompt consolidation) all shipped 2026-05-20. extractPrompt CR/LF fix applied (fairy_circle.js) — v3.0 paste introduced \r line endings; split now handles \r/\n/\r\n. Smoke test (test_extractPromptSmokeTest) confirmed all 5 new section keys return non-empty. `# AI Search Index` section added to template (2026-05-22).
 - **v3.0 coupling — B6 #3: SHIPPED.** ATTRIBUTION-line parser live. QUOTE block format and _bridgeParseRankedItems_ / materializeQuoteGraphicAssets shipped together 2026-05-20.
@@ -196,7 +197,7 @@ See `CLAUDE.md` for canonical doc inventory and reading order.
     Episode/
       [finished transcript]
       [finished episode video]
-      [proxy file: proxy_*.mp4]          ← Daily Pulse Loop A → Review Episode
+      [finished transcript]
     Images/                              ← Files here → Daily Pulse Loop B → Review Images
       Approved/
       Save/
@@ -250,7 +251,8 @@ CORPUS_DRIVE_FOLDER_ID/                  ← Watched by Vertex Drive connector
 | 3 | Guest Brief Review | JT | Audra approval of #2 | Auto-closes; JT pulls from Contact Library. ✅ Wired. |
 | 4 | Image Workshop Ready | JT | Filing Fairy | ✅ Built. ⚠️ Name stale — IW retired. Rename to "Studio Assets Ready" in Spoke 1. |
 | 5 | Produce Episode | Audra | Filing Fairy | ✅ Built. |
-| 6 | Review Episode | JT | Daily Pulse, proxy_ detected | ✅ Built. |
+| 5b | Upload Produced Episode | Audra | Spawned after Produce Episode (manual step for now) | ✅ Built (2026-05-26). Payload_Link = GCS bucket console deep-link. Complete → `completeUploadEpisode` → flips `Video_Status → review` + spawns Review_Episode. |
+| 6 | Review Episode | JT | Upload_Produced_Episode task completion | ✅ Built. Trigger changed from Loop A folder-watch to task completion handler. |
 | 7 | Review Images | JT | Daily Pulse, files in Images/ | ✅ Built. |
 | 8 | Review Reels | JT | Daily Pulse, files in Reels/ | ✅ Built. |
 | 9 | Revise Reels / Revise Episode | Audra | `Revise_Reels`: §4 Request Revision or Edit with Vids. `Revise_Episode`: JT Request Revisions in Episode review. | ✅ Live. `Revise_Reels`: spawned by `requestReelRevision` (§4 close) and `spawnReelEditTask`; carries `Asset_ID` FK. `Revise_Episode`: spawned by `requestEpisodeRevisions`; carries `Episode_UID` + Drive folder deep-link in Payload_Link; Complete validates Episode/ single-video invariant via `completeEpisodeRevision`. |
@@ -266,8 +268,8 @@ CORPUS_DRIVE_FOLDER_ID/                  ← Watched by Vertex Drive connector
 2. Daily Pulse Loop 1 fires D-1 → Recording Date Reminder spawned (HOST + PRODUCER)
 3. Herald runs → Guest Brief written → Guest Brief Enrich task (Audra)
 4. Audra enriches + approves → Guest Brief Review task (JT) — auto-closes
-5. Audra uploads finished transcript + proxy to `Staging/Episode/`
-6. Daily Pulse Loop A detects proxy → Review Episode task (JT)
+5. Audra uploads finished transcript to `Staging/Episode/`; uploads proxy mp4 to GCS `dwyp-review-playback/episodes/{EUID}/proxy.mp4`
+6. Audra marks Upload_Produced_Episode task complete → `completeUploadEpisode` → `Video_Status → review` + Review Episode task (JT)
 7. Daily Pulse Loop B/C detects Images/Reels → Review tasks (JT)
 8. JT sorts assets; comments on reels → Revise_Reels tasks for Audra
 9. Daily Pulse D-7: Runway Reminder (if unresolved assets)
@@ -567,6 +569,7 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 
 **Needs value set:**
 `STUDIO_LLM_MODE` → `claude` (before Studio backend spoke).
+`REVIEW_GCS_BUCKET` → `dwyp-review-playback`; `GCS_SIGNER_SA` → `309883149140-compute@developer.gserviceaccount.com`; `GCS_EXPIRY_SECONDS` → `28800` — all required before episode GCS player is live.
 
 **Add before Studio backend spoke:**
 `ASSET_LIBRARY_TAB_NAME` = `Asset_Library`, `STUDIO_TOKEN_WARNING_THRESHOLD` = `50000`.
@@ -606,17 +609,15 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 
 ## Engineering Notes
 
-### Drive Video Playback — Current Strategy
+### Video Playback — Current Strategy
 
-**Active approach:** Drive `/preview` iframe. `getReelStreamUrl(fileId)` calls `setSharing(ANYONE_WITH_LINK, VIEW)` and returns `https://drive.google.com/file/d/{fileId}/preview`. Frontend: `<iframe id="stReelPlayerFrame" position:absolute; inset:0; width:100%; height:100%>`. URL cached on `reel._streamUrl` — first tap pays the GAS round-trip, every subsequent tap is instant.
+**Episode proxy:** Native `<video id="stEpVideo">` fed by `getEpisodeStreamUrl(episodeUid)` — a V4-signed GCS GET URL (bucket `dwyp-review-playback`, path `episodes/{EUID}/proxy.mp4`, 8h expiry). Signing: IAM signBlob API via owner's `ScriptApp.getOAuthToken()` (`cloud-platform` scope already in manifest). URL is re-minted on every open; never stored. Enables JS control (focus-pause-freeze-timestamp, scrub, resume). Troubleshooting: if signBlob returns 403, verify `iamcredentials.googleapis.com` API is enabled in GCP Console. File must exist at exact GCS path before the player is opened.
 
-**Drive chrome shown intentionally.** Two-person internal app — both users know the source. Crop hack (`top:-52px / height:calc(100%+Npx)`) was retired 2026-05-25; it produced a persistent 2px left-edge artifact during playback (Drive player internal rendering, unreachable from CSS). See memory: `project_video_hosting.md` — Cloudflare Stream or Mux when ready to upgrade.
+**Reels:** Drive `/preview` iframe. `getReelStreamUrl(fileId)` sets sharing to anyone-with-link and returns `/preview` URL. URL cached on `reel._streamUrl` — first tap pays GAS round-trip, subsequent taps instant. Drive chrome shown intentionally (two-person internal app). Crop hack retired 2026-05-25 — produced a 2px left-edge artifact unreachable from CSS. See memory: `project_video_hosting.md` — Cloudflare Stream or Mux when ready to upgrade.
 
-**Why "anyone with link" is acceptable:** Reels are produced for public posting. Making the source file link-accessible is not a meaningful privacy exposure. `setSharing()` is idempotent.
-
-**Paths ruled out:**
+**Paths ruled out for reels:**
 - `uc?id=` + native `<video>` — Drive returns a virus-scan HTML interstitial for files over ~25MB; scrubbing broken (no byte-range). Dead on real reels.
-- GCS migration — GAS blob ceiling (~50MB) caps file size with no simple escape hatch; requires a microservice for large reels. Deferred indefinitely.
+- GCS migration for reels — deferred; GAS blob ceiling + microservice requirement. Bucket `dwyp-reel-playback` is an orphan (zero code references) — safe to delete in GCP Console at discretion.
 
 ---
 

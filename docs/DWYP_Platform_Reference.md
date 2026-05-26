@@ -36,7 +36,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 20. **`createEpisodeFolder()` is private to `secretary_fairy`.** Not promoted to `fairy_circle`.
 21. **Initial manifest shape locked.** Fields: `episode_uid, contact_id, guest_name, recording_date, raw_folder_id, staging_folder_id, status, phase, created_at, herald_form_data`.
 22. **Approval state authority is Episodes tab.** `Video_Status` and `Images_Status` written by web app on JT action. GAS does not independently verify.
-23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
+23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Upload_Produced_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
 24. **`clerk_fairy.gs` owns `doPost()`.** Routes: `filing` → `runFilingFairy()`, `invite` → `scribeLetSchedule()`. `filing_fairy` exposes `runFilingFairy()` as callable entry point only. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
 25. **Scribe Fairy is a new file, not a port.** Five defined touchpoints. No `doPost()`.
 26. **Filing and Scribe stay separate files.**
@@ -70,12 +70,12 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 59. **Mending Fairy — `correctGuestName()` is the canonical fix for guest name errors.** Corrects name across: Contacts tab, Episodes tab, Tasks, Drive folder names, manifest, Production Notes. Logs all changes to Audit_Trail. Triggered manually. Build after Carrie Sipe episode completes.
 69. **JT is a Claude Pro subscriber.** JT has her own Claude Pro account. This enables direct Claude.ai access for creative sessions independent of the platform's API calls.
 72. **Frame.io retired entirely. In-app review replaces all Frame.io workflows.** Frame.io removed from the stack. All review workflows (episodes, reels, images) handled natively in the DWYP web app. Make.com Frame.io scenario deprecated. Clerk Fairy webhook receiver not built. `Frameio_Project_ID` column on Episodes tab is retired.
-73. **Episode review uses a proxy video.** Audra exports a proxy from DaVinci Resolve and places it in `Staging/Episode/` subfolder using a `proxy_` filename prefix. Daily Pulse Loop A detects the proxy file and spawns the Review_Episode task. `getProxyFileId()` scans `Staging/Episode/` to resolve the file ID for the in-app embed.
-74. **Proxy detection is folder-watch based.** Daily Pulse Loop A watches `Staging/Episode/` subfolder for `proxy_` prefix files. Review view reads file ID to embed video via Drive iframe. Overwritten each revision cycle.
-75. **`Proxy_File_ID` column added to Episodes tab.** Schema is now v1.6 (16 columns). Column position: after `Production_Folder_ID`.
+73. **Episode review uses a proxy video on GCS.** Audra exports a proxy from DaVinci Resolve and uploads it to GCS bucket `dwyp-review-playback` at path `episodes/{EUID}/proxy.mp4`. One proxy per episode; a new upload overwrites the old. Player is native `<video>` fed by a V4-signed GCS GET URL (8h expiry, re-minted on every open). Drive `Staging/Episode/` subfolder still receives the finished transcript; no proxy file is placed there.
+74. **Episode detection is task-completion based.** Audra marks the `Upload_Produced_Episode` task complete after uploading to GCS. `completeUploadEpisode()` in `dwyp_app.js` handles: mark task complete, flip `Video_Status → review`, spawn `Review_Episode` task, bump `episodes` + `tasks` versions. Drive folder-watch (Loop A) is retired. `Upload_Produced_Episode` task carries `Payload_Link` = GCS bucket console deep-link.
+75. **`Proxy_File_ID` column (Episodes col 15) — dormant.** Was written by the retired Loop A drive-watch. GAS no longer writes it; review player resolves video from GCS path by EUID alone. Column stays in sheet — no destructive column removal without explicit decision.
 76. **In-app Episode Review gate.** Review_Episode task stays open until Filing Fairy closes the episode. Timestamped comments sent by JT create or append to a Revise task for Audra. Request Revisions spawns revision task for Audra, task remains open.
 77. **Social_Assets loop in Daily Pulse: queued.** Candidate row creation on file detection — not yet built.
-78. **`Proxy_File_ID` written by Daily Pulse, not manually.** `proxy_` prefix in `Staging/Episode/` subfolder is the trigger. GAS resolves file ID and writes to Episodes tab automatically.
+78. **GCS signing — signBlob path (locked).** `getEpisodeStreamUrl()` uses IAM signBlob API (`https://iam.googleapis.com/v1/projects/-/serviceAccounts/{SA}:signBlob`). Signer: `309883149140-compute@developer.gserviceaccount.com`. Auth: owner's `ScriptApp.getOAuthToken()` (`cloud-platform` scope in manifest). V4 canonical request: `UNSIGNED-PAYLOAD`, `host` signed-headers only, credential scope `{date}/auto/storage/goog4_request`. No stored JSON key. Prerequisite: `iamcredentials.googleapis.com` API enabled in GCP Console.
 89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Vert Fairy: automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript. Social Vert and Librarian Vert as named sub-roles were subsequently retired (AD #97) — superseded by Vert (retrieval) + Claude (generation) model. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
 90. **Dashboard replaces Episodes and Tasks tabs as the primary home screen.** `renderDashboard()` is the entry point. navDashboard in place, shim removed. Episodes tab and Tasks tab are retired. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
 91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
@@ -382,9 +382,9 @@ Fields written by GAS to the episode manifest JSON file in the Staging folder.
 - JT never receives a brief that hasn't been reviewed by Audra first.
 
 ### Episode Review Gate
-- Audra places proxy (`proxy_` prefix) in `Staging/Episode/` subfolder.
-- Daily Pulse Loop A detects proxy → spawns `Review_Episode` task for JT.
-- JT watches via in-app Drive iframe embed. Marks timestamps, types notes, taps Send → creates or appends Revise task for Audra.
+- Audra uploads proxy mp4 to GCS bucket `dwyp-review-playback` at `episodes/{EUID}/proxy.mp4`.
+- Audra marks `Upload_Produced_Episode` task complete → `completeUploadEpisode()` → `Video_Status → review` → `Review_Episode` task spawned for JT.
+- JT watches via native `<video>` player (GCS V4-signed URL, 8h expiry). Marks timestamps, types notes, taps Send → creates or appends Revise task for Audra.
 - Task stays open until Filing Fairy closes episode.
 
 ### Images / Reels Review Gate
@@ -486,7 +486,6 @@ Design and Publish share the same Fabric.js canvas. Assets move between them wit
     Episode/
       [finished transcript]
       [finished episode video]
-      [proxy video: proxy_*.mp4]      ← Daily Pulse Loop A detects here → Review Episode
     Images/                           ← Files here → Daily Pulse Loop B → Review Images task
       Approved/                       ← Filing Fairy moves to Finished Episodes
       Save/                           ← Filing Fairy moves to REELS_ARCHIVE_FOLDER_ID
@@ -705,6 +704,15 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 ---
 
 ## Build History
+
+### v3.4 → v3.5 (May 2026)
+
+- **Episode GCS player shipped.** `getEpisodeStreamUrl(episodeUid)` added to `dwyp_app.js` — mints a V4-signed GCS GET URL (`dwyp-review-playback/episodes/{EUID}/proxy.mp4`, 8h expiry) via IAM signBlob. Owner's `ScriptApp.getOAuthToken()` is the signer; `cloud-platform` scope already in manifest. No stored key. Episode Design tab (`stEpView`) repointed from Drive iframe to native `<video id="stEpVideo">` — compose loop (focus-pause-freeze-timestamp, send/cancel/resume) fully functional now that the element exists.
+- **Episode detection replaced.** `completeUploadEpisode(rowIndex, episodeUid)` added — marks `Upload_Produced_Episode` task complete, flips `Video_Status → review`, spawns `Review_Episode`, bumps both `episodes` and `tasks` versions. UI handler `completeUploadEpisodeTask` added; `Upload_Produced_Episode` branch added to task button rendering. Daily Pulse Loop A (Drive folder-watch `proxy_` detection) retired in `fairy_circle.js`.
+- **ADs 73, 74, 75, 78 updated.** Proxy-on-GCS, task-completion detection, `Proxy_File_ID` column dormant, signBlob signing pattern locked. AD #23 `Workflow_Step` enum extended: `Upload_Produced_Episode` added.
+- **Governance keys required:** `REVIEW_GCS_BUCKET` = `dwyp-review-playback`; `GCS_SIGNER_SA` = `309883149140-compute@developer.gserviceaccount.com`; `GCS_EXPIRY_SECONDS` = `28800`. Populate before opening episode in Design tab.
+
+---
 
 ### v3.3 → v3.4 (May 2026)
 

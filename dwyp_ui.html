@@ -1070,6 +1070,24 @@ svg { display: block; flex-shrink: 0; }
   border-top: 1px solid var(--border);
 }
 
+/* ── EPISODE UPLOAD PANEL ───────────────────────────────────── */
+.ep-upload-panel { margin-top: 10px; }
+.ep-upload-bar-wrap {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.ep-upload-bar {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.25s ease;
+}
+.ep-upload-status { font-size: 11px; color: var(--text-2); }
+
 /* ── FILTER BAR (Tasks view) ─────────────────────────────────── */
 .filter-bar {
   display: flex;
@@ -3428,6 +3446,10 @@ body.studio-open .app-header { display: none; }
 #stReelPlayerFrame {
   position: absolute; inset: 0; width: 100%; height: 100%; border: none; display: block;
 }
+/* ── STUDIO — Episode tab (Design > Episode mode) ─────────── */
+.st-ep-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; background: #111; align-items: center; justify-content: center; }
+.st-ep-player-notice { font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; padding: 24px; }
+.st-ep-view .rv-player-wrap { width: 100%; align-self: stretch; }
 
 /* ── STUDIO — snap guides ──────────────────────────────────── */
 .st-snap-guide { position: absolute; pointer-events: none; z-index: 10; background: rgba(52,152,219,0.7); }
@@ -3603,6 +3625,10 @@ body.studio-open .app-header { display: none; }
       <svg width="20" height="20" data-lucide="layout-dashboard"></svg>
       Dashboard
     </button>
+    <button class="nav-tab" id="navTasks" onclick="switchTab('tasks')">
+      <svg width="20" height="20" data-lucide="check-square"></svg>
+      Tasks
+    </button>
     <button class="nav-tab" id="navContacts" onclick="switchTab('contacts')">
       <svg width="20" height="20" data-lucide="users"></svg>
       Contacts
@@ -3722,16 +3748,11 @@ body.studio-open .app-header { display: none; }
       </svg>
       <span class="v3-rail-wordmark">Studio</span>
     </div>
-    <!-- Accordion nav (Design / Write / Schedule / Tasks) -->
+    <!-- Accordion nav (Write / Tasks) -->
     <div class="st-rail-accordion" id="stRailAccordion">
 
-      <!-- Design -->
-      <div class="st-acc-hdr open" id="stAccHdrDesign" onclick="stAccToggle('design')">
-        <span>Design</span><span class="st-acc-caret">›</span>
-      </div>
-      <div class="st-acc-body open" id="stAccBodyDesign">
-        <!-- populated by stRenderRailGuests() -->
-      </div>
+      <!-- Guests (root nav — populated by stRenderRailGuests()) -->
+      <div id="stRailGuests"></div>
 
       <!-- Write -->
       <div class="st-acc-hdr" id="stAccHdrWrite" onclick="stAccToggle('write')">
@@ -3741,20 +3762,13 @@ body.studio-open .app-header { display: none; }
         <div class="st-acc-item" id="stAccItemBrainstorm" onclick="stAccSelectMode('brainstorm')">Brainstorm</div>
       </div>
 
-      <!-- Schedule (stub) -->
-      <div class="st-acc-hdr" id="stAccHdrSchedule" onclick="stAccToggle('schedule')">
-        <span>Schedule</span><span class="st-acc-caret">›</span>
-      </div>
-      <div class="st-acc-body" id="stAccBodySchedule">
-        <div class="st-acc-stub">Coming soon</div>
-      </div>
-
       <!-- Tasks -->
       <div class="st-acc-hdr" id="stAccHdrTasks" onclick="stAccToggle('tasks')">
         <span>Tasks</span><span class="st-acc-caret">›</span>
       </div>
       <div class="st-acc-body" id="stAccBodyTasks">
-        <div class="st-acc-stub">Tasks coming soon</div>
+        <div class="st-acc-item" id="stAccItemBuckets" onclick="stAccSelectTaskView('buckets')">Buckets</div>
+        <div class="st-acc-item" id="stAccItemEpisodes" onclick="stAccSelectTaskView('episodes')">Episodes</div>
       </div>
 
     </div>
@@ -3806,6 +3820,7 @@ body.studio-open .app-header { display: none; }
       <div class="st-seg-row" id="stSegRow" style="display:none">
         <button class="st-seg-btn active" id="stSegImages" onclick="stSetDesignTab('qg')">Images</button>
         <button class="st-seg-btn" id="stSegReels" onclick="stSetDesignTab('reels')">Reels</button>
+        <button class="st-seg-btn" id="stSegEpisode" onclick="stSetDesignTab('episode')">Episode</button>
       </div>
       <!-- Caption region: pinned above chat, shown in Design mode -->
       <div class="st-caption-wrap" id="stCaptionWrap" style="display:none">
@@ -3940,6 +3955,11 @@ body.studio-open .app-header { display: none; }
 
       </div><!-- /stCanvasView -->
 
+      <!-- Episode view (Design tab, Episode mode) — native video player -->
+      <div class="st-ep-view" id="stEpView" style="display:none">
+        <div class="st-ep-player-notice" id="stEpPlayerNotice">Select a guest to load the episode.</div>
+      </div>
+
       <!-- Reels view (Design tab, Reels mode) — phone-sized video player -->
       <div class="st-reel-view" id="stReelView" style="display:none">
         <div class="st-reel-player-area" id="stReelPlayerArea">
@@ -3983,6 +4003,11 @@ body.studio-open .app-header { display: none; }
         </div>
       </div><!-- /stDocView -->
 
+      <!-- Tasks placeholder views (Buckets / Episodes sub-items) -->
+      <div id="stTasksStubView" style="display:none;flex:1;align-items:center;justify-content:center">
+        <div id="stTasksStubMsg" style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6"></div>
+      </div>
+
     </div><!-- /st-content-col -->
 
     <!-- Drag handle: content ↔ assets -->
@@ -4021,6 +4046,9 @@ body.studio-open .app-header { display: none; }
           </div>
         </div>
       </div><!-- /stImgAssets -->
+
+      <!-- Episode browser (Design > Episode mode) -->
+      <div id="stEpBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0"></div>
 
       <!-- Reel browser (Design > Reels mode) -->
       <div id="stReelBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
@@ -4395,6 +4423,7 @@ function loadData() {
           state.loaded         = true;
           _coldStartComplete   = true;
           stRenderRailGuests();
+          stRenderAccordionTasks();
           // Auto-select closest-date episode now that data is ready
           if (!st.episodeUid && state.episodes && state.episodes.length) {
             var _sorted = state.episodes.slice().sort(function(a, b) {
@@ -4441,8 +4470,6 @@ function applyFilters(tasks) {
   var filtered = securityFilter(tasks);
   var email    = APP_CONFIG.userEmail.toLowerCase();
 
-  console.log("[DEBUG applyFilters] email:[" + email + "] len:" + email.length + " | isJT:" + isJT() + " | codes:" + Array.from(email).map(function(c){return c.charCodeAt(0);}).join(","));
-  tasks.forEach(function(t, i) { var a = (t.Assignee || ""); console.log("  task[" + i + "] assignee:[" + a + "] len:" + a.length + " match:" + (a.toLowerCase() === email)); });
   if (state.filters.assignee === "me") {
     filtered = filtered.filter(function(t) {
       return (t.Assignee || "").toLowerCase() === email;
@@ -4501,6 +4528,7 @@ function switchTab(tab) {
   document.getElementById("headerTitle").textContent = titles[tab] != null ? titles[tab] : "";
 
   document.getElementById("navDashboard").classList.toggle("active", tab === "dashboard");
+  document.getElementById("navTasks").classList.toggle("active",     tab === "tasks");
   document.getElementById("navContacts").classList.toggle("active",  tab === "contacts");
 
   refreshVersions();
@@ -6010,7 +6038,7 @@ function stFirePromptChip(promptText) {
 }
 
 // ── RAIL ACCORDION ───────────────────────────────────────────
-var _stAccSections = ['design', 'write', 'schedule', 'tasks'];
+var _stAccSections = ['write', 'tasks'];
 
 function stAccToggle(section) {
   var isOpen = document.getElementById('stAccHdr' + section.charAt(0).toUpperCase() + section.slice(1)).classList.contains('open');
@@ -6029,7 +6057,7 @@ function stAccOpen(section) {
 }
 
 function stRenderRailGuests() {
-  var body = document.getElementById('stAccBodyDesign');
+  var body = document.getElementById('stRailGuests');
   if (!body) return;
   var eps = (state && state.episodes) ? state.episodes.slice() : [];
   if (!eps.length) {
@@ -6055,47 +6083,17 @@ function stRenderRailGuests() {
 }
 
 function stRenderAccordionTasks() {
-  var body = document.getElementById('stAccBodyTasks');
-  if (!body) return;
-  var loose = (state.tasks || []).filter(function(t) { return !t.Episode_UID; }).slice(0, 10);
-  if (!loose.length) {
-    body.innerHTML = '<div class="st-acc-stub">No loose tasks</div>';
-    return;
-  }
-  body.innerHTML = '';
-  loose.forEach(function(t) {
-    var icon   = (t.Workflow_Step === 'Outreach' || t.Workflow_Step === 'Send_Email') ? '✉' : '◻';
-    var dotCls = (t.Status === 'complete' || t.Status === 'done') ? 'done' : 'open';
-    var tid    = esc(t.Task_ID || t.Action_Title || '');
-    var el     = document.createElement('div');
-    el.className = 'v3-loose-item';
-    el.setAttribute('data-task-id', tid);
-    el.setAttribute('onclick', 'v3ToggleTask(this)');
-    el.innerHTML =
-      '<div class="v3-loose-item-row">' +
-        '<span class="v3-lt-icon">' + icon + '</span>' +
-        '<span class="v3-lt-meta">' +
-          '<span class="v3-lt-title">' + esc(t.Action_Title || '—') + '</span>' +
-          '<span class="v3-lt-who">'   + esc(t.Assignee   || '')    + '</span>' +
-        '</span>' +
-        '<span class="v3-lt-dot ' + dotCls + '"></span>' +
-      '</div>' +
-      '<div class="v3-loose-expand">' +
-        '<button class="v3-loose-verb-btn" onclick="event.stopPropagation();v3CompleteTask(\'' + tid + '\',this)">Mark Done</button>' +
-      '</div>';
-    body.appendChild(el);
-  });
+  // Loose tasks no longer render in the rail — sub-items are static HTML.
 }
 
 function stSelectGuest(uid, name) {
   // Mark active in rail
-  document.querySelectorAll('#stAccBodyDesign .st-acc-item').forEach(function(el) {
+  document.querySelectorAll('#stRailGuests .st-acc-item').forEach(function(el) {
     el.classList.toggle('active', el.getAttribute('data-uid') === uid);
   });
   // Select episode (resets H&Q cache, reel cache)
   stSelectEpisode(uid, name);
-  // Ensure Design accordion is open and Design mode is active
-  stAccOpen('design');
+  // Ensure Design mode is active
   if (st.currentTab !== 'design') stSwitchTab('design');
 }
 
@@ -6114,6 +6112,10 @@ function stAccSelectMode(mode) {
   if (companionDiv) companionDiv.style.display = 'none';
   var reelBrowser = document.getElementById('stReelBrowser');
   if (reelBrowser) reelBrowser.style.display = 'none';
+  var epBrowser = document.getElementById('stEpBrowser');
+  if (epBrowser) epBrowser.style.display = 'none';
+  var epView = document.getElementById('stEpView');
+  if (epView) epView.style.display = 'none';
   if (st.currentTab !== 'write') stSwitchTab('write');
   // Mark write item active
   document.querySelectorAll('#stAccBodyWrite .st-acc-item').forEach(function(el) {
@@ -6121,6 +6123,34 @@ function stAccSelectMode(mode) {
   });
   var hist = document.getElementById('stChatHist');
   if (hist) { hist.dataset.ph = ST_PLACEHOLDERS[mode] || ''; if (!hist.children.length) stShowWelcomeCard(); }
+}
+
+function stAccSelectTaskView(view) {
+  st.currentMode = view;
+  document.getElementById('stCanvasView').style.display  = 'none';
+  document.getElementById('stDocView').style.display     = 'none';
+  document.getElementById('stImgAssets').style.display   = 'none';
+  document.getElementById('stWriteAssets').style.display = 'none';
+  var segRow = document.getElementById('stSegRow');
+  if (segRow)       segRow.style.display       = 'none';
+  var captionWrap  = document.getElementById('stCaptionWrap');
+  if (captionWrap)  captionWrap.style.display  = 'none';
+  var companionDiv = document.getElementById('stCompanionDiv');
+  if (companionDiv) companionDiv.style.display = 'none';
+  var reelBrowser = document.getElementById('stReelBrowser');
+  if (reelBrowser) reelBrowser.style.display = 'none';
+  var epBrowser = document.getElementById('stEpBrowser');
+  if (epBrowser) epBrowser.style.display = 'none';
+  var epView = document.getElementById('stEpView');
+  if (epView) epView.style.display = 'none';
+  var stub = document.getElementById('stTasksStubView');
+  if (stub) stub.style.display = 'flex';
+  var msg = document.getElementById('stTasksStubMsg');
+  if (msg) msg.textContent = view === 'buckets' ? 'Buckets — coming soon.' : 'Episodes — coming soon.';
+  stAccOpen('tasks');
+  document.querySelectorAll('#stAccBodyTasks .st-acc-item').forEach(function(el) {
+    el.classList.toggle('active', el.id === 'stAccItem' + view.charAt(0).toUpperCase() + view.slice(1));
+  });
 }
 
 // ── H&Q TRAY — retired; H&Q is now a right-rail tab (stHqRailPane) ──────────
@@ -6350,30 +6380,42 @@ function stSubmitReelRevisionPopup() {
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
 function stSetDesignTab(tab) {
   st.designTab = tab;
-  var isQg = (tab === 'qg');
+  var isQg   = (tab === 'qg');
+  var isReel = (tab === 'reels');
+  var isEp   = (tab === 'episode');
 
   // Segmented toggle state
-  var segImages = document.getElementById('stSegImages');
-  var segReels  = document.getElementById('stSegReels');
-  if (segImages) segImages.classList.toggle('active', isQg);
-  if (segReels)  segReels.classList.toggle('active', !isQg);
+  var segImages  = document.getElementById('stSegImages');
+  var segReels   = document.getElementById('stSegReels');
+  var segEpisode = document.getElementById('stSegEpisode');
+  if (segImages)  segImages.classList.toggle('active',  isQg);
+  if (segReels)   segReels.classList.toggle('active',   isReel);
+  if (segEpisode) segEpisode.classList.toggle('active', isEp);
 
-  // Center: canvas (Images) or reel player (Reels)
+  // Center: canvas (Images) | reel player (Reels) | episode player (Episode)
   document.getElementById('stCanvasView').style.display = isQg ? 'flex' : 'none';
   if (isQg && st.fabricCanvas) setTimeout(stApplyDisplaySize, 0);
   var reelView = document.getElementById('stReelView');
-  if (reelView) reelView.style.display = isQg ? 'none' : 'flex';
+  if (reelView) reelView.style.display = isReel ? 'flex' : 'none';
+  var epView = document.getElementById('stEpView');
+  if (epView) epView.style.display = isEp ? 'flex' : 'none';
 
-  // Right rail: H&Q|Backgrounds panel (Images) or reel browser (Reels)
+  // Right rail: HQ+Backgrounds (Images) | reel browser (Reels) | ep browser (Episode)
   document.getElementById('stImgAssets').style.display = isQg ? 'flex' : 'none';
   var reelBrowser = document.getElementById('stReelBrowser');
-  if (reelBrowser) reelBrowser.style.display = isQg ? 'none' : 'flex';
+  if (reelBrowser) reelBrowser.style.display = isReel ? 'flex' : 'none';
+  var epBrowser = document.getElementById('stEpBrowser');
+  if (epBrowser) epBrowser.style.display = isEp ? 'flex' : 'none';
 
-  // Companion: Title Card + Generate button shown in Reels mode only; clear caption on switch
+  // Caption wrap: hidden in Episode mode (no caption for episode video)
+  var captionWrap = document.getElementById('stCaptionWrap');
+  if (captionWrap) captionWrap.style.display = isEp ? 'none' : 'flex';
+
+  // Title Card + Generate button: Reels only
   var titleCardWrap = document.getElementById('stTitleCardWrap');
-  if (titleCardWrap) titleCardWrap.style.display = isQg ? 'none' : 'block';
+  if (titleCardWrap) titleCardWrap.style.display = isReel ? 'block' : 'none';
   var genCaptionWrap = document.getElementById('stGenerateCaptionWrap');
-  if (genCaptionWrap) genCaptionWrap.style.display = isQg ? 'none' : 'block';
+  if (genCaptionWrap) genCaptionWrap.style.display = isReel ? 'block' : 'none';
   var captionEl = document.getElementById('stCaptionField');
   if (captionEl) {
     captionEl.textContent = '';
@@ -6384,8 +6426,8 @@ function stSetDesignTab(tab) {
   var titleCardEl = document.getElementById('stTitleCardField');
   if (titleCardEl) titleCardEl.textContent = '';
 
-  // Reset phone frame + action bar when leaving Reels
-  if (isQg) {
+  // Reset reel phone frame + action bar when leaving Reels
+  if (!isReel) {
     var phoneFrame  = document.getElementById('stReelPhoneFrame');
     var playerEmpty = document.getElementById('stReelPlayerEmpty');
     var playerFrame = document.getElementById('stReelPlayerFrame');
@@ -6399,10 +6441,265 @@ function stSetDesignTab(tab) {
   // Load content for each mode
   if (isQg) {
     if (st.episodeUid) stLoadHqContent(st.episodeUid);
-  } else {
+  } else if (isReel) {
     if (st.episodeUid) stLoadRailReels(st.episodeUid);
     else stRenderRailReelList();
+  } else if (isEp) {
+    if (st.episodeUid) stLoadDesignEpisode(st.episodeUid);
   }
+}
+
+// ── DESIGN TAB — Episode mode ─────────────────────────────────
+function stLoadDesignEpisode(uid) {
+  var epView = document.getElementById('stEpView');
+  if (!epView) return;
+  epView.innerHTML = '<div class="st-ep-player-notice"><div class="spinner" style="margin:0 auto;border-top-color:#fff"></div></div>';
+
+  var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === uid; });
+  epReviewState.episodeUid      = uid;
+  epReviewState.frozenTimestamp = null;
+  epReviewState.revisionRound   = 0;
+  epReviewState.composerLocked  = ep && ep.Video_Status === 'revision_requested';
+
+  stEpRenderBrowser(uid, ep);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      var view = document.getElementById('stEpView');
+      if (!view) return;
+      if (res && res.url) {
+        view.innerHTML = '<div class="rv-player-wrap"><video id="stEpVideo" src="' + res.url + '" controls playsinline preload="metadata"></video></div>';
+      } else {
+        view.innerHTML = '<div class="st-ep-player-notice">' + (res && res.error ? esc(res.error) : 'No video found.') + '</div>';
+      }
+    })
+    .withFailureHandler(function() {
+      var view = document.getElementById('stEpView');
+      if (view) view.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
+    })
+    .getEpisodeStreamUrl(uid);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.rows && res.rows.length) {
+        var last = res.rows[res.rows.length - 1];
+        epReviewState.revisionRound = last.revisionRound || 0;
+      }
+      stEpRenderRailFromHistory(res);
+    })
+    .withFailureHandler(function() {})
+    .getEpisodeRevisionHistory(uid);
+}
+
+function stEpRenderBrowser(uid, ep) {
+  var browser = document.getElementById('stEpBrowser');
+  if (!browser) return;
+  var locked   = ep && ep.Video_Status === 'revision_requested';
+  var approved = ep && ep.Video_Status === 'approved';
+  var uidEsc   = esc(uid);
+
+  var html = '<div class="st-assets-section" style="flex-shrink:0"><div class="st-assets-lbl">Episode</div></div>';
+  html += '<div id="stEpComposerCard" style="padding:12px 12px 0;flex-shrink:0">';
+  html += '<div class="rv-notes-label">Leave a note</div>';
+  if (locked) {
+    html += '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
+  } else if (approved) {
+    html += '<div class="ep-composer-locked-notice">Episode approved.</div>';
+  } else {
+    html += '<div class="ep-composer-ts" id="stEpComposerTs">—</div>';
+    html += '<textarea class="ep-composer-textarea" id="stEpComposerText" placeholder="Note about this moment…" onfocus="stEpComposerFocus()" rows="3"></textarea>';
+    html += '<div class="ep-composer-actions">';
+    html += '<button class="ep-btn-cancel" onclick="stEpComposerCancel()">Cancel</button>';
+    html += '<button class="ep-btn-send" id="stEpComposerSendBtn" onclick="stEpComposerSend(\'' + uidEsc + '\')">Send</button>';
+    html += '</div>';
+  }
+  html += '</div>';
+  html += '<div id="stEpRevisionRail" style="flex:1;overflow-y:auto;padding:8px 12px"></div>';
+  if (!locked && !approved) {
+    html += '<div id="stEpActionCard" style="padding:10px 12px;flex-shrink:0;border-top:1px solid var(--border);display:flex;gap:8px">';
+    html += '<button class="btn btn-approve" id="stEpApproveBtn" onclick="stEpApprove(\'' + uidEsc + '\')">Approve</button>';
+    html += '<button class="btn btn-complete" id="stEpReviseBtn" onclick="stEpRequestRevisions(\'' + uidEsc + '\')">Request Revisions</button>';
+    html += '</div>';
+  }
+
+  browser.innerHTML = html;
+}
+
+function stEpComposerFocus() {
+  var video = document.getElementById('stEpVideo');
+  if (!video || video.paused) return;
+  video.pause();
+  epReviewState.frozenTimestamp = video.currentTime;
+  var s  = Math.floor(epReviewState.frozenTimestamp);
+  var ts = document.getElementById('stEpComposerTs');
+  if (ts) {
+    ts.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    ts.classList.add('has-ts');
+  }
+}
+
+function stEpComposerCancel() {
+  var textarea = document.getElementById('stEpComposerText');
+  if (textarea) textarea.value = '';
+  epReviewState.frozenTimestamp = null;
+  var ts = document.getElementById('stEpComposerTs');
+  if (ts) { ts.textContent = '—'; ts.classList.remove('has-ts'); }
+  var video = document.getElementById('stEpVideo');
+  if (video && video.paused) video.play();
+}
+
+function stEpComposerSend(episodeUid) {
+  var textarea = document.getElementById('stEpComposerText');
+  var body     = textarea ? textarea.value.trim() : '';
+  if (!body) { stEpComposerCancel(); return; }
+
+  var ts    = epReviewState.frozenTimestamp;
+  var round = (epReviewState.revisionRound || 0) + 1;
+  var tsStr = null;
+  if (ts != null) {
+    var s = Math.floor(ts);
+    tsStr = '[' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '] ';
+  }
+
+  stEpRailAppendRow(tsStr, body, round);
+
+  if (textarea) textarea.value = '';
+  epReviewState.frozenTimestamp = null;
+  var tsEl = document.getElementById('stEpComposerTs');
+  if (tsEl) { tsEl.textContent = '—'; tsEl.classList.remove('has-ts'); }
+  var video = document.getElementById('stEpVideo');
+  if (video && video.paused) video.play();
+
+  google.script.run
+    .withSuccessHandler(function() {})
+    .withFailureHandler(function() { showToast('Note failed to save.', true); })
+    .submitEpisodeCommentRow(episodeUid, tsStr ? tsStr + body : body, round, APP_CONFIG.userEmail);
+}
+
+function stEpRailAppendRow(tsStr, body, round) {
+  var rail = document.getElementById('stEpRevisionRail');
+  if (!rail) return;
+  var sectionId = 'stEp-round-' + round;
+  var section   = document.getElementById(sectionId);
+  if (!section) {
+    section           = document.createElement('div');
+    section.className = 'ep-receipt';
+    section.id        = sectionId;
+    section.innerHTML = '<div class="ep-receipt-header">Round ' + round + '</div>';
+    rail.appendChild(section);
+  }
+  var displayBody = tsStr ? tsStr + body : body;
+  var row         = document.createElement('div');
+  row.className   = 'rv-note-item';
+  row.innerHTML   = '<span class="rv-note-text">' + esc(displayBody) + '</span>';
+  section.appendChild(row);
+}
+
+function stEpRenderRailFromHistory(res) {
+  var rail = document.getElementById('stEpRevisionRail');
+  if (!rail || !res || !res.rows || !res.rows.length) return;
+  var byRound = {};
+  res.rows.forEach(function(r) {
+    var rn = r.revisionRound || 1;
+    if (!byRound[rn]) byRound[rn] = [];
+    byRound[rn].push(r);
+  });
+  var html = '';
+  Object.keys(byRound).sort(function(a, b) { return Number(a) - Number(b); }).forEach(function(rn) {
+    html += '<div class="ep-receipt" id="stEp-round-' + rn + '">';
+    html += '<div class="ep-receipt-header">Round ' + rn + '</div>';
+    byRound[rn].forEach(function(r) {
+      html += '<div class="rv-note-item"><span class="rv-note-text">' + esc(r.body || '') + '</span></div>';
+    });
+    if (res.videoStatus === 'revision_requested') {
+      html += '<div class="ep-receipt-sealed">Sealed — Revisions requested</div>';
+    }
+    html += '</div>';
+  });
+  rail.innerHTML = html;
+}
+
+function stEpRequestRevisions(episodeUid) {
+  var revBtn = document.getElementById('stEpReviseBtn');
+  var appBtn = document.getElementById('stEpApproveBtn');
+  if (revBtn) { revBtn.disabled = true; revBtn.textContent = 'Sealing…'; }
+  if (appBtn) { appBtn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (revBtn) { revBtn.disabled = false; revBtn.textContent = 'Request Revisions'; }
+        if (appBtn) { appBtn.disabled = false; }
+        return;
+      }
+      epReviewState.composerLocked = true;
+      var composerCard = document.getElementById('stEpComposerCard');
+      if (composerCard) {
+        composerCard.innerHTML =
+          '<div class="rv-notes-label">Leave a note</div>' +
+          '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
+      }
+      var actionCard = document.getElementById('stEpActionCard');
+      if (actionCard) actionCard.remove();
+      var round   = res.round;
+      var section = document.getElementById('stEp-round-' + round);
+      if (section) {
+        var sealed = document.createElement('div');
+        sealed.className   = 'ep-receipt-sealed';
+        sealed.textContent = 'Sealed — Revisions requested';
+        section.appendChild(sealed);
+      }
+      var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+      if (ep) ep.Video_Status = 'revision_requested';
+      if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+        state.currentEpisode.Video_Status = 'revision_requested';
+      }
+      showToast('Revisions requested — Audra has been notified.');
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (revBtn) { revBtn.disabled = false; revBtn.textContent = 'Request Revisions'; }
+      if (appBtn) { appBtn.disabled = false; }
+    })
+    .requestEpisodeRevisions(episodeUid, APP_CONFIG.userEmail);
+}
+
+function stEpApprove(episodeUid) {
+  var appBtn = document.getElementById('stEpApproveBtn');
+  var revBtn = document.getElementById('stEpReviseBtn');
+  if (appBtn) { appBtn.disabled = true; appBtn.textContent = 'Approving…'; }
+  if (revBtn) { revBtn.disabled = true; }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.success) {
+        var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+        if (ep) ep.Video_Status = 'approved';
+        if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
+          state.currentEpisode.Video_Status = 'approved';
+        }
+        var actionCard = document.getElementById('stEpActionCard');
+        if (actionCard) actionCard.remove();
+        var composerCard = document.getElementById('stEpComposerCard');
+        if (composerCard) {
+          composerCard.innerHTML =
+            '<div class="rv-notes-label">Leave a note</div>' +
+            '<div class="ep-composer-locked-notice">Episode approved.</div>';
+        }
+        showToast('Episode approved.');
+      } else {
+        showToast('Error: ' + (result && result.error ? result.error : 'unknown'), true);
+        if (appBtn) { appBtn.disabled = false; appBtn.textContent = 'Approve'; }
+        if (revBtn) { revBtn.disabled = false; }
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (appBtn) { appBtn.disabled = false; appBtn.textContent = 'Approve'; }
+      if (revBtn) { revBtn.disabled = false; }
+    })
+    .writeVideoStatus(episodeUid, 'approved');
 }
 
 // ── DESIGN TAB — H&Q chips panel ─────────────────────────────
@@ -8376,6 +8673,18 @@ function renderTaskCard(task, idx, showEpisodeContext) {
   html += renderTaskButtons(task);
   html += "</div>";
 
+  // Upload affordance (Upload_Produced_Episode only)
+  if (task.Workflow_Step === "Upload_Produced_Episode") {
+    var upTid    = esc(task.Task_ID);
+    var upEpUid2 = esc(task.Episode_UID || "");
+    html += '<input type="file" id="ep-file-' + upTid + '" accept="video/*" style="display:none"' +
+            ' onchange="onEpisodeFileSelected(\'' + upTid + "'," + task._rowIndex + ",'" + upEpUid2 + '\', this)">';
+    html += '<div class="ep-upload-panel" id="ep-upload-panel-' + upTid + '" style="display:none">';
+    html += '  <div class="ep-upload-bar-wrap"><div class="ep-upload-bar" id="ep-upload-bar-' + upTid + '"></div></div>';
+    html += '  <div class="ep-upload-status" id="ep-upload-status-' + upTid + '"></div>';
+    html += '</div>';
+  }
+
   html += "</div>";
   return html;
 }
@@ -8432,8 +8741,13 @@ function renderTaskButtons(task) {
 
   // Complete button
   var completeSteps = ["Produce_Episode", "Custom_Images", "Post_Social", "Filing",
-                       "Revise_Reels", "Revise_Images", "Revise_Episode"];
-  if (ws === "Revise_Episode") {
+                       "Revise_Reels", "Revise_Images", "Revise_Episode", "Upload_Produced_Episode"];
+  if (ws === "Upload_Produced_Episode") {
+    var upEpUid = esc(task.Episode_UID || "");
+    html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="startEpisodeUpload(\'' + tid + "'," + ridx + ",'" + upEpUid + '\')">';
+    html += '  <svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload Proxy';
+    html += "</button>";
+  } else if (ws === "Revise_Episode") {
     var revEpUid = esc(task.Episode_UID || "");
     html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeEpisodeRevisionTask(\'' + tid + "','" + revEpUid + '\')">';
     html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
@@ -8567,6 +8881,179 @@ function completeTask(taskId, rowIndex) {
     .writeTaskComplete(rowIndex);
 }
 
+// ── EPISODE UPLOAD FLOW ──────────────────────────────────────
+// startEpisodeUpload → checks proxy existence → file picker or self-heal
+// onEpisodeFileSelected → mints upload URL → initiates session → chunked PUT
+// _onEpUploadComplete → calls GAS completeUploadEpisode (marks task, flips status, spawns Review)
+
+function startEpisodeUpload(taskId, rowIndex, episodeUid) {
+  setButtonLoading("complete-" + taskId, true);
+  google.script.run
+    .withSuccessHandler(function(result) {
+      setButtonLoading("complete-" + taskId, false);
+      if (result.error) { showToast("Error: " + result.error, true); return; }
+      if (result.exists) {
+        // Proxy already exists: offer replace or self-heal completion.
+        if (!confirm("A proxy already exists for this episode. Upload a replacement?")) {
+          if (confirm("Mark this task complete using the existing proxy?")) {
+            _onEpUploadComplete(taskId, rowIndex, episodeUid);
+          }
+          return;
+        }
+      }
+      var fileInput = document.getElementById("ep-file-" + taskId);
+      if (fileInput) fileInput.click();
+      else showToast("Upload control not found — refresh and try again.", true);
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      setButtonLoading("complete-" + taskId, false);
+    })
+    .checkEpisodeProxyExists(episodeUid);
+}
+
+function onEpisodeFileSelected(taskId, rowIndex, episodeUid, input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = ""; // reset so same file can be re-selected after error
+
+  var completeBtn = document.getElementById("complete-" + taskId);
+  var panel       = document.getElementById("ep-upload-panel-" + taskId);
+  if (completeBtn) completeBtn.style.display = "none";
+  if (panel)       panel.style.display = "";
+  _updateEpUploadUI(taskId, 0, file.size, "Getting upload URL…");
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.error) {
+        showToast("Error: " + result.error, true);
+        _resetEpUploadUI(taskId);
+        return;
+      }
+      _initiateResumableSession(result.url, file, function(err, sessionUri) {
+        if (err) {
+          showToast("Upload init failed: " + err, true);
+          _resetEpUploadUI(taskId);
+          return;
+        }
+        _doResumableUpload(file, sessionUri, taskId, rowIndex, episodeUid);
+      });
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      _resetEpUploadUI(taskId);
+    })
+    .getEpisodeUploadUrl(episodeUid);
+}
+
+function _initiateResumableSession(signedUrl, file, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", signedUrl);
+  xhr.setRequestHeader("X-Goog-Resumable", "start");
+  xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+  xhr.onload = function() {
+    console.log("[EP Upload] Init status:", xhr.status);
+    // GCS returns 200 for resumable upload initiation; handle 201 defensively.
+    if (xhr.status === 200 || xhr.status === 201) {
+      var loc = xhr.getResponseHeader("Location");
+      console.log("[EP Upload] Session URI:", loc);
+      loc ? callback(null, loc) : callback("Missing Location header from GCS (status " + xhr.status + ")");
+    } else {
+      callback("Init " + xhr.status + ": " + xhr.responseText);
+    }
+  };
+  xhr.onerror = function() { callback("Network error on initiation"); };
+  xhr.send(null);
+}
+
+function _doResumableUpload(file, sessionUri, taskId, rowIndex, episodeUid) {
+  var CHUNK  = 5 * 1024 * 1024; // 5 MB — must be a multiple of 256 KB per GCS spec
+  var total  = file.size;
+  var offset = 0;
+
+  function next() {
+    var end          = Math.min(offset + CHUNK, total);
+    var chunk        = file.slice(offset, end);
+    var contentRange = "bytes " + offset + "-" + (end - 1) + "/" + total;
+    console.log("[EP Upload] PUT chunk:", contentRange, "size:", end - offset);
+    _updateEpUploadUI(taskId, offset, total, _fmtBytes(offset) + " / " + _fmtBytes(total));
+
+    // Use fetch with redirect:'manual' so the browser doesn't try to follow
+    // GCS's 308 Resume Incomplete response (which has no Location header and
+    // causes XHR to fire onerror). With redirect:'manual', a 308 resolves as
+    // response.type === 'opaqueredirect' with status 0.
+    fetch(sessionUri, {
+      method:   'PUT',
+      headers:  { 'Content-Range': contentRange },
+      body:     chunk,
+      redirect: 'manual'
+    }).then(function(response) {
+      console.log("[EP Upload] PUT response type:", response.type, "status:", response.status);
+      if (response.type === 'opaqueredirect') {
+        // 308 Resume Incomplete — GCS accepted the chunk, send the next one.
+        offset = end;
+        next();
+      } else if (response.status === 200 || response.status === 201) {
+        _updateEpUploadUI(taskId, total, total, "Completing…");
+        _onEpUploadComplete(taskId, rowIndex, episodeUid);
+      } else {
+        response.text().then(function(body) {
+          console.log("[EP Upload] PUT error body:", body);
+          showToast("Upload error " + response.status + " — see console", true);
+          _resetEpUploadUI(taskId);
+        });
+      }
+    }).catch(function(err) {
+      console.log("[EP Upload] PUT network error:", err);
+      showToast("Upload failed — check connection", true);
+      _resetEpUploadUI(taskId);
+    });
+  }
+
+  next();
+}
+
+function _onEpUploadComplete(taskId, rowIndex, episodeUid) {
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        removeTaskFromState(taskId);
+        fireConfetti();
+        showToast("Uploaded — Review Episode task spawned");
+        refreshCurrentView();
+      } else {
+        showToast("Error: " + result.error, true);
+        _resetEpUploadUI(taskId);
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast("Error: " + (err.message || err), true);
+      _resetEpUploadUI(taskId);
+    })
+    .completeUploadEpisode(rowIndex, episodeUid);
+}
+
+function _updateEpUploadUI(taskId, uploaded, total, statusText) {
+  var bar    = document.getElementById("ep-upload-bar-"    + taskId);
+  var status = document.getElementById("ep-upload-status-" + taskId);
+  if (bar)    bar.style.width    = (total > 0 ? Math.round(uploaded / total * 100) : 0) + "%";
+  if (status) status.textContent = statusText || "";
+}
+
+function _resetEpUploadUI(taskId) {
+  var btn   = document.getElementById("complete-"         + taskId);
+  var panel = document.getElementById("ep-upload-panel-"  + taskId);
+  if (btn)   { btn.style.display = ""; setButtonLoading("complete-" + taskId, false); }
+  if (panel) panel.style.display = "none";
+}
+
+function _fmtBytes(n) {
+  if (n < 1024)                return n + " B";
+  if (n < 1048576)             return (n / 1024).toFixed(1) + " KB";
+  if (n < 1073741824)          return (n / 1048576).toFixed(1) + " MB";
+  return (n / 1073741824).toFixed(2) + " GB";
+}
+
 function deleteTask(taskId, rowIndex) {
   if (!confirm("Delete this task? This cannot be undone.")) return;
   setButtonLoading("delete-" + taskId, true);
@@ -8615,6 +9102,7 @@ function removeTaskFromState(taskId) {
 }
 
 function refreshCurrentView() {
+  stRenderAccordionTasks();
   if (state.currentEpisode) {
     renderEpisodeDetail(state.currentEpisode);
   } else if (state.currentTab === "tasks") {

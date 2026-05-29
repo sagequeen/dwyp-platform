@@ -662,45 +662,6 @@ function _bridgeSliceSection_(fullText, startHeader, endHeader) {
   return endIdx === -1 ? fullText.slice(contentStart) : fullText.slice(contentStart, endIdx);
 }
 
-/**
- * Parses a STARTER CAPTIONS block into a Map of label-number → caption body.
- * The caption body is everything between the entry's label line and the next
- * entry's label line (or end of block), trimmed.
- *
- * @param {string} block       — extracted section content
- * @param {string} labelPrefix — 'Hook' or 'Guest Quote'
- * @returns {Map<number, string>}
- */
-function _bridgeParseLabeledCaptions_(block, labelPrefix) {
-  var result     = new Map();
-  // Group 1 = number, Group 2 = inline caption text (may be empty for multi-line formats)
-  var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):\\s*(.*)$', 'gm');
-  var matches    = Array.from(block.matchAll(labelRegex));
-  for (var i = 0; i < matches.length; i++) {
-    var m          = matches[i];
-    var num        = parseInt(m[1], 10);
-    var inlineText = (m[2] || '').trim();
-    var bodyStart  = m.index + m[0].length;
-    var bodyEnd    = (i + 1 < matches.length) ? matches[i + 1].index : block.length;
-    var bodyText   = block.slice(bodyStart, bodyEnd).trim();
-    // Inline text takes priority (single-line format); fall back to body for multi-line
-    result.set(num, inlineText || bodyText);
-  }
-  return result;
-}
-
-/**
- * Appends the CAPTION_SIGNOFF governance value to a caption string.
- * Idempotent — skips append if the signoff is already present.
- * Returns captionText unchanged if signoff is empty or captionText is empty.
- */
-function _appendCaptionSignoff_(captionText) {
-  var signoff = (getGovernance("CAPTION_SIGNOFF") || "").trim();
-  if (!signoff || !captionText) return captionText;
-  var trimmed = captionText.trimEnd();
-  if (trimmed.slice(-signoff.length) === signoff) return captionText;
-  return trimmed + "\n\n" + signoff;
-}
 
 
 /**
@@ -746,11 +707,11 @@ function _bridgeParseRankedItems_(sectionText, labelPrefix) {
 
 
 /**
- * Reads Show Notes Doc (manifest.show_notes), parses HOOKS + GUEST QUOTES + labeled
- * STARTER CAPTIONS, writes one Asset_Library row per hook and per guest quote.
- * Caption_Host is the label-paired starter caption.
+ * Reads Show Notes Doc (manifest.show_notes), parses HOOKS + GUEST QUOTES,
+ * writes one Asset_Library row per hook and per guest quote.
+ * Caption_Host left empty — composed in the Images surface per asset.
  * Render-on-send: Drive_File_ID, Canvas_State, Background_ID, Image_Prompt left empty.
- * Midnight pass owns Quality_Score, Slot_Tags — both left empty.
+ * Quality_Score, Slot_Tags — vestigial cols, left empty.
  *
  * @param {string} epUid
  * @param {Object} opts        — { force?: boolean }
@@ -768,12 +729,9 @@ function materializeQuoteGraphicAssets(epUid, opts) {
   var agentName = 'Bridge_Fairy';
   var errors    = [];
 
-  // Section header delimiters — em-dash is U+2014, verbatim from Master Template v2.1.
-  // HEADER_HOST_INSTAGRAM_CAPTIONS is the end-of-block sentinel for STARTER CAPTIONS — GUEST QUOTES.
+  // Section header delimiters — em-dash is U+2014, verbatim from Master Template.
   var HEADER_HOOKS                   = 'HOOKS:';
   var HEADER_GUEST_QUOTES            = 'GUEST QUOTES:';
-  var HEADER_STARTER_CAPTIONS_HOOKS  = 'STARTER CAPTIONS — HOOKS:';
-  var HEADER_STARTER_CAPTIONS_QUOTES = 'STARTER CAPTIONS — GUEST QUOTES:';
   var HEADER_HOST_INSTAGRAM_CAPTIONS = 'HOST INSTAGRAM CAPTIONS:';
 
   logToAuditTrail(agentName, 'state_change', epUid, null,
@@ -859,15 +817,11 @@ function materializeQuoteGraphicAssets(epUid, opts) {
 
   // Slice sections using precise header string boundaries — avoids extractSectionFromProse
   // regex limitations with em-dash headings and Note: false-terminators.
-  var hooksBlock         = _bridgeSliceSection_(docText, HEADER_HOOKS,                   HEADER_GUEST_QUOTES);
-  var quotesBlock        = _bridgeSliceSection_(docText, HEADER_GUEST_QUOTES,            HEADER_STARTER_CAPTIONS_HOOKS);
-  var hookCaptionsBlock  = _bridgeSliceSection_(docText, HEADER_STARTER_CAPTIONS_HOOKS,  HEADER_STARTER_CAPTIONS_QUOTES);
-  var quoteCaptionsBlock = _bridgeSliceSection_(docText, HEADER_STARTER_CAPTIONS_QUOTES, HEADER_HOST_INSTAGRAM_CAPTIONS);
+  var hooksBlock  = _bridgeSliceSection_(docText, HEADER_HOOKS,        HEADER_GUEST_QUOTES);
+  var quotesBlock = _bridgeSliceSection_(docText, HEADER_GUEST_QUOTES, HEADER_HOST_INSTAGRAM_CAPTIONS);
 
-  if (!hooksBlock)         logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] HOOKS section not found in Show Notes Doc', 'WARNING');
-  if (!quotesBlock)        logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
-  if (!hookCaptionsBlock)  logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — HOOKS section not found in Show Notes Doc', 'WARNING');
-  if (!quoteCaptionsBlock) logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
+  if (!hooksBlock)  logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] HOOKS section not found in Show Notes Doc', 'WARNING');
+  if (!quotesBlock) logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
 
   // HOOKS: HOOK N: [text]
   var hookItems = _bridgeParseRankedItems_(hooksBlock || '', 'HOOK');
@@ -877,15 +831,7 @@ function materializeQuoteGraphicAssets(epUid, opts) {
   var quoteItems = _bridgeParseRankedItems_(quotesBlock || '', 'QUOTE');
   var quotes     = quoteItems.map(function(q) { return q.text; });
 
-  // STARTER CAPTIONS: multi-line body parser. Returns Map<number, string> where
-  // the value is everything between the label line and the next label line, trimmed.
-  var hookCaptions  = _bridgeParseLabeledCaptions_(hookCaptionsBlock  || '', 'Hook');
-  var quoteCaptions = _bridgeParseLabeledCaptions_(quoteCaptionsBlock || '', 'Guest Quote');
-
   // ── 4. Validate parsed counts ───────────────────────────────────────────────
-  var hookCaptionCount  = hookCaptions.size;
-  var quoteCaptionCount = quoteCaptions.size;
-
   if (hooks.length !== 10) {
     var msg = 'Expected 10 hooks, got ' + hooks.length;
     logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
@@ -893,16 +839,6 @@ function materializeQuoteGraphicAssets(epUid, opts) {
   }
   if (quotes.length !== 6) {
     var msg = 'Expected 6 guest quotes, got ' + quotes.length;
-    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
-    errors.push(msg);
-  }
-  if (hookCaptionCount !== 10) {
-    var msg = 'Expected 10 hook captions, got ' + hookCaptionCount;
-    logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
-    errors.push(msg);
-  }
-  if (quoteCaptionCount !== 6) {
-    var msg = 'Expected 6 quote captions, got ' + quoteCaptionCount;
     logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] ' + msg, 'WARNING');
     errors.push(msg);
   }
@@ -932,7 +868,7 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     hookRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = hooks[i];
     hookRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    hookRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = _appendCaptionSignoff_(hookCaptions.get(i + 1) || '');
+    hookRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Caption_Guest - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     hookRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';
@@ -957,7 +893,7 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     quoteRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = quotes[j];
     quoteRow[ASSET_LIBRARY_COLS.Reel_Summary  - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Image_Prompt  - 1] = '';
-    quoteRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = _appendCaptionSignoff_(quoteCaptions.get(j + 1) || '');
+    quoteRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Caption_Guest - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Notes         - 1] = '';
     quoteRow[ASSET_LIBRARY_COLS.Background_ID - 1] = '';

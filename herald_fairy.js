@@ -749,14 +749,11 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
   // --- Step 4a: Load brand context from Master Template sections ---
   const showPhilosophy = extractPrompt("# Show Philosophy");
   const pillars        = extractPrompt("# Pillars");
-  const peerShows      = extractPrompt("# Peer Shows");
   if (!showPhilosophy) logToAuditTrail(actor, "state_change", episodeUid, contactId,
     "extractPrompt returned empty for # Show Philosophy — Guest Brief missing show context.", "WARNING");
   if (!pillars) logToAuditTrail(actor, "state_change", episodeUid, contactId,
     "extractPrompt returned empty for # Pillars — Guest Brief missing pillars context.", "WARNING");
-  if (!peerShows) logToAuditTrail(actor, "state_change", episodeUid, contactId,
-    "extractPrompt returned empty for # Peer Shows — Guest Brief missing peer shows context.", "WARNING");
-  const brandContext = [showPhilosophy, pillars, peerShows].filter(s => s.trim()).join("\n\n");
+  const brandContext = [showPhilosophy, pillars].filter(s => s.trim()).join("\n\n");
 
   let briefContent;
   try {

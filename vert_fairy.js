@@ -512,15 +512,14 @@ function runEditorialPass(epUid, opts) {
     var hostVoice      = extractPrompt("# Host Voice");
     var voiceProhibits = extractPrompt("# Voice Prohibitions");
     var captionMech    = extractPrompt("# Caption Mechanics");
-    var ranking        = extractPrompt("# Ranking Schema");
     var showNotes      = extractPrompt("# Show Notes");
-    templatePrompt = [hostVoice, voiceProhibits, captionMech, ranking, showNotes]
+    templatePrompt = [hostVoice, voiceProhibits, captionMech, showNotes]
       .filter(function(s) { return s.trim(); }).join('\n\n');
   } catch (e) {
     throw new Error("runEditorialPass: Master Template sections unreadable: " + e.message);
   }
   if (!templatePrompt) {
-    throw new Error("runEditorialPass: Master Template sections missing or empty — check # Host Voice, # Voice Prohibitions, # Caption Mechanics, # Ranking Schema, # Show Notes headings in template");
+    throw new Error("runEditorialPass: Master Template sections missing or empty — check # Host Voice, # Voice Prohibitions, # Caption Mechanics, # Show Notes headings in template");
   }
 
   // ── 5. Release date string ───────────────────────────────────────────────────
@@ -705,16 +704,15 @@ function _appendCaptionSignoff_(captionText) {
 
 
 /**
- * Parses a HOOKS or GUEST QUOTES section (v2.3 format) into ranked items.
- * Each block has a numbered label line (e.g. HOOK 1: or QUOTE 1:) followed by
- * SLOT_TAGS: and QUALITY_SCORE: lines.
+ * Parses a HOOKS or GUEST QUOTES section into items.
+ * HOOK block format: HOOK N: [text]
+ * QUOTE block format: QUOTE N: "[text]" / ATTRIBUTION: [Name]
  *
  * @param {string} sectionText  — extracted section content
  * @param {string} labelPrefix  — 'HOOK' or 'QUOTE' (all-caps, matches template)
- * @returns {Array<{index: number, text: string, slot_tags: string[], quality_score: number}>}
+ * @returns {Array<{index: number, text: string}>}
  */
 function _bridgeParseRankedItems_(sectionText, labelPrefix) {
-  var VALID_TAGS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Any"];
   var agentName  = 'Bridge_Fairy';
   var result     = [];
   var labelRegex = new RegExp('^' + labelPrefix + '\\s+(\\d+):\\s*(.*)$', 'gm');
@@ -729,7 +727,7 @@ function _bridgeParseRankedItems_(sectionText, labelPrefix) {
     var blockEnd   = (i + 1 < matches.length) ? matches[i + 1].index : sectionText.length;
     var block      = sectionText.slice(blockStart, blockEnd);
 
-    // ATTRIBUTION (QUOTE blocks only — v3.0 format: separate labeled line)
+    // ATTRIBUTION (QUOTE blocks only — separate labeled line, AD #112)
     if (labelPrefix === 'QUOTE') {
       var attrMatch = block.match(/^ATTRIBUTION:\s*(.+)$/m);
       if (attrMatch) {
@@ -740,45 +738,7 @@ function _bridgeParseRankedItems_(sectionText, labelPrefix) {
       }
     }
 
-    // SLOT_TAGS
-    var slotTagsMatch = block.match(/^SLOT_TAGS:\s*(.+)$/m);
-    var slot_tags;
-    if (slotTagsMatch) {
-      var rawTags = slotTagsMatch[1].split(',').map(function(t) { return t.trim(); }).filter(Boolean);
-      slot_tags   = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) !== -1; });
-      var dropped = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) === -1; });
-      if (dropped.length) {
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_bridgeParseRankedItems_: Dropped unrecognized tags [' + dropped.join(', ') + '] for ' + labelPrefix + ' ' + index, 'WARNING');
-      }
-      if (!slot_tags.length) {
-        slot_tags = ['Any'];
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_bridgeParseRankedItems_: All tags invalid for ' + labelPrefix + ' ' + index + ' — defaulting to Any', 'WARNING');
-      }
-    } else {
-      slot_tags = ['Any'];
-      logToAuditTrail(agentName, 'state_change', '', null,
-        '_bridgeParseRankedItems_: SLOT_TAGS missing for ' + labelPrefix + ' ' + index + ' — defaulting to Any', 'WARNING');
-    }
-
-    // QUALITY_SCORE
-    var qualMatch    = block.match(/^QUALITY_SCORE:\s*(\d+)$/m);
-    var quality_score;
-    if (qualMatch) {
-      quality_score = parseInt(qualMatch[1], 10);
-      if (quality_score < 1 || quality_score > 5) {
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_bridgeParseRankedItems_: QUALITY_SCORE ' + quality_score + ' out of [1,5] for ' + labelPrefix + ' ' + index + ' — clamping', 'WARNING');
-        quality_score = Math.max(1, Math.min(5, quality_score));
-      }
-    } else {
-      quality_score = 3;
-      logToAuditTrail(agentName, 'state_change', '', null,
-        '_bridgeParseRankedItems_: QUALITY_SCORE missing for ' + labelPrefix + ' ' + index + ' — defaulting to 3', 'WARNING');
-    }
-
-    result.push({ index: index, text: text, slot_tags: slot_tags, quality_score: quality_score });
+    result.push({ index: index, text: text });
   }
 
   return result;
@@ -909,11 +869,11 @@ function materializeQuoteGraphicAssets(epUid, opts) {
   if (!hookCaptionsBlock)  logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — HOOKS section not found in Show Notes Doc', 'WARNING');
   if (!quoteCaptionsBlock) logToAuditTrail(agentName, 'state_change', epUid, null, '[WARNING] STARTER CAPTIONS — GUEST QUOTES section not found in Show Notes Doc', 'WARNING');
 
-  // HOOKS: v2.3 format — HOOK N: / SLOT_TAGS: / QUALITY_SCORE: blocks
+  // HOOKS: HOOK N: [text]
   var hookItems = _bridgeParseRankedItems_(hooksBlock || '', 'HOOK');
   var hooks     = hookItems.map(function(h) { return h.text; });
 
-  // GUEST QUOTES: v2.3 format — QUOTE N: / SLOT_TAGS: / QUALITY_SCORE: blocks
+  // GUEST QUOTES: QUOTE N: "[text]" / ATTRIBUTION: [Name]
   var quoteItems = _bridgeParseRankedItems_(quotesBlock || '', 'QUOTE');
   var quotes     = quoteItems.map(function(q) { return q.text; });
 
@@ -981,8 +941,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     hookRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
     hookRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
     hookRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
-    hookRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = hookItems[i] ? hookItems[i].quality_score : '';
-    hookRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = hookItems[i] ? hookItems[i].slot_tags.join(', ') : '';
+    hookRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
+    hookRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
     rows.push(hookRow);
   }
 
@@ -1006,8 +966,8 @@ function materializeQuoteGraphicAssets(epUid, opts) {
     quoteRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
     quoteRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
     quoteRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'system';
-    quoteRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = quoteItems[j] ? quoteItems[j].quality_score : '';
-    quoteRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = quoteItems[j] ? quoteItems[j].slot_tags.join(', ') : '';
+    quoteRow[ASSET_LIBRARY_COLS.Quality_Score - 1] = '';
+    quoteRow[ASSET_LIBRARY_COLS.Slot_Tags     - 1] = '';
     rows.push(quoteRow);
   }
 
@@ -1060,17 +1020,13 @@ function materializeQuoteGraphicAssets(epUid, opts) {
  * Parses Claude's reel editorial response into an array of structured objects.
  * Expected block format per reel:
  *   REEL [Asset_ID]:
- *   SUMMARY: [2-3 sentence cleaned summary]
- *   SLOT_TAGS: [comma-separated days]
- *   QUALITY_SCORE: [1-5]
+ *   SUMMARY: [3-4 sentence cleaned summary]
  *
  * @param {string} responseText — full Claude response
- * @returns {Array<{asset_id: string, summary: string, slot_tags: string[], quality_score: number}>}
+ * @returns {Array<{asset_id: string, summary: string}>}
  */
 function _parseReelEditorialOutput_(responseText) {
-  var VALID_TAGS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Any"];
-  var agentName  = 'Bridge_Fairy';
-  var result     = [];
+  var result = [];
 
   // Split on blank lines; each non-empty block that opens with REEL is one entry
   var blocks = responseText.split(/\n\s*\n/);
@@ -1086,45 +1042,7 @@ function _parseReelEditorialOutput_(responseText) {
     var summaryMatch = block.match(/^SUMMARY:\s*(.+)$/m);
     var summary = summaryMatch ? summaryMatch[1].trim() : '';
 
-    // SLOT_TAGS
-    var slotTagsMatch = block.match(/^SLOT_TAGS:\s*(.+)$/m);
-    var slot_tags;
-    if (slotTagsMatch) {
-      var rawTags = slotTagsMatch[1].split(',').map(function(t) { return t.trim(); }).filter(Boolean);
-      slot_tags   = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) !== -1; });
-      var dropped = rawTags.filter(function(t) { return VALID_TAGS.indexOf(t) === -1; });
-      if (dropped.length) {
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_parseReelEditorialOutput_: Dropped unrecognized tags [' + dropped.join(', ') + '] for REEL ' + assetId, 'WARNING');
-      }
-      if (!slot_tags.length) {
-        slot_tags = ['Any'];
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_parseReelEditorialOutput_: All tags invalid for REEL ' + assetId + ' — defaulting to Any', 'WARNING');
-      }
-    } else {
-      slot_tags = ['Any'];
-      logToAuditTrail(agentName, 'state_change', '', null,
-        '_parseReelEditorialOutput_: SLOT_TAGS missing for REEL ' + assetId + ' — defaulting to Any', 'WARNING');
-    }
-
-    // QUALITY_SCORE
-    var qualMatch = block.match(/^QUALITY_SCORE:\s*(\d+)$/m);
-    var quality_score;
-    if (qualMatch) {
-      quality_score = parseInt(qualMatch[1], 10);
-      if (quality_score < 1 || quality_score > 5) {
-        logToAuditTrail(agentName, 'state_change', '', null,
-          '_parseReelEditorialOutput_: QUALITY_SCORE ' + quality_score + ' out of [1,5] for REEL ' + assetId + ' — clamping', 'WARNING');
-        quality_score = Math.max(1, Math.min(5, quality_score));
-      }
-    } else {
-      quality_score = 3;
-      logToAuditTrail(agentName, 'state_change', '', null,
-        '_parseReelEditorialOutput_: QUALITY_SCORE missing for REEL ' + assetId + ' — defaulting to 3', 'WARNING');
-    }
-
-    result.push({ asset_id: assetId, summary: summary, slot_tags: slot_tags, quality_score: quality_score });
+    result.push({ asset_id: assetId, summary: summary });
   }
 
   return result;
@@ -1133,16 +1051,20 @@ function _parseReelEditorialOutput_(responseText) {
 
 /**
  * Reads Reel-type Asset_Library rows for an episode, passes raw Reel_Summary
- * values to Claude (with composed Voice Prohibitions + Ranking Schema + Reel Editorial),
- * and writes cleaned summary, Slot_Tags, Quality_Score back to each row.
+ * values to Claude (with composed Voice Prohibitions + Reel Editorial),
+ * and writes cleaned summary back to each row.
  *
  * @param {string} epUid
  * @param {Object} [opts]
- * @param {boolean} [opts.force=false] — if true, reprocesses rows that already have Quality_Score
+ * @param {boolean} [opts.force=false] — reserved; currently a no-op (all rows with summaries are processed)
  * @returns {{ status: string, processed: number, skipped: number, errors: string[] }}
  */
 function runReelEditorialPass(epUid, opts) {
-  var force     = !!(opts && opts.force === true);
+  // force is reserved but currently a no-op: the Quality_Score skip guard was retired
+  // when ranking was removed (template back-half cleanup). All reels with a non-empty
+  // Reel_Summary are reprocessed on every call. Do not re-introduce a skip guard
+  // that writes Quality_Score — that column is vestigial.
+  var force     = !!(opts && opts.force === true); // eslint-disable-line no-unused-vars
   var agentName = 'Bridge_Fairy';
 
   // ── 1. Read Asset_Library ──────────────────────────────────────────────────────
@@ -1165,20 +1087,12 @@ function runReelEditorialPass(epUid, opts) {
     if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(epUid)) continue;
     if (String(row[ASSET_LIBRARY_COLS.Asset_Type  - 1]).toLowerCase() !== 'reel') continue;
 
-    var summary      = String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-    var qualityScore = String(row[ASSET_LIBRARY_COLS.Quality_Score - 1] || '').trim();
-    var assetId      = String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1] || '');
+    var summary = String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
+    var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1] || '');
 
     if (!summary) {
       logToAuditTrail(agentName, 'state_change', epUid, null,
         'REEL_EDITORIAL_SKIP: ' + assetId + ' — Reel_Summary empty', 'INFO');
-      skipCount++;
-      continue;
-    }
-
-    if (qualityScore && !force) {
-      logToAuditTrail(agentName, 'state_change', epUid, null,
-        'REEL_EDITORIAL_SKIP: ' + assetId + ' — Quality_Score already set (' + qualityScore + '), force=false', 'INFO');
       skipCount++;
       continue;
     }
@@ -1198,12 +1112,11 @@ function runReelEditorialPass(epUid, opts) {
 
   // ── 4. Compose system prompt ──────────────────────────────────────────────────
   var voice    = extractPrompt("# Voice Prohibitions");
-  var ranking  = extractPrompt("# Ranking Schema");
   var reelEd   = extractPrompt("# Reel Editorial");
-  var systemPrompt = [voice, ranking, reelEd].filter(function(s) { return s.trim(); }).join('\n\n');
+  var systemPrompt = [voice, reelEd].filter(function(s) { return s.trim(); }).join('\n\n');
 
   if (!systemPrompt) {
-    throw new Error("runReelEditorialPass: Master Template sections missing — check # Voice Prohibitions, # Ranking Schema, # Reel Editorial");
+    throw new Error("runReelEditorialPass: Master Template sections missing — check # Voice Prohibitions, # Reel Editorial");
   }
 
   // ── 5. Build user message ─────────────────────────────────────────────────────
@@ -1250,9 +1163,7 @@ function runReelEditorialPass(epUid, opts) {
         continue;
       }
 
-      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Reel_Summary ).setValue(parsed.summary);
-      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Slot_Tags    ).setValue(parsed.slot_tags.join(', '));
-      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Quality_Score).setValue(parsed.quality_score);
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Reel_Summary).setValue(parsed.summary);
       processedCount++;
     } catch (e) {
       var errMsg = 'REEL_EDITORIAL_ERROR: Write failed for ' + parsed.asset_id + ': ' + e.message;

@@ -6,12 +6,47 @@
 //        System-level functions (dailyPulse, calendar) ignore the UID.
 // =============================================================================
 
-var ACTIVE_EP_UID = 'EP-260504-0736'; // ← paste UID here before running
+var ACTIVE_EP_UID = 'EP-260430-1458'; // ← paste UID here before running
 
 
 // =============================================================================
 // SYSTEM — No episode UID required
 // =============================================================================
+
+// Logs the scopes actually present in the current OAuth token.
+function test_checkTokenScopes() {
+  var token = ScriptApp.getOAuthToken();
+  var resp  = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?access_token=' + token,
+    { muteHttpExceptions: true }
+  );
+  Logger.log('Status: ' + resp.getResponseCode());
+  Logger.log(resp.getContentText());
+}
+
+// Logs the exact GCS_SIGNER_SA value from Governance_Config and attempts a
+// raw signBlob call so we can see the full error if it fails.
+function test_checkSignerSa() {
+  var sa  = getGovernance('GCS_SIGNER_SA');
+  var bkt = getGovernance('REVIEW_GCS_BUCKET');
+  Logger.log('GCS_SIGNER_SA  = [' + sa + ']');
+  Logger.log('REVIEW_GCS_BUCKET = [' + bkt + ']');
+  if (!sa) { Logger.log('ERROR: GCS_SIGNER_SA is blank'); return; }
+
+  var iamUrl  = 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/' +
+                encodeURIComponent(sa) + ':signBlob';
+  Logger.log('IAM URL = ' + iamUrl);
+
+  var resp = UrlFetchApp.fetch(iamUrl, {
+    method:      'post',
+    contentType: 'application/json',
+    headers:     { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload:     JSON.stringify({ payload: Utilities.base64Encode('test') }),
+    muteHttpExceptions: true
+  });
+  Logger.log('signBlob status: ' + resp.getResponseCode());
+  Logger.log(resp.getContentText());
+}
 
 function test_dailyPulse() {
   console.log("[test_dailyPulse] START");
@@ -81,6 +116,39 @@ function test_closeReelRevision() {
   var NEW_DRIVE_FILE = ''; // ← paste Drive file ID of revised reel here
   if (!ASSET_ID || !NEW_DRIVE_FILE) throw new Error('Set ASSET_ID and NEW_DRIVE_FILE before running.');
   var result = closeReelRevision(ACTIVE_EP_UID, ASSET_ID, NEW_DRIVE_FILE);
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+
+// =============================================================================
+// EPISODE UPLOAD — Uses ACTIVE_EP_UID
+// =============================================================================
+
+// Spawns an Upload_Produced_Episode task for the active episode.
+// Set ACTIVE_EP_UID to Mai's UID, then run once from the editor dropdown.
+function test_spawnUploadEpisodeTask() {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var epData  = ss.getSheetByName('Episodes').getDataRange().getValues();
+  var guestName = ACTIVE_EP_UID, contactId = '';
+  for (var i = 1; i < epData.length; i++) {
+    if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(ACTIVE_EP_UID)) continue;
+    guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || ACTIVE_EP_UID);
+    contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
+    break;
+  }
+  var result = spawnTask({
+    episodeUid:       ACTIVE_EP_UID,
+    contactId:        contactId,
+    workflowStep:     'Upload_Produced_Episode',
+    actionTitle:      'Upload produced episode — ' + guestName,
+    assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+    assignedBy:       'The Fairy Team',
+    status:           'open',
+    priority:         'normal',
+    executiveSummary: 'Export from Vids is ready. Upload the proxy MP4 for ' + guestName + ' to send it to review.'
+  });
   Logger.log(JSON.stringify(result, null, 2));
   return result;
 }

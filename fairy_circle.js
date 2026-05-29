@@ -2258,96 +2258,12 @@ function dailyPulse() {
     }
 
     // =========================================================================
-    // LOOP A: Proxy Detection — Review Episode
-    // Scans Staging/Episode/ subfolder for files with proxy_ prefix.
-    // If found: writes Proxy_File_ID to Episodes row, spawns Review Episode task for JT.
-    // Idempotency: skips if open or in_progress Review_Episode task already exists.
+    // LOOP A: Proxy Detection — RETIRED
+    // Detection replaced by Upload_Produced_Episode task completion handler
+    // (completeUploadEpisode in dwyp_app.js). Producer marks the task complete
+    // after uploading to GCS; handler flips Video_Status → review and spawns
+    // Review_Episode. Drive folder-watch no longer needed.
     // =========================================================================
-    let proxyScanned = 0;
-    let proxySpawned = 0;
-
-    if (prodFolCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping proxy detection.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid        = data[i][uidCol];
-        const status       = String(data[i][statusCol]);
-        const prodFolderId = data[i][prodFolCol];
-        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
-
-        if (!epUid)                continue;
-        if (status === "complete") continue;
-        if (!prodFolderId)         continue;
-
-        proxyScanned++;
-
-        try {
-          // Idempotency check — skip if open or in_progress Review_Episode task exists
-          let reviewTaskExists = false;
-          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-            for (let t = 1; t < tasksData.length; t++) {
-              if (tasksData[t][taskEpUidCol]    !== epUid)                    continue;
-              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Episode") continue;
-              const tStatus = String(tasksData[t][taskStatusCol]);
-              if (tStatus === "open" || tStatus === "in_progress") {
-                reviewTaskExists = true;
-                break;
-              }
-            }
-          }
-          if (reviewTaskExists) continue;
-
-          // Navigate to Episode/ subfolder inside Staging
-          const stagingFolder  = DriveApp.getFolderById(prodFolderId);
-          const episodeFolderIt = stagingFolder.getFoldersByName("Episode");
-          if (!episodeFolderIt.hasNext()) continue;
-          const episodeFolder = episodeFolderIt.next();
-
-          // Scan Episode/ for proxy_ file
-          const files     = episodeFolder.getFiles();
-          let proxyFileId = null;
-
-          while (files.hasNext()) {
-            const f = files.next();
-            if (f.getName().startsWith("proxy_")) {
-              proxyFileId = f.getId();
-              break;
-            }
-          }
-
-          if (!proxyFileId) continue;
-
-          // Write Proxy_File_ID to Episodes row
-          if (proxyFileIdCol !== -1) {
-            sheet.getRange(i + 1, proxyFileIdCol + 1).setValue(proxyFileId);
-          }
-
-          spawnTask({
-            actionTitle:      `Review episode: ${guestName}`,
-            assignee:         getGovernance("ASSIGNEE_HOST"),
-            assignedBy:       "The Fairy Team",
-            status:           "open",
-            priority:         "normal",
-            contactId:        contactId,
-            episodeUid:       epUid,
-            workflowStep:     "Review_Episode",
-            executiveSummary: `The episode proxy for ${guestName} is ready for your review.`
-          }, true);
-
-          proxySpawned++;
-          logToAuditTrail(agentName, "state_change", epUid, contactId,
-            `[INFO] Proxy file detected for ${guestName}. Proxy_File_ID written. Review Episode task spawned.`, "INFO");
-
-        } catch (e) {
-          logToAuditTrail(agentName, "error", epUid, "",
-            `[ERROR] Proxy detection failed for episode ${epUid}: ${e.message}`, "ERROR");
-        }
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Proxy detection complete. Episodes scanned: ${proxyScanned}. Tasks spawned: ${proxySpawned}.`, "INFO");
-    }
 
     // =========================================================================
     // LOOP B: Images Detection — Review Images

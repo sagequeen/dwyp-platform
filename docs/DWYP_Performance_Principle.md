@@ -125,7 +125,7 @@ Self-healing. External Drive changes get picked up automatically on next read.
 
 | Surface | Loading Stages |
 |---|---|
-| Dashboard | Skeleton cards → cached data → version-check refresh |
+| Tasks | Skeleton cards → cached data → version-check refresh |
 | Episode card | Title + date → status pill → icon states |
 | Reel thumbnail | Blurhash/placeholder → low-res → high-res on tap |
 | Image library | Skeleton grid → low-res tiles → full res on hover/select |
@@ -249,7 +249,7 @@ Step 3 is now a discrete prerequisite — it's the cache invalidation mechanism 
 
 Independent of the foundation work, three easy wins on the existing app:
 
-1. **Dashboard task refresh on tab return is silent SWR — already partially there.** Audit what else could move from blocking refresh to background SWR.
+1. **Tasks screen tab-return refresh is silent SWR — already partially there.** Audit what else could move from blocking refresh to background SWR.
 
 2. **Reel thumbnails — blurhash placeholder.** Generate at filing time, store on row. First paint is instant.
 

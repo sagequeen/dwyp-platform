@@ -103,7 +103,7 @@ Compiled from: Platform State v6.5, Build Playbook v5, App Structure v1.3, User 
 | G15 | C-2 Revision Task inline checkboxes | Add inline checkbox UI in revision tasks. |
 | G16 | C-3 Re-run Herald button | Audra-only, on Contact Detail. |
 | G17 | C-4 Influence Tier toggle | Three-way (EH / HI / LF). |
-| G18 | D-1 Dashboard Loose Task Containers | Three containers (Podcast / People / Personal). |
+| G18 | D-1 Tasks Loose Task Containers | Three containers (Podcast / People / Personal). |
 | G19 | JT social tasks + Audra release tasks | Task spawning still incomplete for these flows. |
 
 ---

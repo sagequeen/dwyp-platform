@@ -77,9 +77,9 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 77. **Social_Assets loop in Daily Pulse: queued.** Candidate row creation on file detection — not yet built.
 78. **GCS signing — signBlob path (locked).** `getEpisodeStreamUrl()` uses IAM signBlob API (`https://iam.googleapis.com/v1/projects/-/serviceAccounts/{SA}:signBlob`). Signer: `309883149140-compute@developer.gserviceaccount.com`. Auth: owner's `ScriptApp.getOAuthToken()` (`cloud-platform` scope in manifest). V4 canonical request: `UNSIGNED-PAYLOAD`, `host` signed-headers only, credential scope `{date}/auto/storage/goog4_request`. No stored JSON key. Prerequisite: `iamcredentials.googleapis.com` API enabled in GCP Console.
 89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Vert Fairy: automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript. Social Vert and Librarian Vert as named sub-roles were subsequently retired (AD #97) — superseded by Vert (retrieval) + Claude (generation) model. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
-90. **Dashboard replaces Episodes and Tasks tabs as the primary home screen.** `renderDashboard()` is the entry point. navDashboard in place, shim removed. Episodes tab and Tasks tab are retired. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
+90. **Tasks is the primary home screen.** `renderDashboard()` is the entry point. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
 91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
-92. **Guest Brief removed from task and dashboard flow.** Brief auto-closes after Herald creates it. JT pulls directly from Contact Library when she is ready. Guest Brief Enrich (Audra) and Guest Brief Review (JT) tasks remain in the pipeline, but the brief itself is not surfaced via a task card in the dashboard.
+92. **Guest Brief removed from task flow.** Brief auto-closes after Herald creates it. JT pulls directly from Contact Library when she is ready. Guest Brief Enrich (Audra) and Guest Brief Review (JT) tasks remain in the pipeline, but the brief itself is not surfaced via a task card in the dashboard.
 93. **Vertex AI RAG corpus relocated to us-south1 (Dallas) with Spanner vector backend.** Previous corpus (us-central1, Managed Agent Retrieval) is retired. Working configuration: us-south1, Spanner. All GAS functions querying the corpus must reference us-south1 explicitly. Governance key: `VERTEX_RAG_REGION = us-south1` — must be populated in Governance_Config before Vert Fairy spoke opens. `STUDIO_CORPUS_ID` must be updated to reflect the new us-south1 corpus resource path.
 94. **Snapping spoke closed.** Center button in Publish canvas covers the alignment need. No further snapping work planned.
 95. **Secretary Governance_Config field notes (locked).** `DWYP_CALENDAR_ID`: must be in `xxx@group.calendar.google.com` format for shared calendars, or an email address for personal calendars. Advanced Service uses this directly — no `CalendarApp` wrapper. `CALENDAR_TRIGGER_PREFIX`: must be `DWYP Interview` with no trailing space. Secretary uses server-side `startsWith` match on event summary. Sleep behavior: 3-second pause fires *between* events, not before the first — single-episode scans have zero added delay.
@@ -112,7 +112,7 @@ signals. Persistent state is expressed as words on the card — In Revision (Aud
 court) / Ready for Review (JT's court) / scheduled / not. Novelty ("new since last
 view") is a separate, ephemeral signal: a red circle on the card that clears on view,
 never on a navigation rail. Design target for the Task surface (Push 3); not yet
-built. Current Dashboard cards carry a release pill + per-asset icons (see Platform
+built. Current Tasks screen cards carry a release pill + per-asset icons (see Platform
 State) until that build.
 120. **Episode Card = head + body.** HEAD (Tier 3, the gate): episode pipeline state —
 Pending / In Revision / Ready for Review / Approved / Released; entry to Episode
@@ -143,6 +143,17 @@ self-assigned) · Scope (episode-linked `Episode_UID` / loose null / set-scoped
 Governance_Config). Design target for the Task surface (Push 3); not yet built.
 Reel-revision (§4) schema deps — S2-11 Status/Availability separation, reel-linkage
 FK, `revision_requested` status — tracked in Build Playbook, not resolved here.
+
+122. **GCS signed URL signing and resumable upload — org policy constraints + browser gotchas (May 2026).**
+
+   **signBlob org policy:** `iam.automaticIamGrantsForDefaultServiceAccounts` is active on the wiseonewithin.com org — Owner alone does NOT implicitly grant `iam.serviceAccounts.signBlob` on the compute SA. The grant must be set explicitly at the project level (`roles/iam.serviceAccountTokenCreator` or equivalent). SA keys are also forbidden (`disableServiceAccountKeyCreation` + `disableServiceAccountKeyUpload` active) — stored-key approaches including HMAC are not viable. Keyless signing via `iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{sa}:signBlob` with the Apps Script OAuth token is the only path. Applies to both the playback GET URL and upload POST URL (both flow through `_signV4`).
+
+   **CORS origin:** Confirmed origin is `https://n-z5do…-script.googleusercontent.com` (Apps Script sandbox host). If uploads CORS-fail in the future, read the exact origin from the DevTools console preflight error and update the bucket allow-list. A broader allow-list is the fallback if drift proves frequent — defer until it actually happens.
+
+   **Browser gotchas for resumable uploads** (server-side examples don't warn about these):
+   1. **Init can return 201, not just 200.** Handle both status codes when reading the `Location` session URI.
+   2. **308 Resume Incomplete kills XHR.** Browsers fire `onerror` (status 0) on a 308 with no `Location` header — they treat it as a failed redirect. Use `fetch(redirect:'manual')` instead; a 308 resolves as `response.type === 'opaqueredirect'`.
+   3. **Do not set `Content-Length`.** It is a forbidden request header in browsers. The browser computes it from the body. Attempting to set it throws a console error and may abort the request.
 
 ---
 
@@ -687,8 +698,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 | `transcript_index.json` Gemini chunk index | Retired with Marcom architecture. Vertex AI RAG Engine handles retrieval. |
 | Safety Fairy auto-generating backgrounds at transcript intake | Retired. User-triggered via Studio Design tab background generator. |
 | `raw_hooks` / `raw_quotes` written by Safety Fairy or Marcom | Both fairies retired. Social Vert retired. Fields are vestigial — remove in Spoke 1. |
-| Episodes tab as standalone view | Retired (AD #90). Replaced by Dashboard. |
-| Tasks tab as standalone view | Retired (AD #90). Replaced by Dashboard. |
+| Episodes tab as standalone view | Retired (AD #90). |
 | Snapping in Image Workshop | Closed (AD #94). Center button covers the alignment need. |
 | Vertex AI RAG corpus in us-central1 with Managed Agent Retrieval | Retired (AD #93). us-south1 + Spanner is the working configuration. |
 | Make.com PNG conversion for Image Workshop output | Retired. Image Workshop exports directly to Drive. |
@@ -709,7 +719,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 
 - **Episode GCS player shipped.** `getEpisodeStreamUrl(episodeUid)` added to `dwyp_app.js` — mints a V4-signed GCS GET URL (`dwyp-review-playback/episodes/{EUID}/proxy.mp4`, 8h expiry) via IAM signBlob. Owner's `ScriptApp.getOAuthToken()` is the signer; `cloud-platform` scope already in manifest. No stored key. Episode Design tab (`stEpView`) repointed from Drive iframe to native `<video id="stEpVideo">` — compose loop (focus-pause-freeze-timestamp, send/cancel/resume) fully functional now that the element exists.
 - **Episode detection replaced.** `completeUploadEpisode(rowIndex, episodeUid)` added — marks `Upload_Produced_Episode` task complete, flips `Video_Status → review`, spawns `Review_Episode`, bumps both `episodes` and `tasks` versions. UI handler `completeUploadEpisodeTask` added; `Upload_Produced_Episode` branch added to task button rendering. Daily Pulse Loop A (Drive folder-watch `proxy_` detection) retired in `fairy_circle.js`.
-- **ADs 73, 74, 75, 78 updated.** Proxy-on-GCS, task-completion detection, `Proxy_File_ID` column dormant, signBlob signing pattern locked. AD #23 `Workflow_Step` enum extended: `Upload_Produced_Episode` added.
+- **ADs 73, 74, 75, 78 updated.** Proxy-on-GCS, task-completion detection, `Proxy_File_ID` column dormant, signBlob signing pattern locked. AD #23 `Workflow_Step` known values extended: `Upload_Produced_Episode` added.
 - **Governance keys required:** `REVIEW_GCS_BUCKET` = `dwyp-review-playback`; `GCS_SIGNER_SA` = `309883149140-compute@developer.gserviceaccount.com`; `GCS_EXPIRY_SECONDS` = `28800`. Populate before opening episode in Design tab.
 
 ---
@@ -718,7 +728,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 
 - **Reels sub-tab shipped.** Selector re-enabled in Studio Design tab with Drive `/preview` playback. `Caption_Host` wired to caption field; `generateReelCaption` calls Claude with `# Caption Mechanics` + `# Voice Prohibitions` system prompt, writes caption from `Reel_Summary`. Three action verbs: Export (copy→move to `Manual_Exports/`), Edit with Vids (spawns `edit_vids` task stub), Request Revision (§4 atomic close). `closeReelRevision`: swaps `Drive_File_ID` on AL row by `Asset_ID`, moves old file → `Reels/Superseded/`, completes open `Revise_Reels` task, `bumpVersion` both domains. AD #118 added.
 - **Tasks schema extended to 17 columns.** `Asset_ID` (col 17, FK → Asset_Library) added for revision tasks. `spawnTask()` writes it header-driven. Schema v2.1. Manual step: add `Asset_ID` header in col 17 of Tasks tab in production Master Sheet.
-- **`Workflow_Step` enum extended.** `Revise_Reels` added to locked values (AD #23 updated).
+- **`Workflow_Step` known values extended.** `Revise_Reels` added (AD #23 updated).
 - **Folder structure updated.** `Reels/Superseded/` subfolder documented in Folder Structure and AD #118.
 
 ---
@@ -791,9 +801,9 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 
 ### v2.5 → v2.6 (April 2026)
 
-- ADs #90–95 added: Dashboard replaces Episodes/Tasks tabs; EH flag via Influence_Tier; Guest Brief auto-close; RAG corpus relocated to us-south1/Spanner; Snapping closed; Secretary governance notes locked.
+- ADs #90–95 added: Tasks is primary home screen; EH flag via Influence_Tier; Guest Brief auto-close; RAG corpus relocated to us-south1/Spanner; Snapping closed; Secretary governance notes locked.
 - Vertex AI RAG Engine section updated: region corrected to us-south1, vector backend corrected to Spanner, import status changed from blocked to resolved, working/failed configuration history documented.
-- Codebase Inventory updated: `dwyp_app.gs` noted as including Contacts backend (getContacts, updateContactField); `dwyp_ui.html` noted as including Dashboard and Contacts tab.
+- Codebase Inventory updated: `dwyp_app.gs` noted as including Contacts backend (getContacts, updateContactField); `dwyp_ui.html` noted as including Tasks and Contacts tab.
 - Approval Gate Design updated: Guest Brief gate updated to reflect auto-close; Images/Reels gate updated to reflect sorter designs (arrow nav vs. scroll-based).
 - Schema updated: Contacts `Influence_Tier` field notes updated to reflect EH toggle usage; `Personal_Note` notes updated to include Herald research anchor role.
 - Retired Patterns updated: Episodes tab, Tasks tab, Snapping, us-central1 corpus, Make.com PNG conversion all added.
@@ -806,7 +816,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 - AD #89 added: Vert Fairy / Vertex AI architecture supersedes Marcom Fairy.
 - ADs #60–62, #70, #79–87 marked superseded — Marcom Fairy and Safety Fairy retired.
 - AD #16 updated: `_ready` suffix pattern retired for Images/Reels review; file-presence detection is active pattern.
-- AD #23 updated: `Review_Images` added to `Workflow_Step` enum.
+- AD #23 updated: `Review_Images` added to `Workflow_Step` known values.
 - ADs #73, #74, #76, #78 corrected: proxy prefix corrected to `proxy_`, proxy location corrected to `Staging/Episode/` subfolder.
 - Folder Structure rewritten: Images/Reels Approved/Save/Delete subfolders added, proxy location corrected, Raw Production cleaned.
 - Approval Gate Design rewritten: Guest Brief two-step (Herald → Audra → JT), Episode Review Gate (timestamped comments → Revise task), Images/Reels Review Gate (file-presence detection, sorter flow, Ready for Release).

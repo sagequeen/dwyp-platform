@@ -430,8 +430,7 @@ function getTasks() {
     });
   }
 
-  Logger.log(JSON.stringify(tasks));
-return tasks;
+  return tasks;
 }
 
 /**
@@ -2076,9 +2075,185 @@ function getProxyStreamUrl(episodeUid) {
     var target = proxyFile || anyVideoFile;
     if (!target) return { url: '', error: 'No video file found in Episode/ folder.' };
     target.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    return { url: 'https://drive.google.com/uc?id=' + target.getId() };
+    var fileId = target.getId();
+    return {
+      url:        'https://drive.google.com/uc?id=' + fileId,
+      previewUrl: 'https://drive.google.com/file/d/' + fileId + '/preview'
+    };
   } catch (e) {
     return { url: '', error: e.message };
+  }
+}
+
+/**
+ * Shared V4 signing helper. method = 'GET' | 'POST'.
+ * extraHeaders: {lowercaseName: value} — included in canonical headers and X-Goog-SignedHeaders;
+ *   the caller's HTTP request must send them exactly as specified.
+ * Throws on signBlob failure.
+ */
+function _signV4(method, objectPath, expirySec, bucket, signerSa, extraHeaders) {
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function toHex(bytes) {
+    return bytes.map(function(b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+  }
+
+  var now         = new Date();
+  var dateStr     = now.getUTCFullYear() + pad2(now.getUTCMonth() + 1) + pad2(now.getUTCDate());
+  var timeStr     = pad2(now.getUTCHours()) + pad2(now.getUTCMinutes()) + pad2(now.getUTCSeconds());
+  var dateTimeStr = dateStr + 'T' + timeStr + 'Z';
+  var credScope   = dateStr + '/auto/storage/goog4_request';
+  var host        = 'storage.googleapis.com';
+  var canonicalUri = '/' + bucket + '/' + objectPath;
+
+  // Build sorted header map; host always included.
+  var headerMap = { host: host };
+  if (extraHeaders) {
+    Object.keys(extraHeaders).forEach(function(k) { headerMap[k] = extraHeaders[k]; });
+  }
+  var headerNames      = Object.keys(headerMap).sort();
+  // Trailing \n on canonical headers block is required by the V4 spec.
+  var canonicalHeaders = headerNames.map(function(k) { return k + ':' + headerMap[k]; }).join('\n') + '\n';
+  var signedHeaders    = headerNames.join(';');
+
+  // Params must be in lexicographic order for the canonical query string.
+  var queryParams = [
+    ['X-Goog-Algorithm',     'GOOG4-RSA-SHA256'],
+    ['X-Goog-Credential',    signerSa + '/' + credScope],
+    ['X-Goog-Date',          dateTimeStr],
+    ['X-Goog-Expires',       String(expirySec)],
+    ['X-Goog-SignedHeaders', signedHeaders]
+  ];
+  var canonicalQs = queryParams.map(function(p) {
+    return encodeURIComponent(p[0]) + '=' + encodeURIComponent(p[1]);
+  }).join('&');
+
+  var canonicalRequest = [method, canonicalUri, canonicalQs, canonicalHeaders, signedHeaders, 'UNSIGNED-PAYLOAD'].join('\n');
+  var algo             = Utilities.DigestAlgorithm.SHA_256;
+  var canonicalHash    = toHex(Utilities.computeDigest(algo, canonicalRequest));
+  var stringToSign     = ['GOOG4-RSA-SHA256', dateTimeStr, credScope, canonicalHash].join('\n');
+
+  // iamcredentials is the correct endpoint for impersonation-style signing;
+  // iam.googleapis.com signBlob is an admin operation and may be blocked by org policy.
+  // iamcredentials uses "payload" (not "bytesToSign") in the request body.
+  var iamUrl  = 'https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/' +
+                encodeURIComponent(signerSa) + ':signBlob';
+  var iamResp = UrlFetchApp.fetch(iamUrl, {
+    method:             'post',
+    contentType:        'application/json',
+    headers:            { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload:            JSON.stringify({ payload: Utilities.base64Encode(stringToSign) }),
+    muteHttpExceptions: true
+  });
+  if (iamResp.getResponseCode() !== 200) {
+    throw new Error('signBlob ' + iamResp.getResponseCode() + ': ' + iamResp.getContentText());
+  }
+  var sigHex = toHex(Utilities.base64Decode(JSON.parse(iamResp.getContentText()).signedBlob));
+  return 'https://' + host + canonicalUri + '?' + canonicalQs + '&X-Goog-Signature=' + sigHex;
+}
+
+/**
+ * Mints a V4-signed GCS GET URL for the episode proxy.
+ * Config keys: REVIEW_GCS_BUCKET, GCS_SIGNER_SA, GCS_EXPIRY_SECONDS (default 28800 = 8h).
+ */
+function getEpisodeStreamUrl(episodeUid) {
+  try {
+    var bucket    = getGovernance('REVIEW_GCS_BUCKET');
+    var signerSa  = getGovernance('GCS_SIGNER_SA');
+    var expirySec = parseInt(getGovernance('GCS_EXPIRY_SECONDS') || '28800', 10);
+    if (!bucket || !signerSa) return { error: 'REVIEW_GCS_BUCKET or GCS_SIGNER_SA not configured.' };
+    return { url: _signV4('GET', 'episodes/' + episodeUid + '/proxy.mp4', expirySec, bucket, signerSa, {}) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+/**
+ * Mints a V4-signed GCS POST URL for initiating a resumable upload of the episode proxy.
+ * x-goog-resumable:start is included in signed headers — client must send it in the POST.
+ * Config keys: REVIEW_GCS_BUCKET, GCS_SIGNER_SA, GCS_UPLOAD_EXPIRY_SECONDS (default 3600 = 1h).
+ */
+function getEpisodeUploadUrl(episodeUid) {
+  try {
+    var bucket    = getGovernance('REVIEW_GCS_BUCKET');
+    var signerSa  = getGovernance('GCS_SIGNER_SA');
+    var expirySec = parseInt(getGovernance('GCS_UPLOAD_EXPIRY_SECONDS') || '3600', 10);
+    if (!bucket || !signerSa) return { error: 'REVIEW_GCS_BUCKET or GCS_SIGNER_SA not configured.' };
+    return { url: _signV4('POST', 'episodes/' + episodeUid + '/proxy.mp4', expirySec, bucket, signerSa,
+                          { 'x-goog-resumable': 'start' }) };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+/**
+ * Checks whether episodes/{uid}/proxy.mp4 exists in the review bucket.
+ * Uses the GCS JSON API with the owner's OAuth token (cloud-platform scope).
+ * @returns {{ exists: boolean } | { error: string }}
+ */
+function checkEpisodeProxyExists(episodeUid) {
+  try {
+    var bucket = getGovernance('REVIEW_GCS_BUCKET');
+    if (!bucket) return { error: 'REVIEW_GCS_BUCKET not configured' };
+    var objectName = encodeURIComponent('episodes/' + episodeUid + '/proxy.mp4');
+    var url  = 'https://storage.googleapis.com/storage/v1/b/' + encodeURIComponent(bucket) + '/o/' + objectName;
+    var resp = UrlFetchApp.fetch(url, {
+      headers:            { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    var code = resp.getResponseCode();
+    if (code === 200) return { exists: true };
+    if (code === 404) return { exists: false };
+    return { error: 'GCS metadata ' + code + ': ' + resp.getContentText() };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+/**
+ * Completes the Upload_Produced_Episode task, flips Video_Status to 'review',
+ * and spawns the Review_Episode task for the host.
+ * @param {number} rowIndex  1-based Tasks sheet row
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, error?: string }}
+ */
+function completeUploadEpisode(rowIndex, episodeUid) {
+  try {
+    var sheetId   = getMasterSheetId();
+    var ss        = SpreadsheetApp.openById(sheetId);
+
+    var taskSheet = ss.getSheetByName('Tasks');
+    taskSheet.getRange(rowIndex, TASKS_COLS.Status).setValue('complete');
+    taskSheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(new Date());
+
+    var epSheet   = ss.getSheetByName('Episodes');
+    var epData    = epSheet.getDataRange().getValues();
+    var guestName = episodeUid, contactId = '';
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
+      epSheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue('review');
+      break;
+    }
+
+    bumpVersion('episodes', 'completeUploadEpisode');
+    bumpVersion('tasks',    'completeUploadEpisode');
+
+    spawnTask({
+      episodeUid:       episodeUid,
+      contactId:        contactId,
+      workflowStep:     'Review_Episode',
+      actionTitle:      'Review episode: ' + guestName,
+      assignee:         getGovernance('ASSIGNEE_HOST'),
+      assignedBy:       'The Fairy Team',
+      status:           'open',
+      priority:         'normal',
+      executiveSummary: 'The episode proxy for ' + guestName + ' is ready for your review.'
+    }, true);
+
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
   }
 }
 

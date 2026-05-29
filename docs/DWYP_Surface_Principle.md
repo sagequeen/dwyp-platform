@@ -25,8 +25,7 @@ If the answer is unclear, the work probably belongs on desktop. Default in favor
 JT is on her phone. She's between things. She has 30 seconds. She wants to know what needs her, then tap to handle it.
 
 **Lives on mobile:**
-- Dashboard — what's pending right now
-- Task list — read, complete, comment, assign
+- Tasks — what's pending right now (episode cards + loose task containers)
 - Episode status awareness — release date, current phase, gating status
 - Asset review (images, reels) — sort, approve, comment
 - Episode review — proxy player, timecoded comments
@@ -45,8 +44,8 @@ JT is on her phone. She's between things. She has 30 seconds. She wants to know 
 JT is at her computer. She's sitting down to make things. She has time and focus.
 
 **Lives on desktop:**
-- All of Studio (Publish, Design, Write, Outreach, Ideas)
-- Per-card Claude chat
+- All of Studio (guest nav surfaces: Images, Reels, Episode, Show Notes, Schedule; Write → Brainstorm)
+- AI Chat per-asset (Images / Reels)
 - Canvas work (Fabric.js, backgrounds, quote graphics, layouts)
 - Long-form writing (newsletters, outreach drafts, brainstorms)
 - Multi-panel iteration
@@ -90,7 +89,7 @@ JT can open a Write Lite surface on mobile to capture ideas before they disappea
 
 **What Write Lite saves:**
 - The conversation (both sides) → one new Drive doc per session, named by date/timestamp
-- Doc appears in Write tab's My Docs panel on desktop — she opens it there to continue real work
+- Doc appears in the Brainstorm Docs picker (Write → Brainstorm) on desktop — she continues composition there
 
 **What Write Lite is not:**
 - A read-only view of Studio output
@@ -109,7 +108,7 @@ JT can open a Write Lite surface on mobile to capture ideas before they disappea
 | JT taps "Ready for Release" from her phone | Mobile | Approval = ops decision |
 | JT writes a newsletter | Desktop | Composition |
 | JT iterates on a caption with Claude | Desktop | Composition |
-| JT wants to read last week's plan in bed | Desktop | Reading creation output is creation-context. Dashboard summary is the mobile equivalent. |
+| JT wants to read last week's plan in bed | Desktop | Reading creation output is creation-context. Tasks screen is the mobile equivalent. |
 | JT has an idea while walking and opens Write Lite | Mobile | Capture gesture — chat only, saves to Drive doc, continues on desktop |
 | JT spots a typo in a scheduled caption from her phone | Desktop (to fix) | Awareness on mobile, fix on desktop. Friction is acceptable — it protects the principle. |
 | Audra checks if an episode is gated | Mobile | Status awareness |
@@ -144,11 +143,11 @@ These are downstream from the principle and need their own design pass once the 
 
 ## Implications
 
-### For the Publish AI Companion spoke
-The companion is desktop-only. No mobile equivalent. JT's phone shows scheduled posts read-only — she cannot chat with Claude or apply chips on mobile. The companion design captured separately is unaffected by this principle except in scope: it's a desktop surface, full stop.
+### For the AI Companion spoke
+The companion is desktop-only. No mobile equivalent. JT's phone shows scheduled posts read-only — she cannot use AI Chat or apply chips on mobile. Companion lives in the AI Chat rail icon on Images and Reels surfaces; desktop-only, full stop.
 
-### For dashboard half-width-tasks-alongside-episode-cards
-The complaint that started this conversation. Resolution: episodes and tasks are *different entity classes*. Dashboard treats them with distinct visual hierarchy — one not mistakable for the other. Component library work, not principle work, but the principle says they deserve different shapes because they serve different roles (entity vs action).
+### For Tasks screen half-width-tasks-alongside-episode-cards
+The complaint that started this conversation. Resolution: episodes and tasks are *different entity classes*. Tasks screen treats them with distinct visual hierarchy — one not mistakable for the other. Component library work, not principle work, but the principle says they deserve different shapes because they serve different roles (entity vs action).
 
 ### For Studio tab parity
 Tabs vary in maturity (Publish detailed, Write half-built, Outreach/Ideas placeholders). The principle doesn't fix that — but the design system pass that follows should standardize tab chrome so half-built tabs at least *look* coherent with built ones, even when their content is thin.

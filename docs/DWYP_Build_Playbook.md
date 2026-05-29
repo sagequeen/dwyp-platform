@@ -86,9 +86,9 @@ Both run simultaneously. They converge at Phase 3.
 - **Depends on:** 1.2.
 - **Status:** `getDomainsBatch()` endpoint + three-bucket domain model (ACTIVE / TRACKED_ONLY / excluded) + `refreshVersions()` / `loadDomain()` / `_rerenderCurrentTab()` + `_coldStartComplete` flag. Staged + verified.
 
-### 1.5 Migrate Dashboard to Version-Aware Loading ✅ Done
+### 1.5 Migrate Tasks Screen to Version-Aware Loading ✅ Done
 - **Owner:** Claude Code, autonomous
-- **Done:** Dashboard tasks list, episode cards, and loose tasks all use version-aware loader. Tab return triggers version check, not full refetch. Verified in browser DevTools — second tab return makes one network call only when nothing changed.
+- **Done:** Tasks screen task list, episode cards, and loose tasks all use version-aware loader. Tab return triggers version check, not full refetch. Verified in browser DevTools — second tab return makes one network call only when nothing changed.
 - **Surface back:** After implementation, ready for QA.
 - **Depends on:** 1.4.
 - **Status:** `loadData()` waterfall replaced with getAllVersions → getDomainsBatch cold-start. Staged + verified. Production deploy pending (batched with 1.1–1.3).
@@ -107,7 +107,7 @@ Both run simultaneously. They converge at Phase 3.
 - **Depends on:** None.
 - **Parallel safe:** Yes.
 
-**Phase 1 done state:** Version stamps live across all domains. Dashboard demonstrates the pattern. Blurhash thumbnails showing. The app is measurably faster on tab return.
+**Phase 1 done state:** Version stamps live across all domains. Tasks screen demonstrates the pattern. Blurhash thumbnails showing. The app is measurably faster on tab return.
 
 ---
 
@@ -140,7 +140,7 @@ Both run simultaneously. They converge at Phase 3.
 
 ### 2.3 Mobile IA Hub Session
 - **Owner:** Audra (hub with Claude)
-- **Done:** Document captures: navigation pattern (single feed, bottom nav, etc.), screen inventory (Dashboard, Tasks, Asset Review, Episode Review, Contacts, settings, Help Desk overlay), back behavior, what surfaces "show but don't edit," strict-wall messaging when desktop-only surface is tapped.
+- **Done:** Document captures: navigation pattern (single feed, bottom nav, etc.), screen inventory (Tasks, Asset Review, Episode Review, Contacts, settings, Help Desk overlay), back behavior, what surfaces "show but don't edit," strict-wall messaging when desktop-only surface is tapped.
 - **Surface back:** N/A.
 
 ### 2.4 Desktop Chrome Conventions Hub Session
@@ -155,8 +155,15 @@ Both run simultaneously. They converge at Phase 3.
 ## Phase 3: Application of Design System (Spoke Track)
 
 **Goal:** Apply the design system to specific surfaces. Each is a propagation of the system, not a freelance redesign.
-**Critical path:** Visual modernization (3.2) is high-leverage user-visible work.
-**Parallel safe:** Items within Phase 3 can run in any order; pick by leverage.
+**Sequencing note (Hub May 2026):** Remodel → AI wiring → Pretty. Phase 3.0 (Rail Remodel) ships first. Phase 4 (AI Companions) ships before Phase 3.2 (Visual Modernization) — wiring first, pretty second.
+**Parallel safe:** Items within Phase 3 can run in any order except: 3.0 before everything; 3.2 after Phase 4.
+
+### 3.0 Rail Remodel Spoke ← Next
+- **Owner:** Claude Code, with checkpoints
+- **Done:** Left nav restructured to guest-name root items with sub-surfaces (Images, Reels, Episode, Show Notes, Schedule); Write (Brainstorm) and Tasks (Buckets, Episodes) as peer root items. Right rail single-panel (AI Chat icon + surface-specific icons per Operating Model §7 table). Left-center chat panel retired from code. Caption and Title Card moved to center canvas. Old nav accordion (`Design/Write/Schedule/Tasks`) removed from code.
+- **Surface back:** Show Notes surface wiring (JT Copy fairy spec is TBD — implement stub or wall only). Any code pattern conflicts with new nav shape. After every file touched.
+- **Depends on:** This handoff doc correction pass complete; Hub decisions locked.
+- **Parallel safe:** No — ships before AI wiring (Phase 4).
 
 ### 3.1 Build Component Library in Code
 - **Owner:** Claude Code, with checkpoints
@@ -166,15 +173,16 @@ Both run simultaneously. They converge at Phase 3.
 
 ### 3.2 Visual Modernization Spoke
 - **Owner:** Claude Code, with checkpoints
-- **Done:** Glassmorphism, layered shadows, larger corner radius, micro-animations, focus states applied across all five Studio tabs and Dashboard. Brand colors and font unchanged. Skeleton states in place for all list/grid surfaces.
+- **Done:** Glassmorphism, layered shadows, larger corner radius, micro-animations, focus states applied across all guest nav surfaces and Tasks screen. Brand colors and font unchanged. Skeleton states in place for all list/grid surfaces.
 - **Surface back:** Initial pass for visual review before propagation. Any surface where existing visual treatment is intentional and shouldn't change.
-- **Depends on:** 3.1.
+- **Depends on:** 3.1 and **Phase 4 (AI Companions)** — visual modernization ships after AI wiring is stable. Pretty last.
+- **Sequencing note:** Moved after Phase 4 per Hub May 2026. Wiring exposes structural problems that visual treatment can't fix; doing pretty first means redoing it.
 
 ### 3.3 Schedule Panel UX
 - **Owner:** Audra (hub design) → Claude Code (spoke implementation)
-- **Done:** Hub design captures: slot state visual signals (filled/empty/draft/approved), sibling pairing indicator, week progress, activity recency. Spoke implements the redesigned panel.
+- **Done:** Hub design captures: slot state visual signals (filled/empty/draft/approved), sibling pairing indicator, week progress, activity recency. Schedule rail composition finalized. Spoke implements.
 - **Surface back:** Hub: N/A. Spoke: implementation patterns that conflict with existing code.
-- **Depends on:** 3.1.
+- **Depends on:** 3.1. **Gated:** Schedule rail composition parked pending follow-up Hub session (see Operating Model §7 open items).
 
 ### 3.4 Design Tab Quote Graphic Workspace
 - **Owner:** Audra (hub design) → Claude Code (spoke implementation)
@@ -188,9 +196,10 @@ Both run simultaneously. They converge at Phase 3.
 
 ## Phase 4: AI Companions (Spoke Track)
 
-**Goal:** Two parallel AI surfaces — Publish per-card companion (creative) and Help Desk (informational). Same architectural pattern, different LLMs and scopes.
-**Critical path:** No — but high user-value when shipped.
-**Parallel safe:** Both companion spokes can run after Phase 1 + relevant pieces of Phase 3. Running them in close sequence reuses pattern knowledge and chip-rendering code.
+**Goal:** AI Chat wired per surface — per-asset companion (Images/Reels) and Help Desk (informational). Same architectural pattern, different LLMs and scopes.
+**Sequencing note (Hub May 2026):** Phase 4 ships before Phase 3.2 (Visual Modernization). Remodel → AI wiring → Pretty is the locked sequence.
+**Critical path:** Yes for AI wiring sequence — ships before 3.2.
+**Parallel safe:** Both companion spokes can run after Phase 3.0 (Rail Remodel) + Phase 3.1. Running them in close sequence reuses pattern knowledge and chip-rendering code.
 
 ### 4.1 Confirm Asset_Library Schema (Publish Companion prerequisite)
 - **Owner:** Audra
@@ -246,14 +255,14 @@ Items confirmed but not yet sequenced. Pick up after Phase 4 stabilizes.
 ## Critical Path
 
 ```
-Phase 0 → Phase 1 (parallel with Phase 2) → Phase 3 → Phase 4
-                ↓                              ↑
-           foundational              applies the system
+Phase 0 → Phase 1 (parallel with Phase 2) → Phase 3.0 → Phase 3.1 → Phase 4 → Phase 3.2 → Phase 3.3
+                ↓                              ↑            ↑           ↑           ↑
+           foundational                   Remodel      Component   AI wiring    Pretty
 ```
 
 **Soonest user-visible win:** Phase 1 lands first. Faster app, no UI redesign required.
-**Biggest user-visible win:** Phase 3.2 (visual modernization) once Phase 2 is done.
-**Highest JT/Audra leverage win:** Phase 4 (AI companions) once foundations are stable.
+**Biggest user-visible win:** Phase 3.2 (visual modernization) — but only after AI wiring is stable.
+**Highest JT/Audra leverage win:** Phase 4 (AI companions) — moved before visual modernization per Hub May 2026.
 
 ---
 

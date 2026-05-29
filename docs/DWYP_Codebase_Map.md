@@ -177,7 +177,7 @@ Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before 
 Surfaces:
 - **Episodes tab** — episode list, episode detail, review workflow
 - **Contacts tab** — contact list, contact detail
-- **Studio tab** — Design surface (sole landing route): canvas editor, H&Q chips, QG/Reels sub-tabs, day picker, export; Write surface (backend wired, UI pending)
+- **Studio tab** — Guest-name root nav (Images canvas, Reels player per guest); Write → Brainstorm; Tasks → Episodes/Buckets. Design as standalone root surface retired (Hub May 2026). Canvas editor, H&Q chips, export wired under guest → Images/Reels. Rail Remodel spoke pending (replaces old nav accordion).
 
 Key client-side patterns:
 - `google.script.run.withSuccessHandler(...).withFailureHandler(...)` — all server calls
@@ -240,7 +240,7 @@ TRACK C — Bridge (Quote Graphic Assets)
 
 DESIGN (Studio — JT)
   dwyp_ui.html + dwyp_app.js
-    → Studio Design tab: JT edits quote graphic canvas, caption, background
+    → Studio guest → Images: JT edits quote graphic canvas, caption, background
     → exportAssetToDrive() → PNG + .txt companion rendered server-side → Manual_Exports/ subfolder
     → placeAssetInSlot() → schedules post in Social_Assets
 

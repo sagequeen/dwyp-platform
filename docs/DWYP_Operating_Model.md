@@ -125,10 +125,11 @@ See §4 for the corollary table — 13 operational rules under this principle.
 The spine. One line each. Listed in the order they emerged.
 
 1. **Playbook-as-Engine** — A pre-compose engine reads a Playbook (the `Why` column in the slot recipe table) to fill the week's slots with ranked drafts *before* JT opens the app. AI chat = refinement, not creation.
-2. **Dashboard-as-Home + Studio-as-Creation** — The app lands on the Dashboard
+2. **Tasks-as-Home + Studio-as-Creation** — The app lands on the Tasks screen
    (episode cards + loose-task containers). Studio is the desktop creation
-   environment: a surface-first nav accordion (Design / Write / Schedule / Tasks).
-   Navigation carries no state signals; state rides the card.
+   environment: guest-name root nav (sub-surfaces: Images, Reels, Episode, Show Notes,
+   Schedule); Write and Tasks as peer root items. Navigation carries no state signals;
+   state rides the card.
 3. **Mobile = What Is, Not What Should Be** — Mobile is read/react/schedule. Origination lives on desktop. Hard wall, not graceful degradation.
 4. **Project, Not Episode** — Episode is the dense recurring instance of a more general shape. Build for the specific case; generalize only when a second case shows up with real evidence.
 5. **Slot-Type Unifies Outbound** — The schedule is a unified calendar of typed slots. Slot type determines recipe, platform target, asset shape, review affordance.
@@ -185,18 +186,16 @@ The app's spatial contract. Every surface sits inside it.
 
 | Pane | Width | What it holds |
 |---|---|---|
-| Left — Navigation | Compact | Surface accordion (Design / Write / Schedule / Tasks); episodes under active surface; free workspace; contacts; loose tasks; (Audra) ops |
-| Center-left — Canvas | Largest, primary | Active workspace (Publish week, Writer doc, Design canvas, episode review, task surface) |
+| Left — Navigation | Compact | Guest names as root items (sub-surfaces: Images, Reels, Episode, Show Notes, Schedule); Write (Brainstorm); Tasks (Buckets, Episodes); (Audra) ops |
+| Center-left — Canvas | Largest, primary | Active workspace (Writer doc, Design canvas, episode review, task surface) |
 | Center-right — Contextual / expanded menu | Variable | Whatever the rail icon expanded |
-| Right — Rail | Narrow icon column | Canvas-aware tools; Claude is one icon |
+| Right — Rail | Narrow icon column | Canvas-aware tools; AI Chat is one icon among others |
 
 **Mobile** is the same chrome with reaction-only verbs per the Surface Principle. Not a separate surface — a permission profile.
 
 ### Episode Presence
 
-Episodes surface as **cards on the Dashboard** (home) and as a **navigation list
-under the active Studio surface**. Card spec is authoritative in
-`DWYP_Platform_State.md`. Navigation lists carry no state signals.
+Episodes surface as **cards on the Tasks screen** (home) and as **root navigation items in the left rail** (guest name as nav root, with sub-surfaces — Images, Reels, Episode, Show Notes, Schedule — underneath). Card spec is authoritative in `DWYP_Platform_State.md`. Navigation carries no state signals.
 
 **Date fallback chain:** `Release_Date` → `Recording_Date` → `TBD`. TBD sorts to
 bottom under Date-Driven Priority.
@@ -221,18 +220,22 @@ The right rail is **canvas-aware**. Composition reflects what's open in the cent
 
 **Cardinal rule:** the rail never has its own destination. Everything in the rail acts on the center pane. If a control wouldn't make sense as "applies to what's open," it doesn't belong in the rail.
 
-**Default expectation: two panels open at once.** Claude (top) + active contextual panel (bottom). Riverside-style stacking. Not the exception.
+**One panel active at a time.** AI Chat is one icon among others. Tapping a different icon switches the active panel; no stacking.
 
-**Per-surface composition:**
+**Rail composition (per surface):**
 
-| Surface | Rail composition |
-|---|---|
-| Universal | Claude (open by default) |
-| Publish — Quote Graphic canvas | Library \| Generate toggle below Claude |
-| Publish — Reel canvas | TBD (Edit Reel / Trim affordance lives here when Sentinel ships) |
-| Writer | Vert panel; Claude still primary |
-| Help Desk | Right-rail icon → center-right pane (Gemini, ops Q&A) |
-| Design / Outreach / Ideas | Same contract; per-surface composition walked individually |
+| Surface | Rail icons | AI |
+|---|---|---|
+| Guest → Episode | AI Chat · Revision Comments | TBD |
+| Guest → Reels | AI Chat · Reel Browser | TBD |
+| Guest → Images | AI Chat · Library/Generate · Hooks/Quotes | TBD |
+| Guest → Show Notes | AI Chat · Docs · Hook/Quote/Caption Submission | Claude, transcript-scoped |
+| Guest → Schedule | AI Chat · (parked — follow-up Hub) | TBD |
+| Write → Brainstorm | AI Chat (Research \| Polish toggle) · Docs | Gemini + Vert (Research) / Claude (Polish) |
+| Tasks → Buckets | AI Chat · Add Task | Gemini |
+| Tasks → Episodes | AI Chat · Add Task | Gemini |
+
+**AI assignment for surfaces marked TBD is parked for a follow-up Hub session.**
 
 **Rail icons are verbs, not vendors.** JT picks "Generate" or "Library," not "Gemini" or "Adobe."
 
@@ -248,7 +251,7 @@ The most condensed section because the most assumptions live here. Read carefull
 
 | Layer | Tech | Role | Surfacing |
 |---|---|---|---|
-| **Claude** | Claude API | All human-facing creative copy — captions, hooks, chat responses, scheduling commentary. | Right rail, top half. Publish + Writer + Design. |
+| **Claude** | Claude API | All human-facing creative copy — captions, hooks, chat responses, scheduling commentary. | AI Chat icon in the right rail. Publish + Writer + Design. |
 | **Vert** | Vertex AI RAG (us-south1, Spanner) | Retrieval only. Queries the corpus. Never generates. | Dual-access: Claude calls it as a tool (transparent, mid-response); JT opens it directly as a search panel in Writer when she wants to drive the query herself. |
 | **Gemini** | Gemini API | Image generation (**GenGem**), audio/video processing, Herald guest research, Help Desk Q&A. | Invisible to JT inside Generate panel; visible to her as the Help Desk chat. |
 
@@ -265,7 +268,7 @@ Three companions, three lanes. Same chip primitive, different LLMs, different sc
 | Companion | LLM | Scope | History | Surfacing |
 |---|---|---|---|---|
 | **Publish AI Companion** | Claude | Active card + same-date siblings (cap 4) + episode index | Per-asset, persisted in `Asset_Library.chat_history` (column 19, schema delta pending) | Per-card chat panel; card "docks" as tab header |
-| **Writer Companion** | Claude | Pinned episode docs + open canvas + user-added docs + corpus (Vert-first) | Per-session, in-memory | Right-rail Claude icon |
+| **Writer Companion** | Claude | Pinned episode docs + open canvas + user-added docs + corpus (Vert-first) | Per-session, in-memory | AI Chat icon in the right rail |
 | **Help Desk Companion** | **Gemini** | Tasks + episodes + contacts + Asset_Library + recent Audit_Trail. **Read-only on data.** | Session-scoped (closes tab = clears). No persistence. | Right-rail icon → center-right pane |
 
 **Why Gemini for Help Desk:** ~10× cheaper, doesn't need brand voice or reasoning — just "given this data, answer the question." Already wired (`callGeminiAPI()` from Herald). Lane preservation: Claude for human-facing creative copy; Gemini for grunt work.
@@ -308,7 +311,7 @@ What each companion sees per call:
 
 **No cross-session memory at the LLM layer.** Asset-attached `chat_history` is the per-asset durable thread (Publish). Session-scoped clears for Writer and Help Desk. Feedback loop is *Audra-tuned via `Why` cells*, not auto-learned.
 
-**Publish Companion hard exclusions.** Past closed episodes, full corpus search, other platform tabs (Tasks/Contacts/Dashboard), and production status (review gating, proxy approvals) are out of scope. When JT asks Publish-scope Claude something corpus-shaped, graceful handoff: "I can see this week's content. For full archive search, Studio is your tool."
+**Publish Companion hard exclusions.** Past closed episodes, full corpus search, other platform tabs (Tasks/Contacts), and production status (review gating, proxy approvals) are out of scope. When JT asks Publish-scope Claude something corpus-shaped, graceful handoff: "I can see this week's content. For full archive search, Studio is your tool."
 
 ### Chip Routing — How Claude Acts On The Canvas
 
@@ -533,8 +536,7 @@ Live tensions. Do not invent answers; surface them to Audra.
 |---|---|
 | **Accordion-as-Focus scope** | v0.1 locks it for Reels only. Hub conversation has evolved to apply it at the slot-stack level on the day grid (one slot expanded at a time in the center pane). Two layers — slot-stack-level AND reel-candidate-level inside a slot — need explicit naming. |
 | **Center canvas behavior inside an expanded slot** | Spatial arrangement of canvas + 3 pre-composed options + Claude awareness — undefined. How does the Reels slot canvas differ from the Quote Graphic slot canvas? |
-| **Companion surfacing details** | When Claude speaks first vs. waits. How loading state shows. Whether Claude has a visible header or floats. How the "persistent + contextual" duality is communicated. |
-| **Collapsible right rail** | Whole-rail edge tab vs. Claude-only minimize vs. both panels independent. The "Riverside feel of collapsible right side menu" JT named. |
+| **Companion surfacing details** | Partially resolved: Claude lives in the AI Chat icon; not stacked. Remaining sub-questions (when Claude speaks first vs. waits; loading state treatment; header vs. float) parked for AI wiring spoke. |
 
 ### Companion design open items (from Publish AI Companion Design)
 
@@ -561,11 +563,10 @@ Live tensions. Do not invent answers; surface them to Audra.
 | # | Question | Routes to |
 |---|---|---|
 | Q14 | Slot recipe table storage — Master Sheet tab vs. Governance_Config | Build-time |
-| Q15 | Right rail icon registry per canvas type | Phase 2.4 |
+| Q15 | Right rail icon registry per canvas type — **partially resolved** (table locked in §7 above; AI assignment per surface parked for follow-up Hub) | Follow-up Hub |
 | Q16 | Audra ops drawer placement — avatar dropdown vs. right-rail Ops icon | Phase 2.4 |
-| Q17 | Center-right pane behavior — overlay / push / float | Phase 2.4 |
+| Q17 | Center-right pane behavior — overlay / push / float (only remaining sub-question; single-panel rail means the pane = the active rail panel) | Implementation spoke |
 | Q18 | Within-session vs. cross-session state persistence pattern | Phase 3 build |
-| — | Reels rail composition — what's below Claude when a Reel canvas is open | Reels hub continuation |
 | Q2 | Swap between pre-composed options on mobile — pure selection vs. forbidden | Surface Principle update |
 | Q3 | Option count — exactly 3 always, or variable | Vert Fairy job spec |
 | Q9 | Pinned-docs context budget for Claude | Phase 4.4 |

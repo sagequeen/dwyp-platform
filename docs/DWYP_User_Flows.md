@@ -33,20 +33,20 @@ Mobile is treated as a **permission profile**, not a separate surface. Per Refra
 
 | # | Surface | Role | Lives in |
 |---|---|---|---|
-| 1 | Left Rail | Navigation — surface accordion (Design / Write / Schedule / Tasks); no state signals | App chrome |
+| 1 | Left Rail | Navigation — guest-name root items (Images, Reels, Episode, Show Notes, Schedule per guest); Write (Brainstorm) and Tasks (Buckets, Episodes) as peer root items; no state signals | App chrome |
 | 2 | Episode Tab | Project workspace — task feed, schedule, assets, reviews, reference docs | Center pane, scoped to episode |
 | 3 | Free Workspace Tab | Project workspace — non-episode-scoped equivalent | Center pane |
 | 4 | Contacts | Reference + edit — guest brief source-of-truth | Left rail tab |
-| 5 | Schedule (canvas) | Place — assign kept assets to slots, view locked slots, export guest bundle | Global surface (not yet built) |
-| 6 | Writer (canvas) | Compose — written work (docs, emails, briefs) | Episode or free workspace center pane |
-| 7 | Design (canvas) | Compose — visual work (quote graphics, backgrounds) | Episode or free workspace center pane |
+| 5 | Schedule (per-guest) | Place — assign kept assets to slots, view locked slots, export guest bundle | Sub-item under each guest's nav root (not yet built) |
+| 6 | Writer / Brainstorm | Compose — written work (docs, emails, briefs); cross-episode; global | Write → Brainstorm center pane |
+| 7 | Images / Reels canvas | Compose — visual work (quote graphics, captions, reel titles) | Center pane under guest → Images or guest → Reels |
 | 8 | Help Desk | Informational ops chat (Gemini, read-only across app state) | Right rail icon → center-right pane |
 | 9 | Audra Ops | Pipeline ops — revision queue (in-rail), Easy Fix, Fairy Remote, Audit_Trail | Left rail icons + Hidden Until Engaged drawer |
 | 10 | Loose Tasks | Untethered tasks (Personal / Launch / no project) | Left rail tab |
 
-**Landing surface — Dashboard.** The app opens to the Dashboard (episode cards +
+**Landing surface — Tasks.** The app opens to the Tasks screen (episode cards +
 loose-task containers); spec authoritative in `DWYP_Platform_State.md` and
-`DWYP_Platform_Reference.md` AD #63. The Left Rail is in-Studio navigation, not the
+`DWYP_Platform_Reference.md` AD #90. The Left Rail is in-Studio navigation, not the
 landing.
 
 ---
@@ -214,7 +214,7 @@ Multi-surface ops. Primary daily work lives in the left rail via icon state. Rar
 
 | Verb | Status | Notes |
 |---|---|---|
-| See JT revision queue | ✅ | Revision state surfaced on the Dashboard, role-filtered (S2) |
+| See JT revision queue | ✅ | Revision state surfaced on the Tasks screen, role-filtered (S2) |
 | Upload v2 (closes revision) | ✅ | Triggers resolved-checkmarks on comments (S2); cannot edit JT's comments |
 | Easy Fix on failed task | 🟡 | Fairy name + step + timestamp + audit deep-link + Re-trigger (S2) |
 | Tap audit deep-link → Audit_Trail entry | 🟡 | Embedded expandable panel from task context (S2) |
@@ -293,16 +293,17 @@ Original framing: 10 episodes simultaneous, un-pre-composed at launch. **Lenses 
 
 JT wants to transcribe and caption a non-episode-scoped reel. **Lenses stressed:** Cross-surface need; Permission gradients. **Outcome:** Reframe #4 confirmed without new surface. Existing Add Slot affordance handles the entire flow: pick Reel type → leftover reels appear OR Upload → Get Summary (Gemini) → caption chat unlocks (Claude reads Reel_Summary + Why + brand voice + episode index). **Sibling Not Sibling Surface** operational principle surfaced — nullable `Asset_Library.Episode_UID` is sufficient; non-episode reels schedule alongside episode reels in the same week view. Make doesn't care; it reads Social_Assets.
 
-### Reframe #2 stress — Dashboard-as-Home + Studio-as-Creation *(S5)*
+### Reframe #2 stress — Tasks-as-Home + Studio-as-Creation *(S5)*
 
 The home-screen model was stressed for discovery, cognitive load, and navigation
 cost. **Lenses stressed:** Discovery; Cognitive Load; navigation cost. **Outcome:**
-The Dashboard is the landing surface (episode cards + loose-task containers);
-in-Studio navigation is a surface-first accordion carrying no state signals.
+Tasks screen is the landing surface (episode cards + loose-task containers);
+in-Studio navigation is guest-name root nav (Images, Reels, Episode, Show Notes,
+Schedule per guest; Write and Tasks as root items) carrying no state signals.
 Four-pane desktop chrome (Left nav / Center-left canvas / Center-right contextual /
 Right rail). Date fallback chain established. Active set rule (Drive folder exists →
 final post end-of-day) closed Q5. Within-Session State Persists; Cross-Session Resets
-To Priority corollary surfaced. Claude lives in right rail.
+To Priority corollary surfaced. AI Chat lives in right rail as one icon among others (single-panel).
 
 ---
 

@@ -140,7 +140,7 @@ Create and schedule are two surfaces, not one chained flow. The chained per-card
 
 **Live-reference consequence:** editing an asset in Design that is placed in a slot updates the slot — Social_Assets foreign-keys to Asset_Library; no per-slot copy. Suppressed only when slot is locked. Recommended UI cue: when opening an asset currently placed in an unlocked slot, signal "this asset is scheduled [day] — editing changes the scheduled post." Not a lock; awareness only.
 
-**Resolves Q11** — Schedule is its own global surface, grouped by guest/week.
+**Resolves Q11 (updated)** — Schedule is per-guest, accessed as a sub-item under each guest's nav root. Not a global surface above projects.
 
 ---
 
@@ -172,38 +172,42 @@ Pre-compose quality = Playbook quality. **OQ-F (playbook strategic content) is p
 
 Reel sourcing remains JT-driven and won't be automated.
 
-### 2. Dashboard-as-Home + Studio-as-Creation
+### 2. Tasks-as-Home + Studio-as-Creation
 
-The app lands on the **Dashboard** — the ops home: episode cards (release + asset
+The app lands on the **Tasks screen** — the ops home: episode cards (release + asset
 state) and loose-task containers (Podcast / People / Personal). Card spec is
 authoritative in `DWYP_Platform_State.md`.
 
-**Studio** is the desktop creation environment, entered from the Dashboard. Its
-left rail is a surface-first navigation accordion — Design / Write / Schedule /
-Tasks — with episodes listed under the active surface. Navigation carries no state
-signals; state rides the card.
+**Studio** is the desktop creation environment, entered from the Tasks screen. Its
+left rail uses guest names as root nav items, each with sub-surfaces (Images, Reels,
+Episode, Show Notes, Schedule). **Write** (with Brainstorm) and **Tasks** (with
+Buckets and Episodes) are peer root items. Design as a standalone root surface is
+retired. Navigation carries no state signals; state rides the card.
 
-Mobile is the Dashboard plus reaction verbs (Surface Principle); origination lives
+Mobile is the Tasks screen plus reaction verbs (Surface Principle); origination lives
 in desktop Studio. Mode follows task — the user never picks Design / Write / Schedule.
 
 **S5 — Desktop chrome locked at four panes:**
 
 | Pane | Width | Content |
 |---|---|---|
-| Left — Episode tabs | Half-size (compact) | Episode list, free workspace, contacts, loose tasks, (Audra) ops |
-| Center-left — Canvas | Largest, primary | Active workspace (Schedule view, Write doc, Design canvas, episode review, task surface) |
+| Left — Navigation | Compact | Guest names (root items) with sub-surfaces; Write; Tasks; (Audra) ops |
+| Center-left — Canvas | Largest, primary | Active workspace (Write doc, canvas, episode review, task surface) |
 | Center-right — Contextual / expanded menu | Variable | Whatever the rail icon expanded |
-| Right — Rail | Narrow icon column | Canvas-aware tools; Claude is one icon |
+| Right — Rail | Narrow icon column | Canvas-aware tools; AI Chat is one icon among others |
 
-**S5 — Episode tab anatomy:**
+**Episode left nav anatomy:**
 
 ```
-[Guest Name]
-[Release Date or fallback]
-🎧 🖼 🎬
+[GUEST NAME]
+    Images
+    Reels
+    Episode
+    Show Notes
+    Schedule
 ```
 
-Date fallback chain: `Release_Date` → `Recording_Date` → `TBD`. TBD tabs sort to bottom under Date-Driven Priority.
+Guest name is the root item. Sub-items are the per-episode surfaces. Date fallback chain: `Release_Date` → `Recording_Date` → `TBD`. TBD entries sort to bottom under Date-Driven Priority.
 
 **S5 — Active set rule:** Episode is in the left rail from the moment its Drive folder exists (Secretary Fairy creates at scheduling) through end-of-day of the final social media post. Archive surface deferred to future demand.
 
@@ -287,7 +291,7 @@ The assistant on every surface knows what the user is currently looking at, plus
 
 | Surface | Foreground (what the user sees) | Background |
 |---|---|---|
-| Design per-asset chat | The asset in focus | Corpus, always available |
+| Images / Reels per-asset chat | The asset in focus | Corpus, always available |
 | Write | Pinned episode docs + open canvas + user-added docs | Corpus, always available |
 | Help Desk | App state (tasks, episodes, contacts, schedule) | Audit_Trail recency window |
 
@@ -299,7 +303,7 @@ Known relationships (guest brief from `CONTACT_LIBRARY/{contact_id}/`, transcrip
 
 **Empty Writer canvas is a chooser.** Quick-start buttons (Newsletter / Email / Outreach / Brainstorm / ...) pre-seed half the prompt and pull a doc template. The seven blank Scribe template keys in Governance_Config finally have a home.
 
-**S5 design target (Phase 2.4 — not yet built): Claude lives in the right rail.** Right-rail icon column adapts to whatever canvas is currently open (Riverside-style). Claude is one icon among canvas-aware tools. Contextual, accessible from any canvas, never a separate destination. Center-right pane = the expanded panel of whatever right-rail icon was activated. Right-rail icon registry per canvas type is Q15.
+**Locked (Hub May 2026): AI Chat lives in the right rail as one icon among others.** Single panel active at a time — no stacking. Rail adapts to whatever canvas is open. Center-right pane = the expanded panel of whatever right-rail icon was activated. Rail composition per surface is locked in Operating Model §7. AI assignment per surface is parked (Q15).
 
 ### 8. Pipeline Emails Become Writer Tasks *(confirmed S3)*
 
@@ -372,21 +376,20 @@ Audra: same rhythms + pipeline ops (filing, herald, debug) via role-filtered ico
 
 ### Left Rail Composition
 
-Surface-first navigation accordion: **Design / Write / Schedule / Tasks.** Episodes
-list under the active surface (e.g. guest names under Design). Contacts, Free
-workspace, and Loose tasks reachable from the same rail. (Audra only) Ops drawer or
-right-rail Ops icon (placement Q16).
+Guest names are root nav items. Each guest expands to: **Images · Reels · Episode · Show Notes · Schedule**. **Write** (with Brainstorm) and **Tasks** (with Buckets and Episodes) are peer root items. Design as a standalone root surface is retired. (Audra only) Ops drawer or right-rail Ops icon (placement Q16).
 
-Pure navigation — no state signals, no badges. State rides the card on the Dashboard.
+**Conceptual note:** Tasks is the lens. Episodes and Buckets are organization modes within Tasks. Tasks → Episodes is the dashboard and app entry point.
+
+Pure navigation — no state signals, no badges. State rides the card on the Tasks screen.
 
 ### Three AI Surfaces
 All three follow Reframe #7 (context = surface). All three sit in the same chat-bubble + chip primitives spec.
 
 | Surface | LLM | Scope |
 |---|---|---|
-| Design per-asset | Claude (Phase 4.4 — not yet built) | Refinement of asset-in-focus; companion scoped to active asset only |
+| Images / Reels per-asset | Claude (Phase 4 — not yet built) | Refinement of asset-in-focus; companion scoped to active asset only |
 | Writer canvas | Claude | Writing assistance scoped to pinned + open docs |
-| Help Desk | Gemini (per Phase 4.5 plan) | Informational ops chat — read-only across app state |
+| Help Desk | Gemini | Informational ops chat — read-only across app state |
 
 
 ### Canvas Open-State Rule *(refined S5)*
@@ -524,13 +527,13 @@ Capture target is an Open Question (Q12).
 | Q8 | Default center pane when episode tab is selected and has no pending task | Open | Phase 2.4 |
 | Q9 | Pinned-docs context budget — default-pinned ≠ default-injected vs whole-panel-injects-with-truncation | Open | Phase 2.4 + Publish AI Companion design |
 | Q10 | Templates location — seven Scribe template keys + new ones; storage scheme | Open *(S3 confirmed migration to Writer quick-starts; storage scheme still TBD)* | Phase 2.1 + Writer spoke |
-| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved Hub, May 2026** — Schedule is its own global surface, grouped by guest/week. | — |
+| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved Hub, May 2026 (updated May 2026)** — Schedule is per-guest, a sub-item under each guest's nav root. Not a global surface. | — |
 | Q12 | Feedback loop capture target — Interactions tab vs Audit_Trail append vs Asset_Library chat_history column | Open | Phase 2 schema review |
 | Q13 | Background image strategy at pre-compose — library-first with Gemini fallback, or fresh per slot | Open | Vert Fairy job spec |
 | **Q14** *(new S4)* | Slot recipe table storage location — Master Sheet tab vs Governance_Config | Open | Build-time decision |
-| **Q15** *(new S5)* | Right rail icon registry per canvas type — which canvases show which icons; Claude vs not | Open | Phase 2.4 |
+| **Q15** *(new S5)* | Right rail icon registry per canvas type — which canvases show which icons | **Partially resolved** — table locked in Operating Model §7; AI assignment per surface parked for follow-up Hub | Follow-up Hub |
 | **Q16** *(new S5)* | Audra ops drawer final placement — avatar dropdown vs right-rail Ops icon | Open | Phase 2.4 |
-| **Q17** *(new S5)* | Center-right pane behavior — overlay canvas, push it, or float | Open | Phase 2.4 |
+| **Q17** *(new S5)* | Center-right pane behavior — overlay canvas, push it, or float (single-panel rail means pane = active rail panel; overlay/push/float is the only remaining sub-question) | Open | Implementation spoke |
 | **Q18** *(new S5)* | Within-session vs cross-session state distinction — implementation pattern (session token? timestamp window?) | Open | Phase 3 build |
 
 ---
@@ -586,7 +589,7 @@ This document remains input to Phase 2 work. Specifically:
 - **Phase 2.4 (Desktop Chrome)** — four-pane structure locked S5; resolve Q6, Q8, Q9, Q15, Q16, Q17
 - **Phase 3.3 (Schedule Panel)** — Pending-as-derived render pattern; option chooser UX (resolve Q3, Q13)
 - **Phase 4.2 (Playbook Strategic Content)** — load-bearing; `Why` cell content is where this lands
-- **Phase 4.4 (Design Companion)** — per-asset chat in Design tab; refinement-only scope confirmed. Publish tab retired; companion targets Design surface.
+- **Phase 4 (AI Companions)** — per-asset chat in Images / Reels surfaces; refinement-only scope confirmed. Publish tab retired; companion now targets Images/Reels within guest nav.
 
 Build Playbook v5 sequencing otherwise unchanged. Phase 1 (perf foundation) and Phase 0 (housekeeping) are unaffected.
 

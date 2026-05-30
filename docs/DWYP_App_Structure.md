@@ -533,7 +533,7 @@ Capture target is an Open Question (Q12).
 | **Q14** *(new S4)* | Slot recipe table storage location — Master Sheet tab vs Governance_Config | Open | Build-time decision |
 | **Q15** *(new S5)* | Right rail icon registry per canvas type — which canvases show which icons | **Partially resolved** — table locked in Operating Model §7; AI assignment per surface parked for follow-up Hub | Follow-up Hub |
 | **Q16** *(new S5)* | Audra ops drawer final placement — avatar dropdown vs right-rail Ops icon | Open | Phase 2.4 |
-| **Q17** *(new S5)* | Center-right pane behavior — overlay canvas, push it, or float (single-panel rail means pane = active rail panel; overlay/push/float is the only remaining sub-question) | Open | Implementation spoke |
+| **Q17** *(new S5)* | Center-right pane behavior — overlay canvas, push it, or float | **Resolved — push.** Canvas and panel both visible simultaneously. Rail panel sits to the right of the canvas; both occupy the center area together. | — |
 | **Q18** *(new S5)* | Within-session vs cross-session state distinction — implementation pattern (session token? timestamp window?) | Open | Phase 3 build |
 
 ---
@@ -586,7 +586,7 @@ This document remains input to Phase 2 work. Specifically:
 - **Phase 2.0 (Action-Completeness Audit)** — **complete.** Saturation marker locked S5. Output: this v1.3 + `DWYP_User_Flows.md` v1.0.
 - **Phase 2.1 (Component Library)** — card design reflects: episode-tab-as-card, Design canvas interaction, refinement-chat-as-chip, Edit Is A Mode pattern, three-color icon state machine, Pending slot canvas (Next + Poke buttons), 3-state Edit Reel button
 - **Phase 2.3 (Mobile IA)** — Reframe #3 is the spine; mobile verb inventory locked S1
-- **Phase 2.4 (Desktop Chrome)** — four-pane structure locked S5; resolve Q6, Q8, Q9, Q15, Q16, Q17
+- **Phase 2.4 (Desktop Chrome)** — four-pane structure locked S5; resolve Q6, Q8, Q9, Q15, Q16 (Q17 resolved: push)
 - **Phase 3.3 (Schedule Panel)** — Pending-as-derived render pattern; option chooser UX (resolve Q3, Q13)
 - **Phase 4.2 (Playbook Strategic Content)** — load-bearing; `Why` cell content is where this lands
 - **Phase 4 (AI Companions)** — per-asset chat in Images / Reels surfaces; refinement-only scope confirmed. Publish tab retired; companion now targets Images/Reels within guest nav.

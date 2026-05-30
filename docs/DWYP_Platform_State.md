@@ -460,12 +460,12 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 | 92 | v3 Wiring Phases 1–2 | Dual-JSON canvas, Export button, viewport fix, per-asset storage |
 | Pipeline Rewire | Track A/B/C Pipeline Rewire | `buildEpisodeIndexV2` rewritten (Claude, extract-not-interpret); Loop D rewired (two-condition A→B); `runVertFairy` + all show-notes + Vertex helpers deleted; `dev_tools.js` cleaned; `runVertFairyForEpisode` repointed |
 | Episode Upload Affordance | Browser-side resumable upload + auto-handoff to Review | Confirmed 2026-05-26 on 3-sec and 60-min+ videos. Playback, comments, and auto-handoff all live. |
+| Rail Remodel Pass 1 / 1.5 / 1.6 | Left-rail guest accordion + sub-item nav + Episode view split | Guest accordion (one open, red→gold gradient), sub-items Images·Reels·Episode·Schedule, stSetDesignTab wiring, Episode view split (#stEpVideoWrap + drag + #stEpShowNotesWrap inert), right-rail AI Chat inert stubs, Schedule stub. |
+| Document Provenance | PROPOSAL_ / SPOKE_ prefix scheme added to CLAUDE.md | Canon is unprefixed. Build_Playbook rename/exception open. |
 
 ### ⏳ In Progress
 - **Carrie Sipe episode run** — at review stage.
-- **v3 Wiring spoke (item 92)** — Phase 1 ✅ confirmed. Phase 2 ✅ shipped (Fix 1: base64 strip; Fix A: Save→Export, exit paths unified; Fix B: viewport reset in Tier 2; Fix C: dual-JSON save-core). Phase 3 (reel card expand) next. Scheduling = separate Schedule surface, not yet built.
-- **Design Surface Sprint (May 2026)** — Round 1 pushed: H&Q chips, QG/Reels subtabs, day picker + Export, `.txt` companions, `exportReelToDrive` GAS function, `exportAssetToDrive` extended. CP1+2 pushed (accordion, segmented toggle, H&Q tray, reel browser stub) — **needs revision, bugs not yet diagnosed.** CP3+4 deferred. Tasks accordion data source needs Hub session. **Design fixes pushed (May 2026):** right rail flex-direction fix (`#stBgPane`); `stDropText` two-box rewrite (quote + attribution as independent Textbox objects).
-- **Episode Upload Affordance spoke** — ✅ Complete (2026-05-26). See Build Sequence.
+- **v3 Wiring spoke (item 92)** — Phase 1 ✅ confirmed. Phase 2 ✅ shipped. Phase 3 (reel card expand) next. Scheduling = separate Schedule surface, not yet built.
 
 ### Queued — Next
 

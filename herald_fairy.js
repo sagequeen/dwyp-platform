@@ -1085,7 +1085,7 @@ function getPriorCompletedEpisodes(contactId, currentEpUid) {
 
     if (rowCid !== String(contactId).trim()) continue;
     if (rowUid === String(currentEpUid).trim()) continue;
-    if (rowStatus !== "complete") continue;
+    if (rowStatus !== "ready_to_release" && rowStatus !== "archived") continue;
 
     const row = {};
     headers.forEach((h, idx) => { row[h] = data[i][idx]; });

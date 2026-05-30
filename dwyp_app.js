@@ -195,8 +195,6 @@ var EPISODES_COLS = {
   Images_Status:       12,
   Episode_URL:         13,
   Episode_Type:        14,
-  Frameio_Project_ID:  15,
-  Guest_Package_URL:   16  // populated by Guest Package builder spoke; open slot only
 };
 
 
@@ -368,7 +366,7 @@ function getEpisodes() {
   for (var i = 1; i < data.length; i++) {
     var row    = data[i];
     var status = row[EPISODES_COLS.Status - 1];
-    if (status === "complete") continue;
+    if (status === "archived") continue;
 
     episodes.push({
       _rowIndex:            i + 1,
@@ -383,8 +381,7 @@ function getEpisodes() {
       Video_Status:         row[EPISODES_COLS.Video_Status - 1],
       Images_Status:        row[EPISODES_COLS.Images_Status - 1],
       Episode_URL:          row[EPISODES_COLS.Episode_URL - 1],
-      Episode_Type:         row[EPISODES_COLS.Episode_Type - 1],
-      Frameio_Project_ID:   row[EPISODES_COLS.Frameio_Project_ID - 1]
+      Episode_Type:         row[EPISODES_COLS.Episode_Type - 1]
     });
   }
 
@@ -1725,7 +1722,7 @@ function getActiveEpisodes() {
   for (var i = 1; i < data.length; i++) {
     var row    = data[i];
     var status = row[EPISODES_COLS.Status - 1];
-    if (status === "complete") continue;
+    if (status === "archived") continue;
     var uid  = row[EPISODES_COLS.Episode_UID      - 1];
     var name = row[EPISODES_COLS.Guest_Name       - 1];
     var seq  = row[EPISODES_COLS.Episode_Sequence - 1];
@@ -2776,6 +2773,8 @@ function triggerReadyForRelease(episodeUid) {
       sheet.getRange(r + 1, TASKS_COLS.Completed_At).setValue(now);
     }
     bumpVersion("tasks", "triggerReadyForRelease");
+
+    patchEpisodes(episodeUid, { Status: "ready_to_release" });
 
     var manifest  = getManifest(getStagingFolderIdByUid(episodeUid));
     var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;

@@ -329,8 +329,8 @@ function runHousekeeping() {
       const epUid  = data[i][uidCol];
       const status = String(data[i][statusCol]);
 
-      if (!epUid)              continue;
-      if (status !== "active") { skipped++; continue; }
+      if (!epUid)                                                              continue;
+      if (status !== "in_production" && status !== "ready_to_release") { skipped++; continue; }
 
       try {
         parsePipelineBlock(epUid);

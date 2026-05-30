@@ -1407,8 +1407,7 @@ function getContactLibraryFolderIdByContactId(contactId) {
 // Episodes tab schema — v1.5 (15 columns):
 //   Episode_Sequence | Release_Date | Episode_UID | Contact_ID | Guest_Name |
 //   Status | Raw_Folder_ID | Production_Folder_ID | Recording_Date |
-//   Calendar_Event_ID | Video_Status | Images_Status | Episode_URL | Episode_Type |
-//   Frameio_Project_ID
+//   Calendar_Event_ID | Video_Status | Images_Status | Episode_URL | Episode_Type
 //
 // Manual columns — GAS never writes:
 //   Episode_Sequence, Release_Date, Episode_URL
@@ -1983,7 +1982,7 @@ function dailyPulse() {
         const contactId     = contactIdCol !== -1 ? data[i][contactIdCol] : "";
 
         if (!epUid)                  continue;
-        if (status === "complete")   continue;
+        if (status === "archived")   continue;
         if (!recordingDate)          continue;
 
         const recDate = new Date(recordingDate);
@@ -2106,7 +2105,7 @@ function dailyPulse() {
         const contactId   = contactIdCol !== -1 ? data[i][contactIdCol]  : "";
 
         if (!epUid)                  continue;
-        if (status === "complete")   continue;
+        if (status === "archived")   continue;
         if (!releaseDate)            continue;
 
         const relDate = new Date(releaseDate);
@@ -2219,7 +2218,7 @@ function dailyPulse() {
 
         if (!epUid)        continue;
         if (!rawFolderId)  continue;
-        if (status === "complete") continue;
+        if (status === "archived") continue;
 
         safetyScanned++;
 
@@ -2285,7 +2284,7 @@ function dailyPulse() {
         const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
 
         if (!epUid)                continue;
-        if (status === "complete") continue;
+        if (status === "archived") continue;
         if (!prodFolderId)         continue;
 
         imagesDetectScanned++;
@@ -2361,7 +2360,7 @@ function dailyPulse() {
         const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
 
         if (!epUid)                continue;
-        if (status === "complete") continue;
+        if (status === "archived") continue;
         if (!prodFolderId)         continue;
 
         reelsDetectScanned++;
@@ -2440,7 +2439,7 @@ function dailyPulse() {
         const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
 
         if (!epUid)                continue;
-        if (status === "complete") continue;
+        if (status === "archived") continue;
         if (!prodFolderId)         continue;
 
         vertScanned++;
@@ -2469,6 +2468,8 @@ function dailyPulse() {
           }
 
           if (!hasTranscript) continue;
+
+          patchEpisodes(epUid, { Status: "in_production" });
 
           // Transcript found — check manifest before making the extra Drive read
           const manifest = getManifest(prodFolderId);

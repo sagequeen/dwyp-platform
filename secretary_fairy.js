@@ -260,7 +260,7 @@ function processFormSubmission(e) {
     for (let i = 1; i < epData.length; i++) {
       if (String(epData[i][epContactCol]).trim() === String(contactId).trim()) {
         const status = epData[i][epStatusCol] || "";
-        if (status !== "complete") {
+        if (status !== "archived") {
           matchedEpisodeUid   = epData[i][epUidCol]    || null;
           matchedProdFolderId = epData[i][epProdFolCol] || null;
           break;
@@ -1029,7 +1029,7 @@ function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episo
     Episode_UID:          episodeUid,
     Contact_ID:           contactId,
     Guest_Name:           guestName,
-    Status:               "active",
+    Status:               "upcoming",
     Raw_Folder_ID:        rawFolderId,
     Production_Folder_ID: stagingFolderId,
     Recording_Date:       recordingDate,

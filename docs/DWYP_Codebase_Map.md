@@ -177,7 +177,7 @@ Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before 
 Surfaces:
 - **Episodes tab** — episode list, episode detail, review workflow
 - **Contacts tab** — contact list, contact detail
-- **Studio tab** — Guest-name root nav (Images canvas, Reels player per guest); Write → Brainstorm; Tasks → Episodes/Buckets. Design as standalone root surface retired (Hub May 2026). Canvas editor, H&Q chips, export wired under guest → Images/Reels. Rail Remodel spoke pending (replaces old nav accordion).
+- **Studio tab** — Guest-name root nav accordion (Images, Reels, Episode, Schedule per guest; one guest expanded at a time); Write → Brainstorm; Tasks → Episodes/Buckets. Design as standalone root surface retired (Hub May 2026). Canvas editor, H&Q chips, export wired under guest → Images/Reels. Episode view split: `#stEpVideoWrap` (top) + `#stEpShowNotesWrap` (bottom, inert). Rail Remodel Pass 1/1.5/1.6 complete.
 
 Key client-side patterns:
 - `google.script.run.withSuccessHandler(...).withFailureHandler(...)` — all server calls

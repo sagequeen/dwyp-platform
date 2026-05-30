@@ -33,7 +33,7 @@ Mobile is treated as a **permission profile**, not a separate surface. Per Refra
 
 | # | Surface | Role | Lives in |
 |---|---|---|---|
-| 1 | Left Rail | Navigation — guest-name root items (Images, Reels, Episode, Show Notes, Schedule per guest); Write (Brainstorm) and Tasks (Buckets, Episodes) as peer root items; no state signals | App chrome |
+| 1 | Left Rail | Navigation — guest-name root items (Images, Reels, Episode, Schedule per guest); Write (Brainstorm) and Tasks (Buckets, Episodes) as peer root items; no state signals | App chrome |
 | 2 | Episode Tab | Project workspace — task feed, schedule, assets, reviews, reference docs | Center pane, scoped to episode |
 | 3 | Free Workspace Tab | Project workspace — non-episode-scoped equivalent | Center pane |
 | 4 | Contacts | Reference + edit — guest brief source-of-truth | Left rail tab |
@@ -298,7 +298,7 @@ JT wants to transcribe and caption a non-episode-scoped reel. **Lenses stressed:
 The home-screen model was stressed for discovery, cognitive load, and navigation
 cost. **Lenses stressed:** Discovery; Cognitive Load; navigation cost. **Outcome:**
 Tasks screen is the landing surface (episode cards + loose-task containers);
-in-Studio navigation is guest-name root nav (Images, Reels, Episode, Show Notes,
+in-Studio navigation is guest-name root nav (Images, Reels, Episode,
 Schedule per guest; Write and Tasks as root items) carrying no state signals.
 Four-pane desktop chrome (Left nav / Center-left canvas / Center-right contextual /
 Right rail). Date fallback chain established. Active set rule (Drive folder exists →

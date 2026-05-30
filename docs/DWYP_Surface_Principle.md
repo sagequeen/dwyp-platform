@@ -157,6 +157,19 @@ When a new feature is proposed, ask the test first. "JT wants to draft outreach 
 
 ---
 
+## The Panel Contract
+
+Panels feed the workspace; the workspace is where work happens.
+
+- **One panel, one job.** A panel does a single thing.
+- **Panels feed the workspace; they never feed each other.** No panel-to-panel handoff — that breaks flow and reintroduces the stacking the single-panel rail exists to prevent.
+- **Nothing is edited inside a panel.** Editing happens only in the workspace (center-left canvas).
+- **Therefore anything editable lives in the workspace, not a panel.** Caption, title card, and Show Notes are editable, so they live on the canvas — not in the rail.
+
+This is why the left-center chat panel was dissolved (it was a panel holding an editable caption field — two contract violations) and why Show Notes moved to a box on the Episode canvas rather than a rail surface.
+
+---
+
 ## Build Implications
 
 This principle reorders the active design queue:
@@ -167,6 +180,7 @@ This principle reorders the active design queue:
 4. **Desktop chrome conventions** — Studio tab consistency, panel patterns
 5. **Schedule panel UX (OQ-B)** — applies the principle and the system
 6. **Visual modernization (OQ-C)** — propagates Riverside-inspired treatment via the system
+7. **Spacing system — 8-point grid, as tokens.** Replace ad-hoc spacing with a defined token scale (4px half-step + 8/16/24/32/48) and a placement rule (panel padding, rail-item gap, divider treatment). Solves the "everything touching" default structurally. Belongs with component-library work (step 2). Token values to be set via the Figma values-not-adjectives workflow.
 
 Steps 2–4 are the design system pass that makes 5 and 6 possible without freelance drift.
 

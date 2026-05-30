@@ -335,7 +335,6 @@ JT's NotebookLM replacement. Corpus-powered creative surface. Bottom nav tab (re
     Images
     Reels
     Episode
-    Show Notes
     Schedule
 
 [GUEST NAME]
@@ -351,15 +350,25 @@ TASKS
 
 | Surface | Status | Notes |
 |---|---|---|
-| **Guest → Images** | 🔶 Active (CP1+2 needs revision; Rail Remodel spoke pending) | Canvas: `st.fabricCanvas` ring-fenced. H&Q chip drop, background library/generate, Export PNG + `.txt`. **Caption and Title Card live on the center canvas with the asset — not rail panels.** Text scaling (A+/A− + normalize-on-scale). Color picker (brand + complementary rows). Export PNG fix (`multiplier:2` removed). CP1+2 bugs not yet diagnosed; CP3+4 deferred. Current code has old nav accordion (`Design/Write/Schedule/Tasks`) — Rail Remodel spoke replaces this. |
+| **Guest → Images** | 🔶 Active | Canvas: `st.fabricCanvas` ring-fenced. H&Q chip drop, background library/generate, Export PNG + `.txt`. **Caption and Title Card live on the center canvas with the asset — not rail panels.** Text scaling (A+/A− + normalize-on-scale). Color picker (brand + complementary rows). Export PNG fix (`multiplier:2` removed). CP3+4 deferred. Right panel: Hooks & Quotes · Backgrounds · AI Chat (AI Chat inert, pending AI wiring spoke). |
 | **Guest → Reels** | 🔶 Active, cosmetic pass pending | Drive `/preview` player, `Caption_Host` wired, Generate caption, Export, Request Revision. |
-| **Guest → Episode** | ✅ Live | Native `<video>` proxy player, timestamped comments, Request Revisions, Approve. |
-| **Guest → Show Notes** | ⏳ TBD spec | JT Copy Google Doc per episode (new fairy — spec pending). AI Chat is Claude, transcript-scoped. Hook/Quote/Caption Submission is the third rail icon — JT proposes hook/quote + caption as a paired submission; lands on Images as JT-variant. Google Docs iframe is sandboxed; chip-tap copies to clipboard (not canvas injection). |
+| **Guest → Episode** | ✅ Live | Native `<video>` proxy player, timestamped comments, Request Revisions, Approve. View split: `#stEpVideoWrap` (top, regenerated per load) + `#stEpShowNotesWrap` (bottom, static; holds inert Show Notes box; vertical drag handle to resize). Right panel: Revision Comments · AI Chat tabs (AI Chat inert). |
+| **Show Notes** | ⏳ TBD spec (not a nav sub-item) | Not in left rail. Lives as an inert `contenteditable` box in `#stEpShowNotesWrap`, below the episode video. Wiring spoke pending — will connect to a Show Notes doc. Full spec (JT Copy Google Doc fairy, AI Chat scoped to transcript, Hook/Quote/Caption Submission rail icon) is a separate hub session. |
 | **Guest → Schedule** | ⏳ Not built | Templated weekly posting cadence per guest. Rail composition parked (follow-up Hub). |
 | **Write → Brainstorm** | ⏳ Not built | Global, non-episode-scoped. AI Chat: Research (Gemini + Vert) / Polish (Claude) toggle. Doc-generation pattern: AI output → new Drive doc in JT's Drive; JT switches center pane to it. Desktop continuation of Write Lite (Write Lite saves Drive doc; Brainstorm reads those docs in Docs picker). Replaces standalone Ideas tab. |
 | **Tasks → Episodes** | ✅ Live | App entry/home. Episode-organized task view. |
 | **Tasks → Buckets** | ⏳ TBD spec | Bucket organization pattern (Erin's concept). Internal structure needs Hub session before implementation. |
 | **Write → Outreach** | ⏳ Future | Guest comms. Scribe template dependency — not ready to design. |
+
+### Current Structure Notes (Rail Remodel Pass 1 / 1.5 / 1.6)
+
+**Left rail — guest accordions.** Guest names are accordion headers; one guest expanded at a time (expanding one collapses the rest). Expanded guest shows sub-items **Images · Reels · Episode · Schedule** (no Show Notes — see above). Active guest is expanded on render. Write (Brainstorm) and Tasks (Buckets, Episodes) are peer root items with the same accordion treatment. Selection styling: red→gold gradient bar on the expanded guest header (`#d12026` solid to ~65%, then → `#faae17` tail); active sub-item is solid gold text; white left-aligned text held over the red zone for contrast.
+
+**Caption and Title Card** live in the center workspace — not rail panels. Element IDs preserved so reel-select population still works.
+
+**Episode view — two containers.** `#stEpView` is split into `#stEpVideoWrap` (top; regenerated on each episode load) and `#stEpShowNotesWrap` (bottom; static). A vertical drag handle between them lets JT favor the video or the notes. The lower wrap holds the Show Notes box — **present but unwired** (no content load/save yet; that is its own spoke). Episode right panel shows **Revision Comments · AI Chat** tabs.
+
+**Right rail — current interim.** The right-side panel is presently a fixed panel with tabs (Hooks & Quotes · Backgrounds · AI Chat on Images; Browser · AI Chat on Reels; Revision Comments · AI Chat on Episode). The §7 icon-rail-with-popout is the Pass 2 target; visual reference is `simple_mockup.png`. AI Chat renders as an inert tab pending the AI wiring spoke.
 
 ### AI Companion (Phase 4)
 Per-asset chat with Claude in the AI Chat rail icon. Conversation history per asset in Asset_Library. Companion scope = asset-in-focus only (Design–Schedule split means no same-date sibling injection). Chip suggestions never auto-write JT's draft. Full spec in `DWYP_Operating_Model.md` § 8 (Companion Model). Reusable implementation patterns in `docs/DWYP_Publish_Feature_Patterns.md`. Build is Phase 4 in the playbook.
@@ -372,7 +381,8 @@ Per-asset chat with Claude in the AI Chat rail icon. Conversation history per as
 ### Retired
 - Publish tab — retired May 2026. All `pb*` code removed.
 - Design as standalone root surface — retired Hub May 2026. Canvas access now via guest → Images and guest → Reels within guest nav.
-- Left-center chat panel — scheduled for retirement (Rail Remodel spoke). Was a workaround for dual-panel rail; superseded by single-panel rail with AI Chat icon.
+- Left-center chat panel (`#stChatCol`) — **retired** (Rail Remodel Pass 1). Dissolved entirely. Chat removed; will be rebuilt later as the AI Chat rail icon (AI wiring spoke). The segmented Images/Reels/Episode toggle (`#stSegRow`) that lived inside it is also gone — view-switching is now driven by left-rail sub-items calling `stSetDesignTab`.
+- `#stSegRow` (Images/Reels/Episode segmented toggle) — retired with `#stChatCol`; view-switching now driven by left-rail guest sub-items.
 - Mode list (seven modes: Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Outreach, Brainstorm) — retired. Surfaces now organized by guest nav sub-items + Write/Tasks root items.
 - Ideas tab — retired. Brainstorm (Write → Brainstorm) replaces it.
 - Starred — retired. My Docs + Asset Library persistence covers it.

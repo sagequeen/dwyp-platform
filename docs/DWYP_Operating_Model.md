@@ -127,7 +127,7 @@ The spine. One line each. Listed in the order they emerged.
 1. **Playbook-as-Engine** — A pre-compose engine reads a Playbook (the `Why` column in the slot recipe table) to fill the week's slots with ranked drafts *before* JT opens the app. AI chat = refinement, not creation.
 2. **Tasks-as-Home + Studio-as-Creation** — The app lands on the Tasks screen
    (episode cards + loose-task containers). Studio is the desktop creation
-   environment: guest-name root nav (sub-surfaces: Images, Reels, Episode, Show Notes,
+   environment: guest-name root nav (sub-surfaces: Images, Reels, Episode,
    Schedule); Write and Tasks as peer root items. Navigation carries no state signals;
    state rides the card.
 3. **Mobile = What Is, Not What Should Be** — Mobile is read/react/schedule. Origination lives on desktop. Hard wall, not graceful degradation.
@@ -186,7 +186,7 @@ The app's spatial contract. Every surface sits inside it.
 
 | Pane | Width | What it holds |
 |---|---|---|
-| Left — Navigation | Compact | Guest names as root items (sub-surfaces: Images, Reels, Episode, Show Notes, Schedule); Write (Brainstorm); Tasks (Buckets, Episodes); (Audra) ops |
+| Left — Navigation | Compact | Guest names as root items (sub-surfaces: Images, Reels, Episode, Schedule); Write (Brainstorm); Tasks (Buckets, Episodes); (Audra) ops |
 | Center-left — Canvas | Largest, primary | Active workspace (Writer doc, Design canvas, episode review, task surface) |
 | Center-right — Contextual / expanded menu | Variable | Whatever the rail icon expanded |
 | Right — Rail | Narrow icon column | Canvas-aware tools; AI Chat is one icon among others |
@@ -195,7 +195,9 @@ The app's spatial contract. Every surface sits inside it.
 
 ### Episode Presence
 
-Episodes surface as **cards on the Tasks screen** (home) and as **root navigation items in the left rail** (guest name as nav root, with sub-surfaces — Images, Reels, Episode, Show Notes, Schedule — underneath). Card spec is authoritative in `DWYP_Platform_State.md`. Navigation carries no state signals.
+Episodes surface as **cards on the Tasks screen** (home) and as **root navigation items in the left rail** (guest name as nav root, with sub-surfaces — Images, Reels, Episode, Schedule — underneath). Card spec is authoritative in `DWYP_Platform_State.md`. Navigation carries no state signals.
+
+**Show Notes** is not a left-rail sub-item. It lives as an editable box on the Episode canvas, below the video. (Per the Panel Contract in `DWYP_Surface_Principle.md`: editable content lives in the workspace, not a rail surface.)
 
 **Date fallback chain:** `Release_Date` → `Recording_Date` → `TBD`. TBD sorts to
 bottom under Date-Driven Priority.

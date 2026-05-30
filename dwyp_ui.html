@@ -2796,6 +2796,36 @@ body.studio-open .app-header { display: none; }
 .st-acc-item.active { background: rgba(255,255,255,0.08); color: var(--gold); }
 .st-acc-stub { padding: 6px 14px 6px 18px; font-size: 11px; color: rgba(255,255,255,0.22); font-style: italic; }
 
+/* ── Guest accordion + sub-items in left rail ───────────────── */
+.st-guest-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px 7px 12px; cursor: pointer; user-select: none;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: rgba(255,255,255,0.55); border-radius: var(--radius-sm);
+  transition: color 0.15s; margin: 1px 0;
+}
+.st-guest-hdr:hover { color: rgba(255,255,255,0.85); }
+.st-guest-hdr.open {
+  background: linear-gradient(to right, #d12026, #d12026 65%, #faae17);
+  color: #fff; border-radius: 4px; margin: 1px 6px;
+}
+.st-guest-hdr-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.st-guest-caret {
+  font-size: 10px; flex-shrink: 0; display: inline-block;
+  transition: transform 0.18s; color: #d12026; margin-left: 6px;
+}
+.st-guest-hdr.open .st-guest-caret { color: #fff; transform: rotate(90deg); }
+.st-guest-sub-items { display: none; flex-direction: column; }
+.st-guest-sub-items.open { display: flex; }
+.st-guest-sub-item {
+  padding: 4px 12px 4px 30px; font-size: 11px; color: rgba(255,255,255,0.4);
+  cursor: pointer; border-radius: var(--radius-sm); transition: background 0.12s, color 0.12s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.st-guest-sub-item:hover { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.75); }
+.st-guest-sub-item.active { color: var(--gold); }
+.st-rail-divider { height: 1px; background: rgba(255,255,255,0.1); margin: 6px 12px; }
+
 /* ── Images | Reels mode segmented toggle (in chat col) ────── */
 .st-seg-row {
   display: flex; gap: 3px; padding: 8px 10px 6px; flex-shrink: 0;
@@ -3447,9 +3477,16 @@ body.studio-open .app-header { display: none; }
   position: absolute; inset: 0; width: 100%; height: 100%; border: none; display: block;
 }
 /* ── STUDIO — Episode tab (Design > Episode mode) ─────────── */
-.st-ep-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; background: #111; align-items: center; justify-content: center; }
+.st-ep-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; background: #111; }
 .st-ep-player-notice { font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; padding: 24px; }
 .st-ep-view .rv-player-wrap { width: 100%; align-self: stretch; }
+#stEpVideoWrap { display: flex; flex: 1; min-height: 120px; overflow: hidden; align-items: center; justify-content: center; }
+.st-ep-drag { height: 4px; flex-shrink: 0; background: var(--border); cursor: row-resize; transition: background 0.15s; z-index: 5; }
+.st-ep-drag:hover, .st-ep-drag.dragging { background: var(--gold); }
+#stEpShowNotesWrap { flex: 0 0 140px; min-height: 60px; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border-top: 1px solid var(--border); }
+.st-ep-show-notes-label { padding: 7px 12px 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.35); flex-shrink: 0; }
+.st-ep-show-notes-box { flex: 1; padding: 4px 12px 8px; font-size: 12px; color: rgba(255,255,255,0.65); line-height: 1.5; overflow-y: auto; outline: none; min-height: 0; }
+.st-ep-show-notes-box:empty::before { content: attr(data-ph); color: rgba(255,255,255,0.22); font-style: italic; pointer-events: none; }
 
 /* ── STUDIO — snap guides ──────────────────────────────────── */
 .st-snap-guide { position: absolute; pointer-events: none; z-index: 10; background: rgba(52,152,219,0.7); }
@@ -3754,6 +3791,9 @@ body.studio-open .app-header { display: none; }
       <!-- Guests (root nav — populated by stRenderRailGuests()) -->
       <div id="stRailGuests"></div>
 
+      <!-- Divider: guests → Write/Tasks -->
+      <div class="st-rail-divider"></div>
+
       <!-- Write -->
       <div class="st-acc-hdr" id="stAccHdrWrite" onclick="stAccToggle('write')">
         <span>Write</span><span class="st-acc-caret">›</span>
@@ -3813,43 +3853,6 @@ body.studio-open .app-header { display: none; }
 
   <!-- ── DESIGN / WRITE / IDEAS PANELS ── -->
   <div class="st-main" id="stStudioMain" style="display:none">
-
-    <!-- Chat column -->
-    <div class="st-chat-col" id="stChatCol">
-      <!-- Images | Reels segmented toggle — shown only in Design mode -->
-      <div class="st-seg-row" id="stSegRow" style="display:none">
-        <button class="st-seg-btn active" id="stSegImages" onclick="stSetDesignTab('qg')">Images</button>
-        <button class="st-seg-btn" id="stSegReels" onclick="stSetDesignTab('reels')">Reels</button>
-        <button class="st-seg-btn" id="stSegEpisode" onclick="stSetDesignTab('episode')">Episode</button>
-      </div>
-      <!-- Caption region: pinned above chat, shown in Design mode -->
-      <div class="st-caption-wrap" id="stCaptionWrap" style="display:none">
-        <!-- Title Card: shown in Reels mode only, above Caption -->
-        <div id="stTitleCardWrap" style="display:none">
-          <div class="st-caption-lbl">Title Card</div>
-          <div class="st-title-card-field" id="stTitleCardField" contenteditable="true"
-               data-ph="Short hook for the title card…"></div>
-          <div style="height:8px"></div>
-        </div>
-        <div class="st-caption-lbl" id="stCaptionLbl">Caption</div>
-        <div class="st-caption-field" id="stCaptionField" contenteditable="true"
-             data-ph="Type to enter your caption, or ask Claude to create some options for you."></div>
-        <!-- Generate caption button — shown in Reels mode only -->
-        <div id="stGenerateCaptionWrap" style="display:none;margin-top:6px">
-          <button class="st-gen-caption-btn" id="stGenerateCaptionBtn" onclick="stGenerateReelCaption()">Generate caption</button>
-        </div>
-      </div>
-      <!-- Draggable divider between Caption region and Chat (shown in Design mode) -->
-      <div class="st-companion-div" id="stCompanionDiv" style="display:none"></div>
-      <div class="st-chat-hist" id="stChatHist" data-ph="What do you need for this episode?"></div>
-      <div class="st-chat-input-wrap">
-        <textarea class="st-chat-input" id="stChatInput" rows="1" placeholder="Ask me anything about this episode…" onkeydown="stHandleKey(event)" oninput="stAutoResize(this)"></textarea>
-        <button class="st-send-btn" onclick="stSendMsg()">↑</button>
-      </div>
-    </div>
-
-    <!-- Drag handle: chat ↔ content -->
-    <div class="st-drag" id="stDragCC"></div>
 
     <!-- Content column: canvas or doc -->
     <div class="st-content-col" id="stContentCol">
@@ -3957,7 +3960,14 @@ body.studio-open .app-header { display: none; }
 
       <!-- Episode view (Design tab, Episode mode) — native video player -->
       <div class="st-ep-view" id="stEpView" style="display:none">
-        <div class="st-ep-player-notice" id="stEpPlayerNotice">Select a guest to load the episode.</div>
+        <div id="stEpVideoWrap">
+          <div class="st-ep-player-notice">Select a guest to load the episode.</div>
+        </div>
+        <div class="st-ep-drag" id="stEpDrag"></div>
+        <div id="stEpShowNotesWrap">
+          <div class="st-ep-show-notes-label">Show Notes</div>
+          <div class="st-ep-show-notes-box" id="stEpShowNotesBox" contenteditable="true" data-ph="Show notes — coming soon"></div>
+        </div>
       </div>
 
       <!-- Reels view (Design tab, Reels mode) — phone-sized video player -->
@@ -3972,6 +3982,24 @@ body.studio-open .app-header { display: none; }
         <div class="st-reel-actions" id="stReelActions" style="display:none">
           <button class="st-export-btn-red" id="stReelExportBtn" onclick="stExportReel(st.episodeUid)">Export</button>
           <button class="st-reel-action-btn" id="stRequestRevisionBtn" onclick="stRequestRevision()">Request Revision</button>
+        </div>
+      </div>
+
+      <!-- Caption + Title Card — workspace-resident, shown in Images/Reels design modes -->
+      <div class="st-caption-wrap" id="stCaptionWrap" style="display:none">
+        <!-- Title Card: shown in Reels mode only, above Caption -->
+        <div id="stTitleCardWrap" style="display:none">
+          <div class="st-caption-lbl">Title Card</div>
+          <div class="st-title-card-field" id="stTitleCardField" contenteditable="true"
+               data-ph="Short hook for the title card…"></div>
+          <div style="height:8px"></div>
+        </div>
+        <div class="st-caption-lbl" id="stCaptionLbl">Caption</div>
+        <div class="st-caption-field" id="stCaptionField" contenteditable="true"
+             data-ph="Type to enter your caption, or ask Claude to create some options for you."></div>
+        <!-- Generate caption button — shown in Reels mode only -->
+        <div id="stGenerateCaptionWrap" style="display:none;margin-top:6px">
+          <button class="st-gen-caption-btn" id="stGenerateCaptionBtn" onclick="stGenerateReelCaption()">Generate caption</button>
         </div>
       </div>
 
@@ -4008,6 +4036,11 @@ body.studio-open .app-header { display: none; }
         <div id="stTasksStubMsg" style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6"></div>
       </div>
 
+      <!-- Schedule stub (Guest > Schedule sub-item) -->
+      <div id="stScheduleStubView" style="display:none;flex:1;align-items:center;justify-content:center">
+        <div style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6">Schedule — not yet built.</div>
+      </div>
+
     </div><!-- /st-content-col -->
 
     <!-- Drag handle: content ↔ assets -->
@@ -4022,6 +4055,7 @@ body.studio-open .app-header { display: none; }
         <div class="st-tab-bar" id="stRailTabBar">
           <button class="st-tab-btn active" id="stRailTabHq"  onclick="stSetRailTab('hq')">Hooks &amp; Quotes</button>
           <button class="st-tab-btn"        id="stRailTabBg"  onclick="stSetRailTab('bg')">Backgrounds</button>
+          <button class="st-tab-btn"        id="stRailTabChatImg" onclick="showToast('AI Chat — coming soon.')">AI Chat</button>
         </div>
         <!-- H&Q panel (populated by stRenderHqPanel) -->
         <div class="st-tab-pane st-hq-rail-pane" id="stHqRailPane">
@@ -4052,8 +4086,9 @@ body.studio-open .app-header { display: none; }
 
       <!-- Reel browser (Design > Reels mode) -->
       <div id="stReelBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
-        <div class="st-assets-section" style="flex-shrink:0">
+        <div class="st-assets-section" style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
           <div class="st-assets-lbl">Reels</div>
+          <button class="st-tab-btn" style="flex-shrink:0;font-size:10px;padding:3px 8px;margin-right:8px" onclick="showToast('AI Chat — coming soon.')">AI Chat</button>
         </div>
         <div class="st-reel-list" id="stRailReelList">
           <div class="st-reel-empty">Select a guest to browse reels.</div>
@@ -4547,20 +4582,6 @@ var ST_RATIOS = {
   square:    { w: 1080, h: 1080 },
   landscape: { w: 1920, h: 1080 }
 };
-var ST_WRITE_MODES = ['writer','outreach','interview-prep','brainstorm'];
-var ST_PLACEHOLDERS = {
-  'images':         'What do you need for this episode?',
-  'writer':         'What do you need written for this episode?',
-  'outreach':       'Paste a guest name or describe the person — Studio writes a warm, specific pitch.',
-  'outreach':       'Who are you reaching out to, and what\'s the goal?',
-  'interview-prep': 'Tell me about the guest — Studio will build your arc.',
-  'brainstorm':     'Think out loud. Studio is listening…'
-};
-var ST_MODE_LABELS = {
-  'images':'Design','writer':'Write','outreach':'Outreach',
-  'interview-prep':'Interview Prep','brainstorm':'Ideas'
-};
-
 var st_reels = [];   // cached reel list for current episode in Design tab
 
 var st = {
@@ -4614,18 +4635,7 @@ function openStudio(tab) {
   // Populate rail guest list + tasks from loaded state
   stRenderRailGuests();
   stRenderAccordionTasks();
-  stInitCompanionDivider();
   stInitReelCaptionPersistence();
-
-  // Reset chat session state
-  stChatHistory         = [];
-  stConversationHistory = [];
-  stImageHistory        = [];
-  stRagContext          = '';
-  stTokenTotal          = 0;
-  stModeChatState       = {};
-  var hist = document.getElementById('stChatHist');
-  if (hist) { hist.innerHTML = ''; hist.dataset.ph = ST_PLACEHOLDERS['images']; }
 
   stSwitchTab(tab || 'design');
 }
@@ -4688,19 +4698,13 @@ function stSwitchTab(tab) {
   document.getElementById('stImgAssets').style.display     = isImg ? 'flex' : 'none';
   document.getElementById('stWriteAssets').style.display   = isImg ? 'none' : 'flex';
 
-  // Design tab: show seg toggle + caption region + init sub-tab; hide for Write/etc
-  var segRow       = document.getElementById('stSegRow');
-  var captionWrap  = document.getElementById('stCaptionWrap');
-  var companionDiv = document.getElementById('stCompanionDiv');
+  // Caption region: show in Design mode, hide otherwise
+  var captionWrap = document.getElementById('stCaptionWrap');
   if (tab === 'design') {
-    if (segRow)       segRow.style.display       = 'flex';
-    if (captionWrap)  captionWrap.style.display  = 'flex';
-    if (companionDiv) companionDiv.style.display = 'block';
+    if (captionWrap) captionWrap.style.display = 'flex';
     stSetDesignTab(st.designTab || 'qg');
   } else {
-    if (segRow)       segRow.style.display       = 'none';
-    if (captionWrap)  captionWrap.style.display  = 'none';
-    if (companionDiv) companionDiv.style.display = 'none';
+    if (captionWrap) captionWrap.style.display = 'none';
   }
 
   // Design-specific init (lazy — only on first visit or after canvas disposed)
@@ -4735,54 +4739,6 @@ function stSwitchTab(tab) {
       })[0];
       stSelectGuest(_first.Episode_UID, _first.Guest_Name || _first.Episode_UID);
     }
-  } else {
-    // Write / Ideas / Outreach: welcome card if chat is empty
-    var hist = document.getElementById('stChatHist');
-    if (hist) hist.dataset.ph = ST_PLACEHOLDERS[mode] || '';
-    if (hist && !hist.children.length) stShowWelcomeCard();
-  }
-}
-
-// ── MODE ─────────────────────────────────────────────────────
-function stSelectMode(btn, mode) {
-  // Capture outgoing mode BEFORE st.currentMode is updated
-  var prevMode = st.currentMode;
-
-  document.querySelectorAll('.st-mode-btn').forEach(function(b) { b.classList.remove('active'); });
-  btn.classList.add('active');
-  st.currentMode = mode;
-  var isImg = (mode === 'images');
-  document.getElementById('stCanvasView').style.display  = isImg ? 'flex' : 'none';
-  document.getElementById('stDocView').style.display     = isImg ? 'none' : 'flex';
-  document.getElementById('stImgAssets').style.display   = isImg ? 'flex' : 'none';
-  document.getElementById('stWriteAssets').style.display = isImg ? 'none' : 'flex';
-
-  var hist = document.getElementById('stChatHist');
-
-  // Save outgoing mode (only if it has real messages — blank/setup state not worth keeping)
-  if (prevMode && stChatHistory.length > 0) {
-    stModeChatState[prevMode] = {
-      history:             stChatHistory.slice(),
-      html:                hist.innerHTML,
-      conversationHistory: stConversationHistory.slice(),
-      imageHistory:        stImageHistory.slice()
-    };
-  }
-
-  // Restore incoming mode's chat, or start fresh
-  var saved = stModeChatState[mode];
-  hist.dataset.ph = ST_PLACEHOLDERS[mode] || '';
-  if (saved) {
-    stChatHistory         = saved.history.slice();
-    stConversationHistory = saved.conversationHistory ? saved.conversationHistory.slice() : [];
-    stImageHistory        = saved.imageHistory        ? saved.imageHistory.slice()        : [];
-    hist.innerHTML        = saved.html;
-  } else {
-    stChatHistory         = [];
-    stConversationHistory = [];
-    stImageHistory        = [];
-    hist.innerHTML        = '';
-    stShowWelcomeCard();
   }
 }
 
@@ -4823,16 +4779,6 @@ function stSelectEpisode(uid, name) {
   st.hqContent   = null;
   st_reels       = [];
 
-  // Reset session state for new episode
-  stChatHistory         = [];
-  stConversationHistory = [];
-  stImageHistory        = [];
-  stTokenTotal          = 0;
-  stRagContext          = '';
-  stModeChatState       = {};
-  var hist = document.getElementById('stChatHist');
-  if (hist) hist.innerHTML = '';
-
   // If in QG sub-tab, reload H&Q for new episode
   if (st.designTab === 'qg') {
     stLoadHqContent(uid);
@@ -4842,413 +4788,8 @@ function stSelectEpisode(uid, name) {
     stLoadRailReels(uid);
   }
 
-  // Load episode index async — populates stRagContext for all subsequent calls
-  google.script.run
-    .withSuccessHandler(function(content) { stRagContext = content || ''; })
-    .withFailureHandler(function() { stRagContext = ''; })
-    .stLoadEpisodeIndex(uid);
 }
 
-// ── CHAT ─────────────────────────────────────────────────────
-var stChatHistory       = [];   // display history (render only)
-var stConversationHistory = []; // Claude API history [{role, parts:[{text}]}]
-var stImageHistory      = [];   // Gemini image history [{role, parts}]
-var stRagContext        = '';   // loaded episode index content
-var stTokenTotal        = 0;    // running token count for session warning
-var stModeChatState     = {};   // keyed by mode name — persists chat across mode switches
-
-function stAutoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
-
-function stShowWelcomeCard() {
-  var hist = document.getElementById('stChatHist');
-  if (!hist) return;
-  if (st.currentMode !== 'images') return;
-  var el = document.createElement('div');
-  el.id = 'studio-blank-state';
-  el.innerHTML =
-    '<div class="blank-help">' +
-    '<p><strong>Vert</strong> can help you find the right words for your graphic before you build it.</p>' +
-    '<p><strong>Ask Vert for:</strong></p>' +
-    '<ul>' +
-    '<li>A <strong>hook or quote</strong> from this episode</li>' +
-    '<li><strong>Creative direction</strong> — describe a mood, ask what image would carry it</li>' +
-    '<li><strong>Caption copy</strong> to pair with a finished graphic</li>' +
-    '</ul>' +
-    '<p><strong>Building your image:</strong></p>' +
-    '<ul>' +
-    '<li><strong>Add Text</strong> — place a quote or hook on the canvas</li>' +
-    '<li><strong>Logo</strong> — swap color to match your four brand colors</li>' +
-    '<li><strong>Overlay</strong> — control background brightness so text stays readable</li>' +
-    '<li><strong>Export</strong> — sized for the format you selected</li>' +
-    '</ul>' +
-    '<p><strong>Finding backgrounds:</strong></p>' +
-    '<ul>' +
-    '<li><strong>Library</strong> — your previously generated images</li>' +
-    '<li><strong>Generate</strong> — describe a scene, GenGem creates a new background</li>' +
-    '</ul>' +
-    '</div>' +
-    '<button id="setup-card-trigger" onclick="openSetupCard()">Get started →</button>';
-  hist.appendChild(el);
-}
-
-function openSetupCard() {
-  var hist = document.getElementById('stChatHist');
-  if (!hist) return;
-  var bs = document.getElementById('studio-blank-state');
-  if (bs) bs.remove();
-
-  // Build episode options from same data source as stPopulateEpDropdown
-  var opts = '<option value="">Choose your guest…</option><option value="cross">No specific episode</option>';
-  if (state.episodes && state.episodes.length) {
-    state.episodes.forEach(function(ep) {
-      var guest = ep.Guest_Name || ep.Episode_UID || '—';
-      var seq   = ep.Episode_Sequence ? ' (EP ' + ep.Episode_Sequence + ')' : '';
-      var isSel = st.episodeUid === ep.Episode_UID;
-      opts += '<option value="' + esc(ep.Episode_UID) + '"' + (isSel ? ' selected' : '') + '>' + esc(guest + seq) + '</option>';
-    });
-  }
-
-  var card = document.createElement('div');
-  card.id = 'studio-setup-card';
-  card.innerHTML =
-    '<span class="setup-card-label">Who are we working on?</span>' +
-    '<select id="setup-episode-picker">' + opts + '</select>' +
-    '<span class="setup-card-label">Format</span>' +
-    '<div class="setup-format-pills">' +
-    '<button class="setup-fmt-pill" data-format="instagram" onclick="setSetupFormat(this)">Instagram</button>' +
-    '<button class="setup-fmt-pill" data-format="feed" onclick="setSetupFormat(this)">Feed</button>' +
-    '<button class="setup-fmt-pill" data-format="square" onclick="setSetupFormat(this)">Square</button>' +
-    '<button class="setup-fmt-pill" data-format="landscape" onclick="setSetupFormat(this)">Landscape</button>' +
-    '</div>' +
-    '<button id="setup-confirm-btn" onclick="confirmSetup()">Let\'s go</button>';
-  hist.appendChild(card);
-
-  // Reflect current canvas ratio in pills
-  var curRatio = st.ratio || 'instagram';
-  card.querySelectorAll('.setup-fmt-pill').forEach(function(p) {
-    p.classList.toggle('active', p.dataset.format === curRatio);
-  });
-}
-
-function setSetupFormat(btn) {
-  var card = document.getElementById('studio-setup-card');
-  if (!card) return;
-  card.querySelectorAll('.setup-fmt-pill').forEach(function(p) { p.classList.remove('active'); });
-  btn.classList.add('active');
-}
-
-function confirmSetup() {
-  var epSel     = document.getElementById('setup-episode-picker');
-  var uid       = epSel ? epSel.value : '';
-  var guestName = null;
-
-  if (uid && uid !== 'cross') {
-    var epData = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === uid; });
-    guestName  = epData ? (epData.Guest_Name || uid) : uid;
-    stSelectEpisode(uid, guestName);
-  } else {
-    st.episodeUid = null;
-    st.guestName  = null;
-  }
-
-  var activePill = document.querySelector('#studio-setup-card .setup-fmt-pill.active');
-  if (activePill) stSetAspectRatio(activePill.dataset.format);
-
-  var card = document.getElementById('studio-setup-card');
-  if (card) card.remove();
-
-  if (guestName) {
-    stAutoOpen(guestName, uid);
-  } else {
-    var inp = document.getElementById('stChatInput');
-    if (inp) inp.focus();
-  }
-}
-
-function stAutoOpen(guestName, uid) {
-  var sendBtn       = document.querySelector('#studioOverlay .st-send-btn');
-  var openingPrompt = 'I need a set of social media asset ideas for ' + guestName + '.';
-  if (sendBtn) sendBtn.disabled = true;
-  var typingEl = stAppendTyping();
-
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (typingEl && typingEl.parentNode) typingEl.remove();
-      if (result && result.type === 'text') {
-        stConversationHistory = result.updatedConversationHistory || stConversationHistory;
-        stChatHistory.push({ role: 'user',  content: openingPrompt });
-        stChatHistory.push({ role: 'model', content: result.text });
-        stAppendChatBubble('model', result.text);
-      } else {
-        var errMsg = (result && result.error) ? result.error : 'Unknown error.';
-        stAppendChatBubble('model', 'Error: ' + errMsg);
-      }
-      if (sendBtn) sendBtn.disabled = false;
-    })
-    .withFailureHandler(function(err) {
-      if (typingEl && typingEl.parentNode) typingEl.remove();
-      var detail = (err && err.message) ? err.message : String(err);
-      stAppendChatBubble('model', 'Error: ' + detail);
-      if (sendBtn) sendBtn.disabled = false;
-    })
-    .generateWithClaude(openingPrompt, stRagContext, stConversationHistory, stImageHistory,
-                        { mode: st.currentMode, episodeUid: uid || null });
-}
-
-function stHandleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); stSendMsg(); }
-}
-
-function stSendMsg() {
-  var inp     = document.getElementById('stChatInput');
-  var sendBtn = document.querySelector('#studioOverlay .st-send-btn');
-  var txt     = inp.value.trim();
-  if (!txt || (sendBtn && sendBtn.disabled)) return;
-
-  // Dismiss blank state or setup card on first send
-  var bsEl = document.getElementById('studio-blank-state') || document.getElementById('studio-setup-card');
-  if (bsEl) bsEl.remove();
-
-  inp.value = '';
-  inp.style.height = 'auto';
-  if (sendBtn) sendBtn.disabled = true;
-
-  stAppendChatBubble('user', txt);
-  var typingEl = stAppendTyping();
-
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (typingEl && typingEl.parentNode) typingEl.remove();
-
-      if (result && result.type === 'text') {
-        stConversationHistory = result.updatedConversationHistory || stConversationHistory;
-        stChatHistory.push({ role: 'user',  content: txt });
-        stChatHistory.push({ role: 'model', content: result.text });
-        stAppendChatBubble('model', result.text);
-        stTokenTotal += (result.tokenCount || 0);
-        var threshold = 50000;
-        if (stTokenTotal >= threshold) {
-          stAppendChatBubble('model', 'This session is getting long — consider starting a new one.');
-        }
-      } else if (result && result.type === 'image') {
-        stImageHistory = result.updatedImageHistory || stImageHistory;
-        stAppendImageBubble(result.base64, result.mimeType);
-      } else {
-        var errMsg = (result && result.error) ? result.error : 'Unknown error.';
-        stAppendChatBubble('model', 'Error: ' + errMsg);
-      }
-      if (sendBtn) sendBtn.disabled = false;
-    })
-    .withFailureHandler(function(err) {
-      if (typingEl && typingEl.parentNode) typingEl.remove();
-      var detail = (err && err.message) ? err.message : String(err);
-      stAppendChatBubble('model', 'Error: ' + detail);
-      if (sendBtn) sendBtn.disabled = false;
-    })
-    .generateWithClaude(txt, stRagContext, stConversationHistory, stImageHistory,
-                        { mode: st.currentMode, episodeUid: st.episodeUid || null });
-}
-
-function stAppendImageBubble(base64, mimeType) {
-  var hist = document.getElementById('stChatHist');
-  if (!hist) return;
-  var el  = document.createElement('div');
-  el.className = 'st-bubble st-bubble-ai';
-  var img = document.createElement('img');
-  img.src = 'data:' + (mimeType || 'image/png') + ';base64,' + base64;
-  img.style.cssText = 'max-width:100%;border-radius:8px;display:block;margin-bottom:8px;';
-  el.appendChild(img);
-  var saveBtn = document.createElement('button');
-  saveBtn.textContent = 'Save to Library';
-  saveBtn.className   = 'st-copy-chip';
-  saveBtn.onclick = function() {
-    saveBtn.disabled    = true;
-    saveBtn.textContent = 'Saving…';
-    google.script.run
-      .withSuccessHandler(function() { saveBtn.textContent = '✓ Saved'; })
-      .withFailureHandler(function()  { saveBtn.textContent = 'Save failed'; saveBtn.disabled = false; })
-      .saveBackgroundToLibrary(base64, mimeType || 'image/png', st.episodeUid || 'studio');
-  };
-  el.appendChild(saveBtn);
-  hist.appendChild(el);
-  hist.scrollTop = hist.scrollHeight;
-}
-
-function stAppendChatBubble(role, text) {
-  var hist = document.getElementById('stChatHist');
-  if (!hist) return;
-  var el = document.createElement('div');
-  if (role === 'user') {
-    el.className   = 'st-bubble st-bubble-u';
-    el.textContent = text;
-  } else {
-    el.className = 'st-bubble st-bubble-ai';
-    el.innerHTML = stRenderModelMessage(text);
-    el.querySelectorAll('.st-src-chip').forEach(function(chip) {
-      chip.addEventListener('click', function() {
-        stTapChip(chip.dataset.type, chip.dataset.text);
-      });
-    });
-    if (ST_WRITE_MODES.indexOf(st.currentMode) !== -1) {
-      var rawText = text;
-      var cc = document.createElement('div');
-      cc.className   = 'st-copy-chip';
-      cc.textContent = '📋 Copy to Doc';
-      cc.onclick = function() {
-        var doc = document.getElementById('stDocSheet');
-        if (doc) {
-          stDocClearEmpty();
-          doc.innerHTML += (doc.innerHTML.trim() ? '<br><br>' : '') + stRenderModelMessage(rawText);
-        }
-        cc.textContent = '✓ Saved to Doc';
-        setTimeout(function() { cc.textContent = '📋 Copy to Doc'; }, 1500);
-      };
-      el.appendChild(cc);
-    }
-  }
-  hist.appendChild(el);
-  hist.scrollTop = hist.scrollHeight;
-  return el;
-}
-
-function stAppendTyping() {
-  var hist = document.getElementById('stChatHist');
-  if (!hist) return null;
-  var el        = document.createElement('div');
-  el.className  = 'st-bubble st-bubble-ai';
-  el.textContent = 'Thinking…';
-  hist.appendChild(el);
-  hist.scrollTop = hist.scrollHeight;
-  return el;
-}
-
-function stRenderModelMessage(text) {
-  if (!text) return '';
-  var html  = '';
-  var lines = text.split('\n');
-  for (var i = 0; i < lines.length; i++) {
-    var line = lines[i];
-    // Headers
-    if (/^### /.test(line)) {
-      html += '<strong>' + esc(line.slice(4)) + '</strong><br>';
-      continue;
-    }
-    if (/^## /.test(line)) {
-      html += '<strong>' + esc(line.slice(3)) + '</strong><br>';
-      continue;
-    }
-    if (/^# /.test(line)) {
-      html += '<strong style="font-size:1.05em">' + esc(line.slice(2)) + '</strong><br>';
-      continue;
-    }
-    // Inline: replace [[HOOK: text]], [[QUOTE: text — name]] with chips
-    var processed = line.replace(/\[\[(HOOK|QUOTE):\s*([\s\S]*?)\]\]/g, function(_, type, content) {
-      var chipType = type.toLowerCase();
-      var chipText = content.trim();
-      return '<span class="st-src-chip ' + chipType + '" data-type="' + chipType + '" data-text="' + esc(chipText) + '">' + esc(chipText) + '</span>';
-    });
-    // Inline bold: **text**
-    processed = processed.replace(/\*\*([^*]+)\*\*/g, function(_, inner) {
-      return '<strong>' + esc(inner) + '</strong>';
-    });
-    // Bullet lines
-    if (/^[-•]\s/.test(line)) {
-      processed = '&nbsp;&nbsp;· ' + processed.slice(2);
-    }
-    html += processed + (i < lines.length - 1 ? '<br>' : '');
-  }
-  return html;
-}
-
-function stTapChip(type, text) {
-  if (st.currentMode === 'images') {
-    if (type === 'quote') {
-      stTapQuoteChip(text);
-    } else {
-      stPlaceCanvasText(text);
-    }
-  } else {
-    var doc = document.getElementById('stDocSheet');
-    if (!doc) return;
-    stDocClearEmpty();
-    var p = document.createElement('p');
-    p.textContent = text;
-    doc.appendChild(p);
-    doc.scrollTop = doc.scrollHeight;
-  }
-}
-
-function stTapQuoteChip(text) {
-  var sep     = ' — ';
-  var lastIdx = text.lastIndexOf(sep);
-  if (lastIdx === -1) { stPlaceCanvasText(text); return; }
-  var quotePart = text.slice(0, lastIdx).trim();
-  var namePart  = text.slice(lastIdx + sep.length).trim();
-  quotePart = quotePart.replace(/^[“”"]+|[“”"]+$/g, '').trim();
-  if (quotePart.length > 0) quotePart = quotePart.charAt(0).toUpperCase() + quotePart.slice(1);
-  stPlaceQuote(quotePart, namePart);
-}
-
-function stPlaceCanvasText(text) {
-  var canvas = st.fabricCanvas;
-  if (!canvas) return;
-  var active = canvas.getActiveObject();
-  if (active && (active.type === 'textbox' || active.type === 'i-text') && active._isText) {
-    stPushHistory();
-    active.set('text', text);
-    canvas.renderAll();
-  } else {
-    stPushHistory();
-    var cw = canvas.getWidth(), ch = canvas.getHeight();
-    var txt = new fabric.Textbox(text, {
-      left: cw / 2, top: ch / 2, width: Math.round(cw * 0.82),
-      originX: 'center', originY: 'center',
-      fontFamily: 'Libre Baskerville', fontSize: 90,
-      fill: st.activeColor, textAlign: 'center', lockUniScaling: true,
-      shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
-      _isText: true, _textType: 'hook'
-    });
-    txt.setControlsVisibility({ mt: false, mb: false });
-    stPushHistory();
-    canvas.add(txt);
-    canvas.bringToFront(txt);
-    canvas.setActiveObject(txt);
-    canvas.renderAll();
-    stUpdateTextBtns();
-  }
-}
-
-function stPlaceQuote(quoteText, speakerName) {
-  var canvas = st.fabricCanvas;
-  if (!canvas) return;
-  stPushHistory();
-  canvas.getObjects().filter(function(o) { return o._isText; })
-    .forEach(function(o) { canvas.remove(o); });
-  var cw = canvas.getWidth(), ch = canvas.getHeight();
-  var quoteObj = new fabric.Textbox(quoteText, {
-    left: cw / 2, top: ch / 2 - 80, width: Math.round(cw * 0.82),
-    originX: 'center', originY: 'bottom',
-    fontFamily: 'Libre Baskerville', fontStyle: 'italic', fontSize: 80,
-    fill: st.activeColor || '#FEBE18', textAlign: 'center', lockUniScaling: true,
-    shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
-    _isText: true, _textType: 'quote'
-  });
-  var attrObj = new fabric.Textbox('— ' + speakerName, {
-    left: cw / 2, top: ch / 2 + 40, width: Math.round(cw * 0.82),
-    originX: 'center', originY: 'top',
-    fontFamily: 'Nunito', fontSize: 65, fill: '#FAB016', textAlign: 'center', lockUniScaling: true,
-    shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.35)', blur: 8, offsetX: 0, offsetY: 2 }),
-    _isText: true, _textType: 'attribution'
-  });
-  quoteObj.setControlsVisibility({ mt: false, mb: false });
-  attrObj.setControlsVisibility({ mt: false, mb: false });
-  canvas.add(quoteObj);
-  canvas.add(attrObj);
-  canvas.renderAll();
-}
 
 // ── CANVAS INIT ───────────────────────────────────────────────
 function stInitCanvas() {
@@ -6070,15 +5611,48 @@ function stRenderRailGuests() {
     return da - db;
   });
   body.innerHTML = '';
+  var guestViews = [
+    { key: 'qg',       label: 'Images'   },
+    { key: 'reels',    label: 'Reels'    },
+    { key: 'episode',  label: 'Episode'  },
+    { key: 'schedule', label: 'Schedule' }
+  ];
   eps.forEach(function(ep) {
-    var uid   = ep.Episode_UID;
-    var guest = ep.Guest_Name || uid || '—';
-    var item  = document.createElement('div');
-    item.className = 'st-acc-item' + (st.episodeUid === uid ? ' active' : '');
+    var uid    = ep.Episode_UID;
+    var guest  = ep.Guest_Name || uid || '—';
+    var isOpen = (st.episodeUid === uid);
+
+    var item = document.createElement('div');
+    item.className = 'st-guest-hdr' + (isOpen ? ' open' : '');
     item.setAttribute('data-uid', uid);
-    item.textContent = guest;
+
+    var lbl = document.createElement('span');
+    lbl.className = 'st-guest-hdr-lbl';
+    lbl.textContent = guest;
+    item.appendChild(lbl);
+
+    var caret = document.createElement('span');
+    caret.className = 'st-guest-caret';
+    caret.textContent = '›';
+    item.appendChild(caret);
+
     item.addEventListener('click', function() { stSelectGuest(uid, guest); });
     body.appendChild(item);
+
+    var subBlock = document.createElement('div');
+    subBlock.className = 'st-guest-sub-items' + (isOpen ? ' open' : '');
+    subBlock.setAttribute('data-uid', uid);
+    guestViews.forEach(function(v) {
+      var sub = document.createElement('div');
+      var isActive = (st.episodeUid === uid && st.designTab === v.key);
+      sub.className = 'st-guest-sub-item' + (isActive ? ' active' : '');
+      sub.setAttribute('data-uid', uid);
+      sub.setAttribute('data-view', v.key);
+      sub.textContent = v.label;
+      sub.addEventListener('click', function(e) { e.stopPropagation(); stSelectGuestView(uid, guest, v.key); });
+      subBlock.appendChild(sub);
+    });
+    body.appendChild(subBlock);
   });
 }
 
@@ -6087,14 +5661,68 @@ function stRenderAccordionTasks() {
 }
 
 function stSelectGuest(uid, name) {
-  // Mark active in rail
-  document.querySelectorAll('#stRailGuests .st-acc-item').forEach(function(el) {
-    el.classList.toggle('active', el.getAttribute('data-uid') === uid);
-  });
-  // Select episode (resets H&Q cache, reel cache)
+  stExpandGuest(uid);
   stSelectEpisode(uid, name);
-  // Ensure Design mode is active
   if (st.currentTab !== 'design') stSwitchTab('design');
+  stSyncSubItemActive(uid, st.designTab || 'qg');
+}
+
+function stSelectGuestView(uid, name, view) {
+  stExpandGuest(uid);
+  stSelectEpisode(uid, name);
+  if (view === 'schedule') {
+    if (st.currentTab !== 'design') stSwitchTab('design');
+    stShowScheduleStub();
+    return;
+  }
+  if (st.currentTab !== 'design') stSwitchTab('design');
+  stSetDesignTab(view);
+}
+
+function stShowScheduleStub() {
+  st.designTab = 'schedule';
+  document.getElementById('stCanvasView').style.display = 'none';
+  var reelView = document.getElementById('stReelView');
+  if (reelView) reelView.style.display = 'none';
+  var epView = document.getElementById('stEpView');
+  if (epView) epView.style.display = 'none';
+  var captionWrap = document.getElementById('stCaptionWrap');
+  if (captionWrap) captionWrap.style.display = 'none';
+  document.getElementById('stImgAssets').style.display = 'none';
+  var reelBrowser = document.getElementById('stReelBrowser');
+  if (reelBrowser) reelBrowser.style.display = 'none';
+  var epBrowser = document.getElementById('stEpBrowser');
+  if (epBrowser) epBrowser.style.display = 'none';
+  var taskStub = document.getElementById('stTasksStubView');
+  if (taskStub) taskStub.style.display = 'none';
+  var docView = document.getElementById('stDocView');
+  if (docView) docView.style.display = 'none';
+  var sched = document.getElementById('stScheduleStubView');
+  if (sched) sched.style.display = 'flex';
+  // Clear segmented toggle active state (buttons not in DOM, but defensive)
+  var segImages  = document.getElementById('stSegImages');
+  var segReels   = document.getElementById('stSegReels');
+  var segEpisode = document.getElementById('stSegEpisode');
+  if (segImages)  segImages.classList.remove('active');
+  if (segReels)   segReels.classList.remove('active');
+  if (segEpisode) segEpisode.classList.remove('active');
+  stSyncSubItemActive(st.episodeUid, 'schedule');
+}
+
+function stSyncSubItemActive(uid, view) {
+  if (!uid) return;
+  document.querySelectorAll('#stRailGuests .st-guest-sub-item').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-uid') === uid && el.getAttribute('data-view') === view);
+  });
+}
+
+function stExpandGuest(uid) {
+  document.querySelectorAll('#stRailGuests .st-guest-hdr').forEach(function(el) {
+    el.classList.toggle('open', el.getAttribute('data-uid') === uid);
+  });
+  document.querySelectorAll('#stRailGuests .st-guest-sub-items').forEach(function(el) {
+    el.classList.toggle('open', el.getAttribute('data-uid') === uid);
+  });
 }
 
 function stAccSelectMode(mode) {
@@ -6104,12 +5732,8 @@ function stAccSelectMode(mode) {
   document.getElementById('stDocView').style.display     = 'flex';
   document.getElementById('stImgAssets').style.display   = 'none';
   document.getElementById('stWriteAssets').style.display = 'flex';
-  var segRow = document.getElementById('stSegRow');
-  if (segRow) segRow.style.display = 'none';
-  var captionWrap  = document.getElementById('stCaptionWrap');
-  if (captionWrap)  captionWrap.style.display  = 'none';
-  var companionDiv = document.getElementById('stCompanionDiv');
-  if (companionDiv) companionDiv.style.display = 'none';
+  var captionWrap = document.getElementById('stCaptionWrap');
+  if (captionWrap) captionWrap.style.display = 'none';
   var reelBrowser = document.getElementById('stReelBrowser');
   if (reelBrowser) reelBrowser.style.display = 'none';
   var epBrowser = document.getElementById('stEpBrowser');
@@ -6121,8 +5745,6 @@ function stAccSelectMode(mode) {
   document.querySelectorAll('#stAccBodyWrite .st-acc-item').forEach(function(el) {
     el.classList.toggle('active', el.id === 'stAccItem' + mode.charAt(0).toUpperCase() + mode.slice(1));
   });
-  var hist = document.getElementById('stChatHist');
-  if (hist) { hist.dataset.ph = ST_PLACEHOLDERS[mode] || ''; if (!hist.children.length) stShowWelcomeCard(); }
 }
 
 function stAccSelectTaskView(view) {
@@ -6131,12 +5753,8 @@ function stAccSelectTaskView(view) {
   document.getElementById('stDocView').style.display     = 'none';
   document.getElementById('stImgAssets').style.display   = 'none';
   document.getElementById('stWriteAssets').style.display = 'none';
-  var segRow = document.getElementById('stSegRow');
-  if (segRow)       segRow.style.display       = 'none';
-  var captionWrap  = document.getElementById('stCaptionWrap');
-  if (captionWrap)  captionWrap.style.display  = 'none';
-  var companionDiv = document.getElementById('stCompanionDiv');
-  if (companionDiv) companionDiv.style.display = 'none';
+  var captionWrap = document.getElementById('stCaptionWrap');
+  if (captionWrap) captionWrap.style.display = 'none';
   var reelBrowser = document.getElementById('stReelBrowser');
   if (reelBrowser) reelBrowser.style.display = 'none';
   var epBrowser = document.getElementById('stEpBrowser');
@@ -6153,8 +5771,6 @@ function stAccSelectTaskView(view) {
   });
 }
 
-// ── H&Q TRAY — retired; H&Q is now a right-rail tab (stHqRailPane) ──────────
-function stToggleHqTray() { /* no-op: H&Q moved to right rail */ }
 function stCollapseHqTray() { stSetRailTab('bg'); } // switch to Backgrounds after pick
 
 // ── RAIL REEL LIST (right rail, Reels mode) ───────────────────
@@ -6270,37 +5886,6 @@ function stSelectRailReel(id) {
   if (actionsBar) actionsBar.style.display = 'flex';
 }
 
-// ── COMPANION DIVIDER ─────────────────────────────────────────
-function stInitCompanionDivider() {
-  var div      = document.getElementById('stCompanionDiv');
-  var topPane  = document.getElementById('stCaptionWrap');
-  var botPane  = document.getElementById('stChatHist');
-  if (!div || !topPane || !botPane) return;
-  var startY, startH;
-  div.addEventListener('mousedown', function(e) {
-    e.preventDefault();
-    startY = e.clientY;
-    startH = topPane.getBoundingClientRect().height;
-    div.classList.add('dragging');
-    document.body.style.cursor    = 'row-resize';
-    document.body.style.userSelect = 'none';
-    function onMove(e2) {
-      var dy   = e2.clientY - startY;
-      var newH = Math.max(40, startH + dy);
-      topPane.style.flex = '0 0 ' + newH + 'px';
-    }
-    function onUp() {
-      div.classList.remove('dragging');
-      document.body.style.cursor    = '';
-      document.body.style.userSelect = '';
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup',   onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup',   onUp);
-  });
-}
-
 // ── REEL CAPTION PERSISTENCE ─────────────────────────────────
 function stInitReelCaptionPersistence() {
   var captionEl   = document.getElementById('stCaptionField');
@@ -6379,10 +5964,17 @@ function stSubmitReelRevisionPopup() {
 
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
 function stSetDesignTab(tab) {
+  // Schedule is handled by its own stub — delegate and return
+  if (tab === 'schedule') { stShowScheduleStub(); return; }
+
   st.designTab = tab;
   var isQg   = (tab === 'qg');
   var isReel = (tab === 'reels');
   var isEp   = (tab === 'episode');
+
+  // Hide schedule stub whenever a real view activates
+  var schedView = document.getElementById('stScheduleStubView');
+  if (schedView) schedView.style.display = 'none';
 
   // Segmented toggle state
   var segImages  = document.getElementById('stSegImages');
@@ -6447,13 +6039,16 @@ function stSetDesignTab(tab) {
   } else if (isEp) {
     if (st.episodeUid) stLoadDesignEpisode(st.episodeUid);
   }
+
+  // Sync sub-item active state in left rail
+  stSyncSubItemActive(st.episodeUid, tab);
 }
 
 // ── DESIGN TAB — Episode mode ─────────────────────────────────
 function stLoadDesignEpisode(uid) {
-  var epView = document.getElementById('stEpView');
-  if (!epView) return;
-  epView.innerHTML = '<div class="st-ep-player-notice"><div class="spinner" style="margin:0 auto;border-top-color:#fff"></div></div>';
+  var videoWrap = document.getElementById('stEpVideoWrap');
+  if (!videoWrap) return;
+  videoWrap.innerHTML = '<div class="st-ep-player-notice"><div class="spinner" style="margin:0 auto;border-top-color:#fff"></div></div>';
 
   var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === uid; });
   epReviewState.episodeUid      = uid;
@@ -6465,17 +6060,17 @@ function stLoadDesignEpisode(uid) {
 
   google.script.run
     .withSuccessHandler(function(res) {
-      var view = document.getElementById('stEpView');
-      if (!view) return;
+      var wrap = document.getElementById('stEpVideoWrap');
+      if (!wrap) return;
       if (res && res.url) {
-        view.innerHTML = '<div class="rv-player-wrap"><video id="stEpVideo" src="' + res.url + '" controls playsinline preload="metadata"></video></div>';
+        wrap.innerHTML = '<div class="rv-player-wrap"><video id="stEpVideo" src="' + res.url + '" controls playsinline preload="metadata"></video></div>';
       } else {
-        view.innerHTML = '<div class="st-ep-player-notice">' + (res && res.error ? esc(res.error) : 'No video found.') + '</div>';
+        wrap.innerHTML = '<div class="st-ep-player-notice">' + (res && res.error ? esc(res.error) : 'No video found.') + '</div>';
       }
     })
     .withFailureHandler(function() {
-      var view = document.getElementById('stEpView');
-      if (view) view.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
+      var wrap = document.getElementById('stEpVideoWrap');
+      if (wrap) wrap.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
     })
     .getEpisodeStreamUrl(uid);
 
@@ -6498,7 +6093,14 @@ function stEpRenderBrowser(uid, ep) {
   var approved = ep && ep.Video_Status === 'approved';
   var uidEsc   = esc(uid);
 
-  var html = '<div class="st-assets-section" style="flex-shrink:0"><div class="st-assets-lbl">Episode</div></div>';
+  // Tab bar
+  var html = '<div class="st-tab-bar" id="stEpRailTabBar" style="flex-shrink:0">';
+  html += '<button class="st-tab-btn active" id="stEpRailTabRevisions" onclick="stSetEpRailTab(\'revisions\')">Revision Comments</button>';
+  html += '<button class="st-tab-btn" id="stEpRailTabChat" onclick="stSetEpRailTab(\'chat\')">AI Chat</button>';
+  html += '</div>';
+
+  // Revision Comments pane
+  html += '<div id="stEpRevisionPane" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0">';
   html += '<div id="stEpComposerCard" style="padding:12px 12px 0;flex-shrink:0">';
   html += '<div class="rv-notes-label">Leave a note</div>';
   if (locked) {
@@ -6521,8 +6123,26 @@ function stEpRenderBrowser(uid, ep) {
     html += '<button class="btn btn-complete" id="stEpReviseBtn" onclick="stEpRequestRevisions(\'' + uidEsc + '\')">Request Revisions</button>';
     html += '</div>';
   }
+  html += '</div>'; // /stEpRevisionPane
+
+  // AI Chat stub pane
+  html += '<div id="stEpChatPane" style="display:none;flex:1;align-items:center;justify-content:center">';
+  html += '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px">AI Chat — coming soon.</div>';
+  html += '</div>';
 
   browser.innerHTML = html;
+}
+
+function stSetEpRailTab(tab) {
+  var isRevisions = (tab === 'revisions');
+  var tabRev  = document.getElementById('stEpRailTabRevisions');
+  var tabChat = document.getElementById('stEpRailTabChat');
+  var revPane  = document.getElementById('stEpRevisionPane');
+  var chatPane = document.getElementById('stEpChatPane');
+  if (tabRev)   tabRev.classList.toggle('active', isRevisions);
+  if (tabChat)  tabChat.classList.toggle('active', !isRevisions);
+  if (revPane)  revPane.style.display  = isRevisions ? 'flex' : 'none';
+  if (chatPane) chatPane.style.display = isRevisions ? 'none'  : 'flex';
 }
 
 function stEpComposerFocus() {
@@ -7029,21 +6649,6 @@ function stDocClear() {
   if (sheet) sheet.innerHTML = '<div class="st-doc-empty"><span>No doc open.</span><span style="font-size:11px;color:var(--text-3);">Ask Studio Chat or select from My Docs →</span></div>';
 }
 
-// ── DRAG HANDLE ───────────────────────────────────────────────
-(function() {
-  var handle = document.getElementById('stDragCC');
-  if (!handle) return;
-  var active = false;
-  handle.addEventListener('mousedown', function(e) { active = true; handle.classList.add('dragging'); document.body.style.cursor = 'col-resize'; e.preventDefault(); });
-  document.addEventListener('mousemove', function(e) {
-    if (!active) return;
-    var col  = document.getElementById('stChatCol');
-    var rect = col.getBoundingClientRect();
-    col.style.width = Math.max(180, Math.min(e.clientX - rect.left, 520)) + 'px';
-  });
-  document.addEventListener('mouseup', function() { if (active) { active = false; handle.classList.remove('dragging'); document.body.style.cursor = ''; } });
-})();
-
 // Drag handle: content ↔ assets
 (function() {
   var handle = document.getElementById('stDragAC');
@@ -7057,6 +6662,24 @@ function stDocClear() {
     var oRect  = overlay.getBoundingClientRect();
     var newW   = Math.max(200, Math.min(oRect.right - e.clientX, 480));
     col.style.width = newW + 'px';
+  });
+  document.addEventListener('mouseup', function() { if (active) { active = false; handle.classList.remove('dragging'); document.body.style.cursor = ''; } });
+})();
+
+// Drag handle: episode video ↔ show notes (vertical)
+(function() {
+  var handle = document.getElementById('stEpDrag');
+  if (!handle) return;
+  var active = false;
+  handle.addEventListener('mousedown', function(e) { active = true; handle.classList.add('dragging'); document.body.style.cursor = 'row-resize'; e.preventDefault(); });
+  document.addEventListener('mousemove', function(e) {
+    if (!active) return;
+    var epView    = document.getElementById('stEpView');
+    var notesWrap = document.getElementById('stEpShowNotesWrap');
+    if (!epView || !notesWrap) return;
+    var oRect = epView.getBoundingClientRect();
+    var newH  = Math.max(60, Math.min(oRect.bottom - e.clientY - 4, oRect.height - 120 - 4));
+    notesWrap.style.flex = '0 0 ' + newH + 'px';
   });
   document.addEventListener('mouseup', function() { if (active) { active = false; handle.classList.remove('dragging'); document.body.style.cursor = ''; } });
 })();

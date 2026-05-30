@@ -5679,24 +5679,19 @@ function stSelectGuestView(uid, name, view) {
   stSetDesignTab(view);
 }
 
+function stHideAllPanels() {
+  ['stCanvasView','stEpView','stReelView','stCaptionWrap',
+   'stDocView','stTasksStubView','stScheduleStubView',
+   'stImgAssets','stWriteAssets','stReelBrowser','stEpBrowser'
+  ].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
 function stShowScheduleStub() {
   st.designTab = 'schedule';
-  document.getElementById('stCanvasView').style.display = 'none';
-  var reelView = document.getElementById('stReelView');
-  if (reelView) reelView.style.display = 'none';
-  var epView = document.getElementById('stEpView');
-  if (epView) epView.style.display = 'none';
-  var captionWrap = document.getElementById('stCaptionWrap');
-  if (captionWrap) captionWrap.style.display = 'none';
-  document.getElementById('stImgAssets').style.display = 'none';
-  var reelBrowser = document.getElementById('stReelBrowser');
-  if (reelBrowser) reelBrowser.style.display = 'none';
-  var epBrowser = document.getElementById('stEpBrowser');
-  if (epBrowser) epBrowser.style.display = 'none';
-  var taskStub = document.getElementById('stTasksStubView');
-  if (taskStub) taskStub.style.display = 'none';
-  var docView = document.getElementById('stDocView');
-  if (docView) docView.style.display = 'none';
+  stHideAllPanels();
   var sched = document.getElementById('stScheduleStubView');
   if (sched) sched.style.display = 'flex';
   // Clear segmented toggle active state (buttons not in DOM, but defensive)
@@ -5714,6 +5709,9 @@ function stSyncSubItemActive(uid, view) {
   document.querySelectorAll('#stRailGuests .st-guest-sub-item').forEach(function(el) {
     el.classList.toggle('active', el.getAttribute('data-uid') === uid && el.getAttribute('data-view') === view);
   });
+  document.querySelectorAll('#stAccBodyTasks .st-acc-item').forEach(function(el) {
+    el.classList.remove('active');
+  });
 }
 
 function stExpandGuest(uid) {
@@ -5728,18 +5726,9 @@ function stExpandGuest(uid) {
 function stAccSelectMode(mode) {
   // For Write sub-items (brainstorm, etc.)
   st.currentMode = mode;
-  document.getElementById('stCanvasView').style.display  = 'none';
+  stHideAllPanels();
   document.getElementById('stDocView').style.display     = 'flex';
-  document.getElementById('stImgAssets').style.display   = 'none';
   document.getElementById('stWriteAssets').style.display = 'flex';
-  var captionWrap = document.getElementById('stCaptionWrap');
-  if (captionWrap) captionWrap.style.display = 'none';
-  var reelBrowser = document.getElementById('stReelBrowser');
-  if (reelBrowser) reelBrowser.style.display = 'none';
-  var epBrowser = document.getElementById('stEpBrowser');
-  if (epBrowser) epBrowser.style.display = 'none';
-  var epView = document.getElementById('stEpView');
-  if (epView) epView.style.display = 'none';
   if (st.currentTab !== 'write') stSwitchTab('write');
   // Mark write item active
   document.querySelectorAll('#stAccBodyWrite .st-acc-item').forEach(function(el) {
@@ -5749,18 +5738,7 @@ function stAccSelectMode(mode) {
 
 function stAccSelectTaskView(view) {
   st.currentMode = view;
-  document.getElementById('stCanvasView').style.display  = 'none';
-  document.getElementById('stDocView').style.display     = 'none';
-  document.getElementById('stImgAssets').style.display   = 'none';
-  document.getElementById('stWriteAssets').style.display = 'none';
-  var captionWrap = document.getElementById('stCaptionWrap');
-  if (captionWrap) captionWrap.style.display = 'none';
-  var reelBrowser = document.getElementById('stReelBrowser');
-  if (reelBrowser) reelBrowser.style.display = 'none';
-  var epBrowser = document.getElementById('stEpBrowser');
-  if (epBrowser) epBrowser.style.display = 'none';
-  var epView = document.getElementById('stEpView');
-  if (epView) epView.style.display = 'none';
+  stHideAllPanels();
   var stub = document.getElementById('stTasksStubView');
   if (stub) stub.style.display = 'flex';
   var msg = document.getElementById('stTasksStubMsg');
@@ -5768,6 +5746,9 @@ function stAccSelectTaskView(view) {
   stAccOpen('tasks');
   document.querySelectorAll('#stAccBodyTasks .st-acc-item').forEach(function(el) {
     el.classList.toggle('active', el.id === 'stAccItem' + view.charAt(0).toUpperCase() + view.slice(1));
+  });
+  document.querySelectorAll('#stRailGuests .st-guest-sub-item').forEach(function(el) {
+    el.classList.remove('active');
   });
 }
 
@@ -5972,9 +5953,7 @@ function stSetDesignTab(tab) {
   var isReel = (tab === 'reels');
   var isEp   = (tab === 'episode');
 
-  // Hide schedule stub whenever a real view activates
-  var schedView = document.getElementById('stScheduleStubView');
-  if (schedView) schedView.style.display = 'none';
+  stHideAllPanels();
 
   // Segmented toggle state
   var segImages  = document.getElementById('stSegImages');
@@ -5984,24 +5963,21 @@ function stSetDesignTab(tab) {
   if (segReels)   segReels.classList.toggle('active',   isReel);
   if (segEpisode) segEpisode.classList.toggle('active', isEp);
 
-  // Center: canvas (Images) | reel player (Reels) | episode player (Episode)
-  document.getElementById('stCanvasView').style.display = isQg ? 'flex' : 'none';
-  if (isQg && st.fabricCanvas) setTimeout(stApplyDisplaySize, 0);
-  var reelView = document.getElementById('stReelView');
-  if (reelView) reelView.style.display = isReel ? 'flex' : 'none';
-  var epView = document.getElementById('stEpView');
-  if (epView) epView.style.display = isEp ? 'flex' : 'none';
+  // Center: show only the panel for this tab
+  if (isQg) {
+    document.getElementById('stCanvasView').style.display = 'flex';
+    if (st.fabricCanvas) setTimeout(stApplyDisplaySize, 0);
+  }
+  if (isReel) { var reelView = document.getElementById('stReelView'); if (reelView) reelView.style.display = 'flex'; }
+  if (isEp)   { var epView   = document.getElementById('stEpView');   if (epView)   epView.style.display   = 'flex'; }
 
-  // Right rail: HQ+Backgrounds (Images) | reel browser (Reels) | ep browser (Episode)
-  document.getElementById('stImgAssets').style.display = isQg ? 'flex' : 'none';
-  var reelBrowser = document.getElementById('stReelBrowser');
-  if (reelBrowser) reelBrowser.style.display = isReel ? 'flex' : 'none';
-  var epBrowser = document.getElementById('stEpBrowser');
-  if (epBrowser) epBrowser.style.display = isEp ? 'flex' : 'none';
+  // Right rail: show only the browser for this tab
+  if (isQg)   document.getElementById('stImgAssets').style.display = 'flex';
+  if (isReel) { var reelBrowser = document.getElementById('stReelBrowser'); if (reelBrowser) reelBrowser.style.display = 'flex'; }
+  if (isEp)   { var epBrowser   = document.getElementById('stEpBrowser');   if (epBrowser)   epBrowser.style.display   = 'flex'; }
 
-  // Caption wrap: hidden in Episode mode (no caption for episode video)
-  var captionWrap = document.getElementById('stCaptionWrap');
-  if (captionWrap) captionWrap.style.display = isEp ? 'none' : 'flex';
+  // Caption wrap: shown for Images and Reels; Episode has none
+  if (!isEp) { var captionWrap = document.getElementById('stCaptionWrap'); if (captionWrap) captionWrap.style.display = 'flex'; }
 
   // Title Card + Generate button: Reels only
   var titleCardWrap = document.getElementById('stTitleCardWrap');

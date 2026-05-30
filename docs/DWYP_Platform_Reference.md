@@ -1,5 +1,5 @@
 ﻿# DWYP Operations Platform — Platform Reference
-**Version: 3.4 | May 2026**
+**Version: 3.6 | May 2026**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -155,6 +155,8 @@ FK, `revision_requested` status — tracked in Build Playbook, not resolved here
    2. **308 Resume Incomplete kills XHR.** Browsers fire `onerror` (status 0) on a 308 with no `Location` header — they treat it as a failed redirect. Use `fetch(redirect:'manual')` instead; a 308 resolves as `response.type === 'opaqueredirect'`.
    3. **Do not set `Content-Length`.** It is a forbidden request header in browsers. The browser computes it from the body. Attempting to set it throws a console error and may abort the request.
 
+123. **Episode Status: five-state lifecycle model (SPOKE_Tasks_1, May 2026).** `upcoming` (Secretary on creation) → `in_production` (Loop D on transcript detect) → `ready_to_release` (`triggerReadyForRelease()` on assets approved) → `archived` (Filing redesign — not yet auto-fired). `archived` is the sole terminal gate: all loop skip checks are `status === "archived"`; all "active" filters are `status !== "archived"`. Prior-appearance count in Herald: `ready_to_release` OR `archived` (a released episode is public — don't wait for archive). Housekeeping processes `in_production` and `ready_to_release` only — `upcoming` has no transcript. `active` and `complete` are retired enum values; existing rows carry `active` until Audra's in-sheet relabel. **AD #22 partial note:** `Images_Status` has no active write path (AppSheet retired, web app never implemented it) — column is inert, left in sheet pending Filing redesign.
+
 ---
 
 ## Schema — Authoritative (v2.0)
@@ -198,7 +200,7 @@ FK, `revision_requested` status — tracked in Build Playbook, not resolved here
 | 3 | C | Episode_UID | String | Primary key. Format: `EP-YYMMDD-HHmm`. |
 | 4 | D | Contact_ID | String | Foreign key → Contacts. |
 | 5 | E | Guest_Name | String | Denormalized display name. Freetext for Roundtable. |
-| 6 | F | Status | Enum: active \| complete \| archived | Secretary sets active on creation. |
+| 6 | F | Status | Enum: upcoming \| in_production \| ready_to_release \| archived | Secretary writes `upcoming` on creation. `archived` is the sole terminal gate. `active`/`complete` are legacy values — in-sheet relabel pending. See AD #123. |
 | 7 | G | Raw_Folder_ID | String | Drive folder ID of the episode subfolder inside `02_RAW_PRODUCTION`. Secretary writes. |
 | 8 | H | Production_Folder_ID | String | Drive folder ID of the episode subfolder inside `03_STAGING_DRAFTS`. Secretary writes. |
 | 9 | I | Recording_Date | Date | Secretary writes on calendar match. |
@@ -714,6 +716,18 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 ---
 
 ## Build History
+
+### v3.5 → v3.6 (May 2026)
+
+- **Episode Status five-state model (AD #123).** `upcoming | in_production | ready_to_release | archived` replaces `active | complete`. `archived` is the sole terminal gate.
+- **Status flip paths added.** Loop D: `patchEpisodes → in_production` on transcript detect. `triggerReadyForRelease()`: `patchEpisodes → ready_to_release`.
+- **All 6 active `dailyPulse()` loop skips:** `complete` → `archived` (Loops 1, 2, 3, B, Reels, D).
+- **Herald prior filter:** `ready_to_release` OR `archived` counts as a prior appearance (was `complete` only).
+- **Housekeeping filter:** `in_production` + `ready_to_release` only — `upcoming` excluded (no transcript to parse).
+- **`EPISODES_COLS` cleanup:** `Frameio_Project_ID` (col 15) + `Guest_Package_URL` (col 16) removed from codebase constant; aligns with live 14-col schema (v2.0).
+- **Episodes schema Status enum updated** (see Schema section).
+
+---
 
 ### v3.4 → v3.5 (May 2026)
 

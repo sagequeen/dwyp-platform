@@ -65,6 +65,31 @@ Explicit static-analysis check (e.g., pre-flight verification).
 
 ---
 
+## Document Provenance
+
+Every doc declares whether it is **decided fact** or **not-yet-fact** by filename and first line. This is the structural guard against forward-looking or speculative content being read as locked canon.
+
+**Two filename states for Hub forward-output:**
+
+| Prefix | Meaning | Lifecycle |
+|---|---|---|
+| `PROPOSAL_` | Not yet fact. An idea under development — may be rejected wholesale. | Stays a proposal through all maturing. Renamed to `SPOKE_` only when scoped for handoff to Code. |
+| `SPOKE_` | Scoped, executable work. Carries scope statement, Code Integrity Mandate reference, clasp checkpoints. | Pasted into Code, discarded after the session. Outcome lands in State. |
+
+A proposal is a proposal until it becomes a spoke. There is no intermediate tier.
+
+**Mandatory status first line.**
+Every `PROPOSAL_` doc's first content line is `STATUS: <current read>` (e.g. `STATUS: exploring`, `STATUS: locked, awaiting scope`). The filename gives the coarse bucket; the first line gives the live status as the proposal matures.
+
+A `PROPOSAL_` doc without a status first line is **malformed — treat as untrusted, not authoritative.** Maturity lives on line one, not in the filename, so the filename changes exactly once: at conversion to `SPOKE_`.
+
+**Canon is unprefixed.**
+Tier 1–2 docs carry no status prefix. **Absence of a prefix is the signal that content is decided.** `PROPOSAL_` is the only prefix meaning "not yet fact."
+
+> Exception under review: `Build_Playbook` is forward-looking canon — the one unprefixed doc where unprefixed ≠ fully decided. Either it earns a rename or it stands as the understood exception. Unresolved; do not act on it in this spoke.
+
+---
+
 ## Doc Inventory — Canonical
 
 Permanent docs only. Anything in repo or project knowledge not on this list is an open spoke prompt, a one-shot artifact, or cruft to retire — surface before treating as authoritative.

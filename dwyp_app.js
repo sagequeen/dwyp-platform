@@ -176,7 +176,8 @@ var TASKS_COLS = {
   Created_At:        14,
   Completed_At:      15,
   Note_Sent_At:      16,
-  Asset_ID:          17   // FK to Asset_Library.Asset_ID for revision tasks
+  Asset_ID:          17,  // FK to Asset_Library.Asset_ID for revision tasks
+  Bucket:            18   // User bucket enum — added Spoke 3
 };
 
 // Episodes tab column map (1-based, matches v1.5 schema column order)
@@ -334,6 +335,14 @@ function doGet(e) {
   var notebooklmUrl = cleanUrl(govMap["NOTEBOOKLM_LINK"]);
   var ownerEmail    = Session.getEffectiveUser().getEmail();
 
+  function parseBucketList(key) {
+    return String(govMap[key] || "").split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  }
+  var hostBuckets  = parseBucketList("TASK_BUCKETS_HOST");
+  var ownerBuckets = parseBucketList("TASK_BUCKETS_OWNER");
+  if (!hostBuckets.length)  hostBuckets  = ["JT-1","JT-2","JT-3"];
+  if (!ownerBuckets.length) ownerBuckets = ["Admin","A-1","A-2"];
+
   var template = HtmlService.createTemplateFromFile("dwyp_ui");
   template.sheetId       = sheetId;
   template.deployedUrl   = deployedUrl;
@@ -342,6 +351,8 @@ function doGet(e) {
   template.gemsUrl       = gemsUrl;
   template.notebooklmUrl = notebooklmUrl;
   template.ownerEmail    = ownerEmail;
+  template.hostBuckets   = hostBuckets;
+  template.ownerBuckets  = ownerBuckets;
 
   return template.evaluate()
     .setTitle("DWYP Operations")
@@ -423,7 +434,8 @@ function getTasks() {
       Workflow_Step:     row[TASKS_COLS.Workflow_Step - 1],
       Executive_Summary: row[TASKS_COLS.Executive_Summary - 1],
       Payload_Link:      row[TASKS_COLS.Payload_Link - 1],
-      Asset_ID:          String(row[TASKS_COLS.Asset_ID - 1] || "")
+      Asset_ID:          String(row[TASKS_COLS.Asset_ID - 1] || ""),
+      Bucket:            row.length > 17 ? String(row[TASKS_COLS.Bucket - 1] || "") : ""
     });
   }
 
@@ -521,10 +533,10 @@ function createTask(payload) {
     var nnn    = String(Math.floor(Math.random() * 900) + 100); // 100-999
     var taskId = "TASK-" + yy + mm + dd + "-" + hh + mn + "-" + nnn;
 
-    // Build row in TASKS_COLS order (17 columns)
+    // Build row in TASKS_COLS order (18 columns)
     var dueDate = payload.dueDate ? new Date(payload.dueDate) : "";
 
-    var row = new Array(17).fill("");
+    var row = new Array(18).fill("");
     row[TASKS_COLS.Task_ID           - 1] = taskId;
     row[TASKS_COLS.Action_Title      - 1] = payload.actionTitle      || "";
     row[TASKS_COLS.Assignee          - 1] = payload.assignee         || "";
@@ -534,8 +546,10 @@ function createTask(payload) {
     row[TASKS_COLS.Due_Date          - 1] = dueDate;
     row[TASKS_COLS.Episode_UID       - 1] = payload.episodeUid       || "";
     row[TASKS_COLS.Executive_Summary - 1] = payload.executiveSummary || "";
+    row[TASKS_COLS.Workflow_Step     - 1] = payload.workflowStep     || "";
     row[TASKS_COLS.Created_At        - 1] = now;
     row[TASKS_COLS.Asset_ID          - 1] = payload.assetId          || "";
+    row[TASKS_COLS.Bucket            - 1] = payload.bucket           || "";
 
     sheet.appendRow(row);
     bumpVersion("tasks", "createTask");

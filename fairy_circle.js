@@ -924,7 +924,8 @@ function spawnTask(taskConfig, suppressBump) {
     Revision_Notes:    taskConfig.revisionNotes || "",
     Created_At:        new Date(),
     Completed_At:      "",
-    Asset_ID:          taskConfig.assetId          || ""
+    Asset_ID:          taskConfig.assetId          || "",
+    Bucket:            taskConfig.bucket            || ""
   };
 
   // Header-driven row build — immune to column reorder.

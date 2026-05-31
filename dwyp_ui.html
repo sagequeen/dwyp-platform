@@ -957,6 +957,125 @@ svg { display: block; flex-shrink: 0; }
   color: var(--border);
 }
 
+/* ── BUCKETS WORKSPACE (Tasks → Buckets) ──────────────────── */
+#stBucketsView { overflow: hidden; }
+
+.bk-task-card {
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin: 0 12px 6px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  border-left: 3px solid var(--red);
+}
+.bk-task-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+.bk-task-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 4px;
+}
+.bk-task-notes {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.bk-task-complete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-family: inherit;
+  color: var(--text-3);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+.bk-task-complete-btn:hover { color: var(--text); border-color: var(--text-3); }
+
+/* Quick task input row */
+.bk-sticky-input-wrap { padding: 6px 12px 4px; }
+.bk-sticky-input {
+  width: 100%;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  outline: none;
+}
+.bk-sticky-input:focus { border-color: var(--gold); }
+
+/* Sticky task row */
+.bk-sticky-item { padding: 5px 12px; border-top: 1px solid var(--border); }
+.bk-sticky-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.bk-sticky-check {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+.bk-sticky-title { font-size: 12px; color: var(--text); line-height: 1.4; }
+
+/* Capture form */
+.bk-form {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.bk-form-input,
+.bk-form-select,
+.bk-form-textarea {
+  width: 100%;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  outline: none;
+}
+.bk-form-input:focus,
+.bk-form-select:focus,
+.bk-form-textarea:focus { border-color: var(--gold); }
+.bk-form-textarea { resize: vertical; min-height: 54px; }
+.bk-form-select { appearance: none; -webkit-appearance: none; cursor: pointer; }
+.bk-form-btn {
+  align-self: flex-start;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--red);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.bk-form-btn:hover { opacity: 0.88; }
+
 /* ── EPISODE DETAIL ─────────────────────────────────────────── */
 .ep-detail-hero {
   background: var(--surface);
@@ -4182,9 +4301,14 @@ body.studio-open .app-header { display: none; }
         </div>
       </div><!-- /stDocView -->
 
-      <!-- Tasks placeholder views (Buckets sub-item) -->
+      <!-- Tasks placeholder views (fallback stub — should not appear in normal flow) -->
       <div id="stTasksStubView" style="display:none;flex:1;align-items:center;justify-content:center">
         <div id="stTasksStubMsg" style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6"></div>
+      </div>
+
+      <!-- Tasks: Buckets workspace (bands left, quick tasks + form right) -->
+      <div id="stBucketsView" style="display:none;flex-direction:row;flex:1;min-height:0;overflow:hidden">
+        <!-- Populated by stRenderBucketsView() -->
       </div>
 
       <!-- Tasks: Episodes workspace (month calendar + Upcoming/TBD regions) -->
@@ -4283,7 +4407,9 @@ var APP_CONFIG = {
   hostName:      <?= JSON.stringify(hostName) ?>,
   ownerEmail:    <?= JSON.stringify(ownerEmail) ?>,
   gemsUrl:       <?= JSON.stringify(gemsUrl) ?>,
-  notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>
+  notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>,
+  hostBuckets:   <?= JSON.stringify(hostBuckets) ?>,
+  ownerBuckets:  <?= JSON.stringify(ownerBuckets) ?>
 };
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -5837,7 +5963,7 @@ function stSelectGuestView(uid, name, view) {
 
 function stHideAllPanels() {
   ['stCanvasView','stEpView','stReelView','stCaptionWrap',
-   'stDocView','stTasksStubView','stEpisodesView','stScheduleStubView',
+   'stDocView','stTasksStubView','stBucketsView','stEpisodesView','stScheduleStubView',
    'stImgAssets','stWriteAssets','stReelBrowser','stEpBrowser'
   ].forEach(function(id) {
     var el = document.getElementById(id);
@@ -5899,11 +6025,15 @@ function stAccSelectTaskView(view) {
     var epView = document.getElementById('stEpisodesView');
     if (epView) epView.style.display = 'flex';
     stRenderEpisodesView();
+  } else if (view === 'buckets') {
+    var bkView = document.getElementById('stBucketsView');
+    if (bkView) bkView.style.display = 'flex';
+    stRenderBucketsView();
   } else {
     var stub = document.getElementById('stTasksStubView');
     if (stub) stub.style.display = 'flex';
     var msg = document.getElementById('stTasksStubMsg');
-    if (msg) msg.textContent = 'Buckets — coming soon.';
+    if (msg) msg.textContent = view;
   }
   stAccOpen('tasks');
   document.querySelectorAll('#stAccBodyTasks .st-acc-item').forEach(function(el) {
@@ -6119,6 +6249,201 @@ function stRenderEpisodesView() {
     '<div class="st-ep-regions-col">' + rightHtml + '</div>';
 
   lucide.createIcons();
+}
+
+// ── BUCKETS WORKSPACE ────────────────────────────────────────
+
+function stRenderBucketsView() {
+  var container = document.getElementById('stBucketsView');
+  if (!container) return;
+
+  var myBuckets = isJT() ? (APP_CONFIG.hostBuckets || []) : (APP_CONFIG.ownerBuckets || []);
+  var userEmail = (APP_CONFIG.userEmail || '').toLowerCase();
+  var allTasks  = securityFilter(state.tasks);
+
+  // Standard bucket tasks: Bucket value in the user's bucket list
+  var byBucket = {};
+  myBuckets.forEach(function(b) { byBucket[b] = []; });
+  allTasks.forEach(function(t) {
+    if (t.Bucket && byBucket.hasOwnProperty(t.Bucket)) {
+      byBucket[t.Bucket].push(t);
+    }
+  });
+
+  // Quick tasks: Workflow_Step === "quick", assigned to current user
+  var stickies = allTasks.filter(function(t) {
+    return t.Workflow_Step === 'quick' &&
+           (t.Assignee || '').toLowerCase() === userEmail;
+  });
+
+  // Left column: bucket bands (empty buckets absent)
+  var leftHtml = '';
+  myBuckets.forEach(function(b) {
+    var tasks = byBucket[b];
+    if (!tasks.length) return;
+    leftHtml += '<div class="st-ep-band">';
+    leftHtml += '<div class="st-ep-band-header">' + esc(b) + '</div>';
+    tasks.forEach(function(t) { leftHtml += bkRenderTaskCard(t); });
+    leftHtml += '</div>';
+  });
+  if (!leftHtml) {
+    leftHtml = '<div class="st-ep-empty" style="padding:20px 16px">No tasks yet — use the form to create one.</div>';
+  }
+
+  // Right top: quick tasks
+  var bucketOpts = myBuckets.map(function(b) {
+    return '<option value="' + esc(b) + '">' + esc(b) + '</option>';
+  }).join('');
+
+  var stickyHtml = '<div class="st-ep-region">';
+  stickyHtml += '<div class="st-ep-band-header">Quick Tasks</div>';
+  stickyHtml += '<div class="bk-sticky-input-wrap">';
+  stickyHtml += '<input type="text" id="bkStickyInput" class="bk-sticky-input" placeholder="Quick task… (Enter to add)">';
+  stickyHtml += '</div>';
+  if (stickies.length) {
+    stickies.forEach(function(t) {
+      var tid = esc(t.Task_ID);
+      stickyHtml += '<div class="bk-sticky-item" id="bk-sticky-' + tid + '">';
+      stickyHtml += '<label class="bk-sticky-label">';
+      stickyHtml += '<input type="checkbox" class="bk-sticky-check" onchange="bkCompleteSticky(\'' + tid + '\',' + t._rowIndex + ')">';
+      stickyHtml += '<span class="bk-sticky-title">' + esc(t.Action_Title) + '</span>';
+      stickyHtml += '</label></div>';
+    });
+  } else {
+    stickyHtml += '<div class="st-ep-empty" style="padding:8px 12px">No quick tasks.</div>';
+  }
+  stickyHtml += '</div>';
+
+  // Right bottom: capture form
+  var formHtml = '<div class="st-ep-region">';
+  formHtml += '<div class="st-ep-band-header">New Task</div>';
+  formHtml += '<div class="bk-form">';
+  formHtml += '<input type="text" id="bkFTitle" class="bk-form-input" placeholder="Title">';
+  formHtml += '<select id="bkFBucket" class="bk-form-select"><option value="">Bucket (optional)</option>' + bucketOpts + '</select>';
+  formHtml += '<input type="date" id="bkFDue" class="bk-form-input">';
+  formHtml += '<textarea id="bkFNotes" class="bk-form-textarea" placeholder="Notes (optional)"></textarea>';
+  formHtml += '<button class="bk-form-btn" onclick="bkSubmitCapture()">Create Task</button>';
+  formHtml += '</div></div>';
+
+  container.innerHTML =
+    '<div class="st-ep-bands-col">'   + leftHtml              + '</div>' +
+    '<div class="st-ep-regions-col">' + stickyHtml + formHtml + '</div>';
+
+  // Wire quick-task Enter key
+  var sInput = document.getElementById('bkStickyInput');
+  if (sInput) {
+    sInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        var val = this.value.trim();
+        if (val) { this.value = ''; bkAddQuickTask(val); }
+      }
+    });
+  }
+
+  lucide.createIcons();
+}
+
+function bkRenderTaskCard(t) {
+  var html = '<div class="bk-task-card">';
+  html += '<div class="bk-task-title">' + esc(t.Action_Title) + '</div>';
+  if (t.Due_Date) html += '<div class="bk-task-meta">Due ' + formatDate(t.Due_Date) + '</div>';
+  if (t.Executive_Summary) html += '<div class="bk-task-notes">' + esc(t.Executive_Summary) + '</div>';
+  html += '<button class="bk-task-complete-btn" onclick="bkCompleteTask(\'' + esc(t.Task_ID) + '\',' + t._rowIndex + ')">';
+  html += '<svg width="11" height="11" data-lucide="check"></svg>Complete</button>';
+  html += '</div>';
+  return html;
+}
+
+function bkCompleteSticky(taskId, rowIndex) {
+  var item = document.getElementById('bk-sticky-' + taskId);
+  if (item) item.style.opacity = '0.4';
+  google.script.run
+    .withSuccessHandler(function() {
+      state.tasks = state.tasks.filter(function(t) { return t.Task_ID !== taskId; });
+      var el = document.getElementById('bk-sticky-' + taskId);
+      if (el) el.style.display = 'none';
+    })
+    .withFailureHandler(function(err) {
+      var el = document.getElementById('bk-sticky-' + taskId);
+      if (el) {
+        el.style.opacity = '1';
+        var cb = el.querySelector('input[type=checkbox]');
+        if (cb) cb.checked = false;
+      }
+      showToast('Could not complete task: ' + (err.message || err), true);
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+function bkCompleteTask(taskId, rowIndex) {
+  google.script.run
+    .withSuccessHandler(function() {
+      showToast('Task completed');
+      state.tasks = state.tasks.filter(function(t) { return t.Task_ID !== taskId; });
+      stRenderBucketsView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Could not complete: ' + (err.message || err), true);
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+function bkAddQuickTask(title) {
+  if (!title) return;
+  var userEmail = APP_CONFIG.userEmail || '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { showToast('Could not create quick task', true); return; }
+      showToast('Quick task added');
+      google.script.run
+        .withSuccessHandler(function(newTasks) {
+          if (newTasks) state.tasks = newTasks;
+          stRenderBucketsView();
+        })
+        .withFailureHandler(function() { stRenderBucketsView(); })
+        .getTasks();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Could not create quick task: ' + (err.message || err), true);
+    })
+    .createTask({ actionTitle: title, assignee: userEmail, createdBy: userEmail,
+                  workflowStep: 'quick', priority: 'normal' });
+}
+
+function bkSubmitCapture() {
+  var titleEl  = document.getElementById('bkFTitle');
+  var bucketEl = document.getElementById('bkFBucket');
+  var dueEl    = document.getElementById('bkFDue');
+  var notesEl  = document.getElementById('bkFNotes');
+  var title  = titleEl  ? titleEl.value.trim()  : '';
+  var bucket = bucketEl ? bucketEl.value         : '';
+  var due    = dueEl    ? dueEl.value            : '';
+  var notes  = notesEl  ? notesEl.value.trim()  : '';
+  if (!title) { showToast('Title is required', true); return; }
+  var userEmail = APP_CONFIG.userEmail || '';
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) { showToast('Could not create task', true); return; }
+      showToast('Task created');
+      if (titleEl)  titleEl.value  = '';
+      if (bucketEl) bucketEl.value = '';
+      if (dueEl)    dueEl.value    = '';
+      if (notesEl)  notesEl.value  = '';
+      google.script.run
+        .withSuccessHandler(function(newTasks) {
+          if (newTasks) state.tasks = newTasks;
+          stRenderBucketsView();
+        })
+        .withFailureHandler(function() { stRenderBucketsView(); })
+        .getTasks();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Could not create task: ' + (err.message || err), true);
+    })
+    .createTask({ actionTitle: title, bucket: bucket, dueDate: due,
+                  executiveSummary: notes, assignee: userEmail, createdBy: userEmail,
+                  priority: 'normal' });
 }
 
 // ── RAIL REEL LIST (right rail, Reels mode) ───────────────────

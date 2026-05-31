@@ -335,13 +335,30 @@ function doGet(e) {
   var notebooklmUrl = cleanUrl(govMap["NOTEBOOKLM_LINK"]);
   var ownerEmail    = Session.getEffectiveUser().getEmail();
 
-  function parseBucketList(key) {
-    return String(govMap[key] || "").split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+  // User Registry — header-driven read for per-user bucket and default-bucket data.
+  // Buckets and Default_Bucket columns are Audra hand-edits; may not exist yet.
+  var userRegistry = [];
+  var urSheet = ss.getSheetByName("User_Registry");
+  if (urSheet) {
+    var urData    = urSheet.getDataRange().getValues();
+    var urHeaders = urData[0] || [];
+    var urCol     = {};
+    urHeaders.forEach(function(h, i) { if (h) urCol[String(h).trim()] = i; });
+    for (var ri = 1; ri < urData.length; ri++) {
+      var urRow   = urData[ri];
+      var urEmail = String(urRow[urCol['User_ID'] !== undefined ? urCol['User_ID'] : 0] || '').trim();
+      if (!urEmail) continue;
+      var bucketsRaw   = urCol['Buckets']        !== undefined ? String(urRow[urCol['Buckets']]        || '') : '';
+      var defBucketRaw = urCol['Default_Bucket'] !== undefined ? String(urRow[urCol['Default_Bucket']] || '').trim() : '';
+      userRegistry.push({
+        email:         urEmail,
+        displayName:   urCol['Display_Name'] !== undefined ? String(urRow[urCol['Display_Name']] || '').trim() : urEmail,
+        role:          urCol['Role']          !== undefined ? String(urRow[urCol['Role']]          || '').trim() : '',
+        buckets:       bucketsRaw.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+        defaultBucket: defBucketRaw
+      });
+    }
   }
-  var hostBuckets  = parseBucketList("TASK_BUCKETS_HOST");
-  var ownerBuckets = parseBucketList("TASK_BUCKETS_OWNER");
-  if (!hostBuckets.length)  hostBuckets  = ["JT-1","JT-2","JT-3"];
-  if (!ownerBuckets.length) ownerBuckets = ["Admin","A-1","A-2"];
 
   var template = HtmlService.createTemplateFromFile("dwyp_ui");
   template.sheetId       = sheetId;
@@ -351,8 +368,7 @@ function doGet(e) {
   template.gemsUrl       = gemsUrl;
   template.notebooklmUrl = notebooklmUrl;
   template.ownerEmail    = ownerEmail;
-  template.hostBuckets   = hostBuckets;
-  template.ownerBuckets  = ownerBuckets;
+  template.userRegistry  = userRegistry;
 
   return template.evaluate()
     .setTitle("DWYP Operations")

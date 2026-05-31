@@ -1075,6 +1075,11 @@ svg { display: block; flex-shrink: 0; }
   cursor: pointer;
 }
 .bk-form-btn:hover { opacity: 0.88; }
+.bk-form-hint {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+}
 
 /* ── EPISODE DETAIL ─────────────────────────────────────────── */
 .ep-detail-hero {
@@ -4408,8 +4413,7 @@ var APP_CONFIG = {
   ownerEmail:    <?= JSON.stringify(ownerEmail) ?>,
   gemsUrl:       <?= JSON.stringify(gemsUrl) ?>,
   notebooklmUrl: <?= JSON.stringify(notebooklmUrl) ?>,
-  hostBuckets:   <?= JSON.stringify(hostBuckets) ?>,
-  ownerBuckets:  <?= JSON.stringify(ownerBuckets) ?>
+  userRegistry:  <?= JSON.stringify(userRegistry) ?>
 };
 
 // ── AUTH ─────────────────────────────────────────────────────
@@ -4771,6 +4775,29 @@ function isJT() {
 function isOwner() {
   return APP_CONFIG.ownerEmail &&
          APP_CONFIG.userEmail.toLowerCase() === APP_CONFIG.ownerEmail.toLowerCase();
+}
+
+// ── BUCKET HELPERS ───────────────────────────────────────────
+function _myRegistryEntry() {
+  var email = (APP_CONFIG.userEmail || '').toLowerCase();
+  var reg   = APP_CONFIG.userRegistry || [];
+  for (var i = 0; i < reg.length; i++) {
+    if ((reg[i].email || '').toLowerCase() === email) return reg[i];
+  }
+  return null;
+}
+function getBucketList() {
+  var me = _myRegistryEntry();
+  return me ? (me.buckets || []) : [];
+}
+function getBucketDefaultForUser(email) {
+  var reg = APP_CONFIG.userRegistry || [];
+  for (var i = 0; i < reg.length; i++) {
+    if ((reg[i].email || '').toLowerCase() === (email || '').toLowerCase()) {
+      return reg[i].defaultBucket || '';
+    }
+  }
+  return '';
 }
 
 function securityFilter(tasks) {
@@ -6257,7 +6284,7 @@ function stRenderBucketsView() {
   var container = document.getElementById('stBucketsView');
   if (!container) return;
 
-  var myBuckets = isJT() ? (APP_CONFIG.hostBuckets || []) : (APP_CONFIG.ownerBuckets || []);
+  var myBuckets = getBucketList();
   var userEmail = (APP_CONFIG.userEmail || '').toLowerCase();
   var allTasks  = securityFilter(state.tasks);
 
@@ -6295,6 +6322,14 @@ function stRenderBucketsView() {
     return '<option value="' + esc(b) + '">' + esc(b) + '</option>';
   }).join('');
 
+  // Assignee options — all registered users except self
+  var selfEmail    = (APP_CONFIG.userEmail || '').toLowerCase();
+  var assigneeOpts = (APP_CONFIG.userRegistry || [])
+    .filter(function(u) { return (u.email || '').toLowerCase() !== selfEmail; })
+    .map(function(u) {
+      return '<option value="' + esc(u.email) + '">' + esc(u.displayName || u.email) + '</option>';
+    }).join('');
+
   var stickyHtml = '<div class="st-ep-region">';
   stickyHtml += '<div class="st-ep-band-header">Quick Tasks</div>';
   stickyHtml += '<div class="bk-sticky-input-wrap">';
@@ -6319,7 +6354,12 @@ function stRenderBucketsView() {
   formHtml += '<div class="st-ep-band-header">New Task</div>';
   formHtml += '<div class="bk-form">';
   formHtml += '<input type="text" id="bkFTitle" class="bk-form-input" placeholder="Title">';
+  formHtml += '<select id="bkFAssignee" class="bk-form-select" onchange="bkOnAssigneeChange()">';
+  formHtml += '<option value="">Assign to me</option>' + assigneeOpts + '</select>';
+  formHtml += '<div id="bkFBucketWrap">';
   formHtml += '<select id="bkFBucket" class="bk-form-select"><option value="">Bucket (optional)</option>' + bucketOpts + '</select>';
+  formHtml += '</div>';
+  formHtml += '<div id="bkFAssignHint" class="bk-form-hint" style="display:none"></div>';
   formHtml += '<input type="date" id="bkFDue" class="bk-form-input">';
   formHtml += '<textarea id="bkFNotes" class="bk-form-textarea" placeholder="Notes (optional)"></textarea>';
   formHtml += '<button class="bk-form-btn" onclick="bkSubmitCapture()">Create Task</button>';
@@ -6411,25 +6451,61 @@ function bkAddQuickTask(title) {
                   workflowStep: 'quick', priority: 'normal' });
 }
 
+function bkOnAssigneeChange() {
+  var assigneeEl = document.getElementById('bkFAssignee');
+  var bucketWrap = document.getElementById('bkFBucketWrap');
+  var hintEl     = document.getElementById('bkFAssignHint');
+  var selfEmail  = (APP_CONFIG.userEmail || '').toLowerCase();
+  var val        = assigneeEl ? assigneeEl.value.toLowerCase() : '';
+  if (!val || val === selfEmail) {
+    if (bucketWrap) bucketWrap.style.display = '';
+    if (hintEl)     hintEl.style.display     = 'none';
+  } else {
+    if (bucketWrap) bucketWrap.style.display = 'none';
+    var defBucket = getBucketDefaultForUser(val);
+    if (hintEl) {
+      hintEl.textContent = defBucket ? 'Lands in: ' + defBucket : 'No default bucket set for this user.';
+      hintEl.style.display = 'block';
+    }
+  }
+}
+
 function bkSubmitCapture() {
-  var titleEl  = document.getElementById('bkFTitle');
-  var bucketEl = document.getElementById('bkFBucket');
-  var dueEl    = document.getElementById('bkFDue');
-  var notesEl  = document.getElementById('bkFNotes');
-  var title  = titleEl  ? titleEl.value.trim()  : '';
-  var bucket = bucketEl ? bucketEl.value         : '';
-  var due    = dueEl    ? dueEl.value            : '';
-  var notes  = notesEl  ? notesEl.value.trim()  : '';
+  var titleEl    = document.getElementById('bkFTitle');
+  var assigneeEl = document.getElementById('bkFAssignee');
+  var bucketEl   = document.getElementById('bkFBucket');
+  var dueEl      = document.getElementById('bkFDue');
+  var notesEl    = document.getElementById('bkFNotes');
+  var title         = titleEl    ? titleEl.value.trim()    : '';
+  var assigneeVal   = assigneeEl ? assigneeEl.value.trim() : '';
+  var bucket        = bucketEl   ? bucketEl.value          : '';
+  var due           = dueEl      ? dueEl.value             : '';
+  var notes         = notesEl    ? notesEl.value.trim()    : '';
   if (!title) { showToast('Title is required', true); return; }
-  var userEmail = APP_CONFIG.userEmail || '';
+  var creatorEmail  = APP_CONFIG.userEmail || '';
+  var assigneeEmail = assigneeVal || creatorEmail;
+  // Cross-assignment: route to assignee's Default_Bucket; self-assignment uses chosen bucket
+  var targetBucket;
+  if (assigneeEmail.toLowerCase() !== creatorEmail.toLowerCase()) {
+    targetBucket = getBucketDefaultForUser(assigneeEmail);
+    if (!targetBucket) {
+      showToast('No default bucket set for this user in User Registry.', true);
+      return;
+    }
+  } else {
+    targetBucket = bucket;
+  }
+  var isCross = assigneeEmail.toLowerCase() !== creatorEmail.toLowerCase();
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) { showToast('Could not create task', true); return; }
-      showToast('Task created');
-      if (titleEl)  titleEl.value  = '';
-      if (bucketEl) bucketEl.value = '';
-      if (dueEl)    dueEl.value    = '';
-      if (notesEl)  notesEl.value  = '';
+      showToast(isCross ? 'Task assigned' : 'Task created');
+      if (titleEl)    titleEl.value    = '';
+      if (assigneeEl) assigneeEl.value = '';
+      if (bucketEl)   bucketEl.value   = '';
+      if (dueEl)      dueEl.value      = '';
+      if (notesEl)    notesEl.value    = '';
+      bkOnAssigneeChange(); // restore bucket wrap visibility after reset
       google.script.run
         .withSuccessHandler(function(newTasks) {
           if (newTasks) state.tasks = newTasks;
@@ -6441,9 +6517,9 @@ function bkSubmitCapture() {
     .withFailureHandler(function(err) {
       showToast('Could not create task: ' + (err.message || err), true);
     })
-    .createTask({ actionTitle: title, bucket: bucket, dueDate: due,
-                  executiveSummary: notes, assignee: userEmail, createdBy: userEmail,
-                  priority: 'normal' });
+    .createTask({ actionTitle: title, bucket: targetBucket, dueDate: due,
+                  executiveSummary: notes, assignee: assigneeEmail,
+                  createdBy: creatorEmail, priority: 'normal' });
 }
 
 // ── RAIL REEL LIST (right rail, Reels mode) ───────────────────
@@ -7509,7 +7585,6 @@ function renderEpisodeList() {
 function renderDashboard() {
   var allTasks = securityFilter(state.tasks);
   renderDashboardEpisodes(allTasks);
-  renderDashboardLoose(allTasks);
 }
 
 function renderDashboardEpisodes(allTasks) {

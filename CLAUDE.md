@@ -112,7 +112,6 @@ Permanent docs only. Anything in repo or project knowledge not on this list is a
 **Active specs (temporary, deleted on incorporation):**
 - `DWYP_Outstanding_Build_Items.md` — Phase 3 prioritization inventory. Retires when items are sequenced into Build Playbook.
 - `DWYP_Index_Audit_Design.md` — pre-execution design doc. Becomes spoke prompt when picked up; deleted after incorporation.
-- `SPOKE_B_Display_Review_View.md` — spoke prompt for Display Review view (item A2). Deleted on execution.
 - `SPOKE_Reels_Surface.md` — in-flight spoke (items 83–84). Refresh required before resuming — warning block at top of doc lists specifics. Delete on completion.
 
 ---

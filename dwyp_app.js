@@ -368,7 +368,7 @@ function doGet(e) {
   template.gemsUrl       = gemsUrl;
   template.notebooklmUrl = notebooklmUrl;
   template.ownerEmail    = ownerEmail;
-  template.userRegistry  = userRegistry;
+  template.userRegistry  = JSON.stringify(userRegistry);
 
   return template.evaluate()
     .setTitle("DWYP Operations")

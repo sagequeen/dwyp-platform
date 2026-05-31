@@ -282,18 +282,38 @@ CORPUS_DRIVE_FOLDER_ID/                  ← Watched by Vertex Drive connector
 
 ---
 
-## Tasks & Episodes UI — Design (Locked)
+## Tasks — Design (Locked, May 2026)
 
-### Tasks (home screen — live)
-`renderDashboard()` entry point. Episode cards sort by Release_Date only — TBD to bottom, recording date never influences sort (D-0 fix written, not yet pushed).
+`renderDashboard()` entry point. Two workspaces selectable via Tasks sub-items in the left rail.
 
-#### Episode Cards
-- Release_Date is the sole sort key. TBD sorts below all dated episodes.
-- Action line bold when task waiting; muted "Up next" when idle.
-- Release pill: green/amber/TBD. Four tappable icons with state.
+### Episodes workspace (Tasks → Episodes)
 
-#### Loose Tasks
-Three containers: Podcast · People · Personal. Tap to expand inline. Personal hidden from Audra.
+**Ordering principle:** Release date is the spine. The operator arrives with zero loaded state; only a stable, monotonic index can re-ground the view instantly. Workflow `Status` is read off the card after the index places the episode — not used as the grouping axis.
+
+**Left column — month bands.** Episodes with a `Release_Date` group by release month. Conditional render: only months with episodes paint. Sort within band: `Release_Date` asc.
+
+**Right column — two workspace regions:**
+- **Upcoming Recordings** — `Status = upcoming` (no release date yet; recording not yet happened).
+- **TBD Episodes** — `Status ≥ in_production`, `Release_Date` blank.
+
+**Episode card:** Guest name · action label (bold if a task is waiting; muted "Up next" otherwise) · state line · four per-asset icons (headphones / film / calendar / schedule). `Status` drives release-month vs. right-column placement. `Video_Status` drives the revision-vs-awaiting-JT read on the episode (headphones) icon — unexpected combinations fall back to a sensible state, never dropped.
+
+**Per-asset icon model (locked target — not yet fully built):** Three states only — muted / red / gold — applied per icon. Color = whose action is next; identical reading on every screen. Red = JT (asset waiting on JT). Gold = Audra (revision owed by Audra). Muted = nothing pending. ⚠️ Current build has headphones gold/red **inverted** — correct on the full icon-pass build (deferred with icon rebuild spoke).
+
+### Buckets workspace (Tasks → Buckets)
+
+User-organized loose task mode. Podcast · People · Personal grouping is retired (AppSheet-era residue; `renderDashboardLoose` removed from `renderDashboard()`). Buckets is the live model.
+
+**Three regions, one teardown-registered panel (`stBucketsView`):**
+- **Left — bucket bands.** Each user-defined bucket = one band; conditional render (empty buckets absent). Standard task cards: Title / Due / Notes / Complete.
+- **Top-right — Quick Tasks.** Flat per-user list; tagged `Workflow_Step = "quick"`. Enter-to-add input + checkbox. Checked → `Status = "complete"` (done-and-hidden, not deleted — Preservation Mandate).
+- **Bottom-right — Capture form.** Title → Assignee (defaults to self; other users available for cross-assignment) → Bucket dropdown → Due → Notes → Create Task. Voice-keyboard compatible on mobile.
+
+**Bucket source of truth:** User Registry tab, `Buckets` column (comma-delimited list) and `Default_Bucket` column (single value). Both are Audra hand-edits; system never supplies bucket values. No fallback defaults.
+
+**Cross-assignment:** Assignee ≠ creator → task routes to assignee's `Default_Bucket`; creator's chosen bucket is ignored. Blocks with toast if assignee has no default set. `bumpVersion("tasks")` fires on all task-write paths.
+
+**Episode tasks — absent function, next focused build.** Episodes are viewable in the workspace but have no task surface yet. Sketch: card-expand reveals the episode's task list; each task has a route. Own fresh thread; needs a short design beat first.
 
 ### Contacts Tab (live)
 See Contacts Tab section below.
@@ -463,7 +483,9 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 | Rail Remodel Pass 1 / 1.5 / 1.6 | Left-rail guest accordion + sub-item nav + Episode view split | Guest accordion (one open, red→gold gradient), sub-items Images·Reels·Episode·Schedule, stSetDesignTab wiring, Episode view split (#stEpVideoWrap + drag + #stEpShowNotesWrap inert), right-rail AI Chat inert stubs, Schedule stub. |
 | Document Provenance | PROPOSAL_ / SPOKE_ prefix scheme added to CLAUDE.md | Canon is unprefixed. Build_Playbook rename/exception open. |
 | Nav Panel Teardown Fix | Studio: panel leak + double-active nav corrected | `stHideAllPanels()` hides all 11 content/assets panels; called first in `stSetDesignTab`, `stAccSelectTaskView`, `stShowScheduleStub`, `stAccSelectMode`. `stSyncSubItemActive` clears Tasks items on Guest activate. `stAccSelectTaskView` clears Guest sub-items on Tasks activate. `stEpView` container mount confirmed correctly scoped inside `stContentCol` (not hoisted). `stSwitchTab` is a known exception site — sets panels via `isImg` ternary but always delegates to a teardown-owning function (design → `stSetDesignTab`; write path enters through `stAccSelectMode`); no independent leak risk. |
-| SPOKE_Tasks_1 | Episode State — five-state Status model | `upcoming`→`in_production`→`ready_to_release`→`archived`. `archived` is the sole terminal gate (replaces `complete`). Creation init: `upcoming`. Loop D flip: `in_production` on transcript detect. `triggerReadyForRelease()` flip: `ready_to_release`. All 6 active dailyPulse loops: `complete`→`archived`. `getEpisodes()` + `getActiveEpisodes()` + secretary calendar + herald prior filter: all updated. Housekeeping: processes `in_production` + `ready_to_release` only. `EPISODES_COLS`: `Frameio_Project_ID` + `Guest_Package_URL` columns retired. `Images_Status` column left in place (inert — no write path; Filing redesign will resolve). Dead writer `filing_fairy.js:301` (`Status:"complete"`) parked for Filing redesign. **Audra action required:** Update Status enum in Episodes sheet (drop `active`/`complete`, add `upcoming`/`in_production`/`ready_to_release`). Relabel existing rows per discussed criteria. **Clasp push pending re-auth.** |
+| SPOKE_Tasks_1 | Episode State — five-state Status model | `upcoming`→`in_production`→`ready_to_release`→`archived`. `archived` is the sole terminal gate (replaces `complete`). Creation init: `upcoming`. Loop D flip: `in_production` on transcript detect. `triggerReadyForRelease()` flip: `ready_to_release`. All 6 active dailyPulse loops: `complete`→`archived`. `getEpisodes()` + `getActiveEpisodes()` + secretary calendar + herald prior filter: all updated. Housekeeping: processes `in_production` + `ready_to_release` only. `EPISODES_COLS`: `Frameio_Project_ID` + `Guest_Package_URL` columns retired. `Images_Status` column left in place (inert — no write path; Filing redesign will resolve). Dead writer `filing_fairy.js:301` (`Status:"complete"`) parked for Filing redesign. **Audra action required:** Update Status enum in Episodes sheet (drop `active`/`complete`, add `upcoming`/`in_production`/`ready_to_release`). Relabel existing rows per discussed criteria. |
+| SPOKE_Tasks_2 | Episodes workspace — month calendar + two workspace regions | Left column: release-month bands (conditional render, `Release_Date` as sort key). Right column: Upcoming Recordings (`Status = upcoming`) + TBD Episodes (`Status ≥ in_production`, no release date). Episode card: action label + state line + per-asset icons (placeholder — icon model deferred). `stRenderEpisodesView()` + `stRenderEpBandCard()` + side-card renderers. `stEpisodesView` panel registered in `stHideAllPanels()`. |
+| SPOKE_Tasks_3 | Buckets workspace — three-region task mode | `stBucketsView` panel; bucket bands (left), Quick Tasks (top-right), Capture form (bottom-right). Buckets sourced from User Registry `Buckets` + `Default_Bucket` columns (Audra hand-edits; no system defaults). Cross-user assignment routes to assignee's `Default_Bucket`. `Workflow_Step = "quick"` tags stickies. `Tasks.Bucket` col 18 added to `TASKS_COLS`, `getTasks()`, `createTask()`, `spawnTask()`. `renderDashboardLoose` retired from `renderDashboard()` (Podcast/People/Personal gone). **Audra hand-edits required:** User Registry — add `Buckets` + `Default_Bucket` columns and populate. Tasks tab — add `Bucket` header in col R (18). |
 
 ### ⏳ In Progress
 - **Carrie Sipe episode run** — at review stage.
@@ -490,6 +512,8 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 - Quick Caption path via Studio (not standalone).
 - `fairy_circle.js`, `dwyp_app.js`.
 
+**Episode tasks function (next focused build — own thread):** Episodes are viewable in the Episodes workspace but have no task surface yet. Each episode card needs to expand to reveal its task list, with per-task routing. Short design beat first; then a spoke. This is the deferred Destination axis from task dispatch (AD #121) surfacing on the Episodes side.
+
 **Other queued (not Studio):**
 - Runway Reminder spoke — Daily Pulse D-7, idempotent.
 - F-7 timezone — wire `JT_TIMEZONE` / `AUDRA_TIMEZONE` into recording reminder logic.
@@ -498,7 +522,6 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 - Review_Images close path.
 - C-3 — Re-run Herald button (Audra-only, Contact Detail).
 - C-4 — Influence Tier three-way toggle (EH / HI / LF).
-- D-1 — Tasks Loose Task Containers.
 - C-2 — Revision Task inline checkboxes.
 - C-1 — Contacts Add/Edit (awaiting JT feedback).
 - F-2 — Reels Viewport Fit (iPhone SE) (pending device confirmation).
@@ -507,9 +530,11 @@ Image Workshop is fully retired. Replaced by the Design canvas in Studio. No bon
 - Stub → real card swap on first paint: render skeleton card frames (no text, no bg) until `_pbPrefetchAssets` resolves, then single swap to real content. Skeleton-first preferred over block-until-ready — also closes orphaned-Card-1 race (click before prefetch returns → stub ID → hydration bails) as a side effect.
 - AL row as single source of truth across surfaces: every surface displaying asset content (stack card thumbnail text/bg, caption draft chip, details panel quote text) should read from AL row, not derived or cached copies. Requires audit-first spoke (map all surfaces + current vs. should-be sources), then patch spoke. Open design decisions for hub: overwrite `Quote_Text` on edit or new `Display_Text` column? Write to AL on save or derive from Canvas_State on every read? Does caption draft regenerate against edited text or stay locked to original?
 
-**Parked — this session (2026-05-30):**
+**Parked — this session (2026-05-30/31):**
 - Episode video reload optimization: `stLoadDesignEpisode` fires unconditionally on every Guest → Episode switch — no UID guard. Fix is `st._lastEpLoaded` early-return guard at the `stLoadDesignEpisode` call site in `stSetDesignTab`. Self-contained; no architectural impact.
 - Filing-redesign cluster (from SPOKE_Tasks_1): `Images_Status` column inert (no write path); dead read sites; dead `Status:"complete"` writer at `filing_fairy.js:301`; date-based archive trigger undefined. Resolve together in Filing redesign spoke.
+- Icon rebuild: film icon is muted-always (lit-always is mildly wrong, not just unpolished). Headphones gold/red inverted in current build. Full muted/red/gold icon pass required — batches with the icon-model build. Do not fix piecemeal.
+- Gemini brain-dump parse (unstructured paragraph → four task fields). Capture works via form + voice-keyboard; parse is convenience on a working function. Help-Desk-as-task-inlet parked with it.
 
 ### Later
 - Dr. Meenakshi Aggarwal Secretary run — held until Herald verified on Carrie

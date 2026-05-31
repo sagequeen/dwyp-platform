@@ -134,15 +134,9 @@ with a route-or-resolve affordance, so misroute is impossible. `none` ≠ null: 
 target → "route this" prompt; both floor to the directory but read differently. Parse
 attempts a target, never gates on it.
 
-**Task taxonomy — three independent axes:** Origin (system-spawned / manual /
-self-assigned) · Scope (episode-linked `Episode_UID` / loose null / set-scoped
-[parked, no live case]) · Destination (routes to a room / resolve-in-place).
+**Task taxonomy — Destination only (live).** Origin (system-spawned / manual / self-assigned) and Scope (episode-linked / loose / set-scoped) are obsoleted by the Episodes/Buckets workspace split: the container determines origin, the workspace determines scope. Only **Destination** (routes to a room / resolve-in-place) survives as a live design axis — deferred to task semantics spoke.
 
-**Tasks schema deltas (17 cols today):** add `Raw_Input` (talk-to-text keeper); add
-`Target_Surface` enum (`design | writer | schedule | review | none` + null; vocab in
-Governance_Config). Design target for the Task surface (Push 3); not yet built.
-Reel-revision (§4) schema deps — S2-11 Status/Availability separation, reel-linkage
-FK, `revision_requested` status — tracked in Build Playbook, not resolved here.
+**Tasks schema (18 cols, May 2026):** `Bucket` (col 18) added — user bucket enum, sourced from User Registry. `Raw_Input` (talk-to-text keeper) and `Target_Surface` enum remain queued schema additions; not yet written. Reel-revision (§4) schema deps tracked in Build Playbook.
 
 122. **GCS signed URL signing and resumable upload — org policy constraints + browser gotchas (May 2026).**
 
@@ -210,7 +204,7 @@ FK, `revision_requested` status — tracked in Build Playbook, not resolved here
 | 13 | M | Episode_URL | URL | Podcast episode URL. Manually managed. |
 | 14 | N | Episode_Type | Enum | Episode type (e.g., guest \| roundtable \| solo). Manually managed. |
 
-### Tasks (17 columns)
+### Tasks (18 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
@@ -223,14 +217,15 @@ FK, `revision_requested` status — tracked in Build Playbook, not resolved here
 | 7 | G | Due_Date | Date | Optional. |
 | 8 | H | Contact_ID | String | Foreign key → Contacts. Optional. |
 | 9 | I | Episode_UID | String | Foreign key → Episodes. Optional (manual tasks may be episode-agnostic). |
-| 10 | J | Workflow_Step | String | System-written by GAS. Open vocabulary — see AD #23 for known values. Blank for manual tasks. |
+| 10 | J | Workflow_Step | String | System-written by GAS. Open vocabulary — see AD #23 for known values. `quick` tags sticky tasks (Buckets workspace). Blank for other manual tasks. |
 | 11 | K | Executive_Summary | LongText | Context for the assignee. |
-| 12 | L | Payload_Link | URL | Optional. Drive doc, review link, etc. |
+| 12 | L | Payload_Link | URL | Optional. Drive doc, folder, or external URL. |
 | 13 | M | Revision_Notes | LongText | Optional. Context for revision tasks. |
 | 14 | N | Created_At | Timestamp | System-set. |
 | 15 | O | Completed_At | Timestamp | System-set on completion. |
 | 16 | P | Note_Sent_At | Timestamp | Timestamp of last notification sent for this task. |
-| 17 | Q | Asset_ID | String | FK → Asset_Library.Asset_ID. Set on revision tasks (`Revise_Reels`, `edit_vids`). Empty for all other task types. Added Reels Surface spoke 2026-05-24. |
+| 17 | Q | Asset_ID | String | FK → Asset_Library.Asset_ID. Set on revision tasks (`Revise_Reels`, `edit_vids`). Empty for all other task types. |
+| 18 | R | Bucket | String | User bucket name. Set on Buckets workspace tasks. Sourced from User Registry. Empty for episode tasks and system-spawned tasks. Audra hand-sets column header + data validation on Tasks tab. |
 
 ### Episode_Log (9 columns)
 
@@ -325,15 +320,19 @@ Append-only event log. All mutating operations, AI calls, and gate transitions w
 
 **Write path:** `logToAuditTrail(category, eventType, foreignKey, level, detail)`. Help Desk Companion reads a recent slice (configurable window, default 7 days).
 
-### User_Registry (3 columns)
+### User_Registry (5 columns)
 
 | # | Field | Notes |
 |---|---|---|
 | 1 | User_ID | Google account email. Primary key. |
 | 2 | Display_Name | Shown in task assignee display. |
 | 3 | Role | Enum: host \| producer \| admin \| contributor |
+| 4 | Buckets | Comma-delimited list of this user's bucket names. Audra hand-edits. Empty = no buckets. System never supplies values. |
+| 5 | Default_Bucket | Single value; one of this user's Buckets entries. Receives cross-assigned tasks. Audra hand-edits. |
 
 **Live values:** `jt@wiseonewithin.com` (JT, host) | `audra@wiseonewithin.com` (Audra, producer)
+
+**Columns 4–5 are Audra hand-edits.** Code reads them header-driven at page load (`doGet()`). If `Buckets` is empty the user has no buckets — the app shows an empty workspace, no fallback values injected.
 
 ### Versions (4 columns)
 
@@ -712,6 +711,22 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 | `PUBLISH_LLM_MODE` governance key | Retired. Replaced by `STUDIO_LLM_MODE = claude`. |
 | Social_Assets schema (17 columns, April 2026) | Replaced by Asset_Library (18 cols) + Social_Assets (13 cols) in schema v1.7. |
 | Image Workshop Background Generator as standalone trigger | Retired with Image Workshop (AD #96). Background generation now accessed via Studio Design tab. |
+| Podcast · People · Personal loose-task grouping | Retired May 2026 (SPOKE_Tasks_3). AppSheet-era residue. `renderDashboardLoose` removed from `renderDashboard()`. Replaced by Buckets workspace (AD #125). |
+| Tasks schema 17-column count | Superseded by 18-column schema — `Bucket` (col R/18) added SPOKE_Tasks_3. See AD #125. |
+| Three-axis task taxonomy (Origin · Scope · Destination) | Origin and Scope obsoleted by Episodes/Buckets workspace split. Only Destination survives, deferred. See AD #121 (corrected). |
+
+124. **Per-asset card icon model (locked target, May 2026 — not yet fully built).** Three states applied to each per-asset icon (headphones / film / calendar) on episode cards. Color = whose action is next; reading is identical on every screen, with no per-viewer computation.
+   - **Muted** — nothing pending for this asset.
+   - **Red** — JT's action needed (asset in folder awaiting review; recut uploaded back to JT).
+   - **Gold** — Audra's action needed (JT requested a revision; recut owed by Audra).
+   
+   No neutral state. Asset in folder = JT must review = red. Applies to headphones (episode video), film (reels), calendar (schedule images — gated on Schedule surface). Task-trackable where the task layer supports it. ⚠️ **Current build has headphones gold/red inverted.** Correct on the full icon-pass build — do not fix piecemeal without the complete rebuild.
+
+125. **Bucket architecture — User Registry as single source of truth (May 2026).** User task buckets are defined per-user in the User Registry tab, not in Governance_Config and not hardcoded. Two new columns (Audra hand-edits; Code reads header-driven):
+   - **`Buckets`** — comma-delimited list of this user's bucket names. Empty = no buckets. System never supplies values or fallbacks.
+   - **`Default_Bucket`** — single value; one of the user's buckets. Receives cross-assigned tasks.
+   
+   Cross-assignment routing: when Assignee ≠ creator, the task is written to the assignee's `Default_Bucket`. The `Tasks.Bucket` column (col R/18) records the bucket on the task row. No data-validation dropdown required on the Tasks tab — the in-app dropdown enforces valid values; the column is plain text. `bumpVersion("tasks")` fires on all bucket-task write paths.
 
 ---
 

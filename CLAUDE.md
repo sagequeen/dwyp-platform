@@ -48,6 +48,7 @@ Big-picture context, design decisions, documentation. Audra leads; Claude reason
 - Output is structured markdown (handoff docs, design specs, playbook updates).
 - Decisions get locked, then handed off to Spoke threads.
 - **Spoke prompts authored by Hub include:** Code Integrity Mandate reference, scope statement (in/out), and explicit clasp push checkpoints. Audra works intermittently between recording sessions — spokes that omit these slip scope or stall.
+- **Thread-end handoff (Hub):** At the close of every Hub thread, state the next step explicitly — name the spoke(s) to hand to Code, and if the next step is another Hub session, write a ready-to-paste "warm start" prompt for it.
 
 ### Spoke mode
 One focused unit of implementation work. Spoke prompt provides scope; Claude executes.
@@ -112,7 +113,7 @@ Permanent docs only. Anything in repo or project knowledge not on this list is a
 - `DWYP_Outstanding_Build_Items.md` — Phase 3 prioritization inventory. Retires when items are sequenced into Build Playbook.
 - `DWYP_Index_Audit_Design.md` — pre-execution design doc. Becomes spoke prompt when picked up; deleted after incorporation.
 - `SPOKE_B_Display_Review_View.md` — spoke prompt for Display Review view (item A2). Deleted on execution.
-- `DWYP_Spoke_Reels_Surface.md` — in-flight spoke (items 83–84). Refresh required before resuming — warning block at top of doc lists specifics. Delete on completion.
+- `SPOKE_Reels_Surface.md` — in-flight spoke (items 83–84). Refresh required before resuming — warning block at top of doc lists specifics. Delete on completion.
 
 ---
 
@@ -173,6 +174,12 @@ Full spec: `DWYP_Performance_Principle.md`.
 
 ---
 
+## Operating Principle (governs remaining build)
+
+**Defer enhancements to working functions; do not defer the functions themselves.** Core functions (navigation, capture, assignment, content creation) ship working. Convenience features and polish wait. If a function doesn't exist, build it. If it exists, enhance it later.
+
+---
+
 ## Mandates
 
 ### Code Integrity Mandate
@@ -218,7 +225,9 @@ Documentation is forward-looking, not technical history. Project knowledge is re
 
 **Repo boundary.** Only the canonical permanent docs (Tier 1–3) are `.md` files in the repo. Spoke prompts and handoff/design `.md`s are **never** repo files — pasted directly into Code, discarded after the session. Repo'ing working docs is the failure mode this SoP prevents.
 
-**Code — session end.** Update `DWYP_Platform_State.md` with **done** + **hanging**. State is the only working artifact that touches the repo; it is the contract between sessions. Mechanics: State Update Protocol, below.
+**Sheet-edit ownership.** Code has no Master Sheet access and writes nothing there. Audra makes all sheet edits by hand (columns, enum validation, User Registry values). Code writes code that reads structures and expects them to exist. Spoke language must reflect this — "Audra adds column" not "Code adds column."
+
+**Code — session end.** Update `DWYP_Platform_State.md` with **done** + **hanging**. State is the only working artifact that touches the repo; it is the contract between sessions. Mechanics: State Update Protocol, below. **Code must notify explicitly when a spoke is complete** — do not silently move on.
 
 **Hub — thread start.** Confirm Audra has synced State before relying on it. This is the *only* sync prompt Hub gives.
 

@@ -806,11 +806,32 @@ svg { display: block; flex-shrink: 0; }
 .ep-icon.review   { background: var(--red); color: #fff; }
 .ep-icon.approved { background: #2a8a4a; color: #fff; }
 
-/* ── EPISODES BAND VIEW (Tasks → Episodes) ─────────────────── */
-#stEpisodesView {
-  padding: 8px 0 24px;
+/* ── EPISODES WORKSPACE (Tasks → Episodes) ──────────────────── */
+/* Two-column layout: month calendar left, Upcoming/TBD regions right */
+#stEpisodesView { overflow: hidden; }
+
+.st-ep-bands-col {
+  flex: 1;
+  min-width: 0;
   overflow-y: auto;
+  padding: 8px 0 24px;
 }
+.st-ep-regions-col {
+  width: 260px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  padding: 8px 0 24px;
+}
+.st-ep-region { margin-bottom: 8px; }
+.st-ep-empty {
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 20px 16px;
+  text-align: center;
+}
+
+/* Shared band/region header */
 .st-ep-band { margin-bottom: 4px; }
 .st-ep-band-header {
   font-size: 10px;
@@ -820,10 +841,9 @@ svg { display: block; flex-shrink: 0; }
   color: var(--text-3);
   padding: 14px 16px 6px;
 }
+
+/* Month-band episode card */
 .st-ep-band-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   background: var(--surface);
   border-radius: var(--radius-sm);
   margin: 0 12px 6px;
@@ -833,7 +853,12 @@ svg { display: block; flex-shrink: 0; }
   -webkit-tap-highlight-color: transparent;
 }
 .st-ep-band-card:active { opacity: 0.8; }
-.st-ep-card-left { flex: 1; min-width: 0; }
+.st-ep-card-hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
 .st-ep-card-name {
   font-size: 14px;
   font-weight: 600;
@@ -841,6 +866,15 @@ svg { display: block; flex-shrink: 0; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+.st-ep-card-action {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
 }
 .st-ep-card-dateline {
   font-size: 11px;
@@ -851,9 +885,16 @@ svg { display: block; flex-shrink: 0; }
   display: flex;
   gap: 6px;
   align-items: center;
-  flex-shrink: 0;
-  margin-left: 8px;
+  margin-top: 7px;
 }
+.st-ep-card-state {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Icon dots (shared by month-band cards) */
 .st-ep-icon {
   width: 26px;
   height: 26px;
@@ -862,13 +903,59 @@ svg { display: block; flex-shrink: 0; }
   justify-content: center;
   border-radius: 50%;
 }
-/* lit: action needed (headphones awaiting review, film has un-actioned reels) */
+/* lit: action needed */
 .st-ep-icon.lit { background: var(--gold-light); color: var(--gold-deep); }
-/* secondary: revision requested — must be distinct from red/gold rail gradient */
-/* NOTE: #E87722 is a placeholder pending Phase 3.2 visual spoke */
+/* secondary: revision requested — distinct from red/gold rail gradient */
+/* NOTE: #E87722 placeholder pending Phase 3.2 visual spoke */
 .st-ep-icon.secondary { background: #FEF0E6; color: #E87722; }
 /* muted: no action needed */
 .st-ep-icon.muted { background: var(--surface-2); color: var(--text-3); }
+
+/* Side region cards (Upcoming Recordings / TBD Episodes) */
+.st-ep-side-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin: 0 10px 6px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+  cursor: default;
+}
+.st-ep-side-body { flex: 1; min-width: 0; }
+.st-ep-side-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-ep-side-date {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-2);
+  margin-top: 3px;
+  letter-spacing: 0.03em;
+}
+.st-ep-side-label {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.st-ep-side-action {
+  font-size: 10px;
+  color: var(--text-3);
+  margin-top: 2px;
+  font-style: italic;
+}
+.st-ep-side-icon {
+  flex-shrink: 0;
+  margin-left: 10px;
+  color: var(--border);
+}
 
 /* ── EPISODE DETAIL ─────────────────────────────────────────── */
 .ep-detail-hero {
@@ -4100,8 +4187,8 @@ body.studio-open .app-header { display: none; }
         <div id="stTasksStubMsg" style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6"></div>
       </div>
 
-      <!-- Tasks: Episodes band view (replaces stub for Episodes sub-item) -->
-      <div id="stEpisodesView" style="display:none;flex-direction:column;flex:1;min-height:0">
+      <!-- Tasks: Episodes workspace (month calendar + Upcoming/TBD regions) -->
+      <div id="stEpisodesView" style="display:none;flex-direction:row;flex:1;min-height:0;overflow:hidden">
         <!-- Populated by stRenderEpisodesView() -->
       </div>
 
@@ -5829,27 +5916,10 @@ function stAccSelectTaskView(view) {
 
 function stCollapseHqTray() { stSetRailTab('bg'); } // switch to Backgrounds after pick
 
-// ── EPISODES BAND VIEW ────────────────────────────────────────
+// ── EPISODES WORKSPACE ───────────────────────────────────────
 
-var ST_EP_BANDS = [
-  { key: 'revisions',       label: 'Revisions' },
-  { key: 'in_production',   label: 'In Production' },
-  { key: 'ready_to_release',label: 'Ready to Release' },
-  { key: 'upcoming',        label: 'Upcoming' },
-  { key: 'archived',        label: 'Archived' }
-];
-
-function stGetEpBand(ep) {
-  var s  = String(ep.Status       || '');
-  var vs = String(ep.Video_Status || '');
-  if (vs === 'revision_requested')           return 'revisions';
-  if (s === 'in_production' || s === 'active') return 'in_production';
-  if (s === 'upcoming')                      return 'upcoming';
-  if (s === 'ready_to_release')              return 'ready_to_release';
-  if (s === 'archived')                      return 'archived';
-  return 'in_production'; // unknown combo — treat as in_production; surface back if seen
-}
-
+// Dateline for month-band cards: Release_Date → short date; future
+// Recording_Date → "Record: [date]"; otherwise TBD.
 function stGetEpDateline(ep) {
   if (ep.Release_Date) {
     var rd = new Date(ep.Release_Date);
@@ -5865,6 +5935,7 @@ function stGetEpDateline(ep) {
   return 'TBD';
 }
 
+// Headphones: 3-state derived from Video_Status.
 function stGetEpHeadphones(ep) {
   var vs = String(ep.Video_Status || '');
   if (vs === 'review')             return 'lit';
@@ -5873,30 +5944,90 @@ function stGetEpHeadphones(ep) {
 }
 
 // Film: lit when open Review_Reels task exists (Loop C proxy for folder-truth;
-// no blocking Drive call needed — Loop C creates/maintains this task when
+// no blocking Drive call — Loop C creates/maintains this task when
 // files are in Reels/ root).
 function stGetEpFilm(ep, epTasks) {
   return epTasks.some(function(t) { return t.Workflow_Step === 'Review_Reels'; })
     ? 'lit' : 'muted';
 }
 
-function stRenderEpBandCard(ep, allTasks) {
-  var epTasks  = allTasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
-  var hpState  = stGetEpHeadphones(ep);
-  var filmState = stGetEpFilm(ep, epTasks);
-  var dateline = stGetEpDateline(ep);
-  var uid      = esc(ep.Episode_UID);
+// Top-right action label on month-band card (muted text — icons carry color).
+function stGetEpActionLabel(ep) {
+  var vs = String(ep.Video_Status || '');
+  if (vs === 'revision_requested') return 'Review/Revise';
+  if (vs === 'review')             return 'In Review';
+  return '';
+}
 
-  var hp   = '<div class="st-ep-icon ' + hpState + '" title="Episode">'   + '<svg width="13" height="13" data-lucide="headphones"></svg></div>';
-  var film = '<div class="st-ep-icon ' + filmState + '" title="Reels">'   + '<svg width="13" height="13" data-lucide="film"></svg></div>';
-  var cal  = '<div class="st-ep-icon muted" title="Calendar">'            + '<svg width="13" height="13" data-lucide="calendar"></svg></div>';
+// Bottom state line on month-band card.
+function stGetEpStateLine(ep) {
+  var vs = String(ep.Video_Status || '');
+  if (vs === 'revision_requested') return 'Revision in progress';
+  if (vs === 'review')             return 'Awaiting JT review';
+  if (vs === 'approved')           return 'Approved';
+  var s = String(ep.Status || '');
+  if (s === 'in_production')    return 'In production';
+  if (s === 'ready_to_release') return 'Ready to release';
+  return '';
+}
+
+// Month-band episode card (survives from CP1, gains action label + state line).
+function stRenderEpBandCard(ep, allTasks) {
+  var epTasks   = allTasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
+  var hpState   = stGetEpHeadphones(ep);
+  var filmState = stGetEpFilm(ep, epTasks);
+  var dateline  = stGetEpDateline(ep);
+  var action    = stGetEpActionLabel(ep);
+  var stateLine = stGetEpStateLine(ep);
+  var uid       = esc(ep.Episode_UID);
+
+  var hp   = '<div class="st-ep-icon ' + hpState   + '" title="Episode"><svg width="13" height="13" data-lucide="headphones"></svg></div>';
+  var film = '<div class="st-ep-icon ' + filmState  + '" title="Reels"><svg width="13" height="13" data-lucide="film"></svg></div>';
+  var cal  = '<div class="st-ep-icon muted" title="Calendar"><svg width="13" height="13" data-lucide="calendar"></svg></div>';
 
   var html = '<div class="st-ep-band-card" onclick="showEpisodeDetail(\'' + uid + '\')">';
-  html += '<div class="st-ep-card-left">';
+  html += '<div class="st-ep-card-hdr">';
   html += '<div class="st-ep-card-name">' + esc(ep.Guest_Name || 'Unknown Guest') + '</div>';
-  html += '<div class="st-ep-card-dateline">' + esc(dateline) + '</div>';
+  if (action) html += '<div class="st-ep-card-action">' + esc(action) + '</div>';
   html += '</div>';
+  html += '<div class="st-ep-card-dateline">' + esc(dateline) + '</div>';
   html += '<div class="st-ep-card-icons">' + hp + film + cal + '</div>';
+  if (stateLine) html += '<div class="st-ep-card-state">' + esc(stateLine) + '</div>';
+  html += '</div>';
+  return html;
+}
+
+// Upcoming Recordings side card.
+function stRenderEpUpcomingCard(ep) {
+  var recLabel = '';
+  if (ep.Recording_Date) {
+    var d = new Date(ep.Recording_Date);
+    if (!isNaN(d.getTime())) {
+      recLabel = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }).toUpperCase();
+    }
+  }
+  var html = '<div class="st-ep-side-card">';
+  html += '<div class="st-ep-side-body">';
+  html += '<div class="st-ep-side-name">' + esc(ep.Guest_Name || 'Unknown Guest') + '</div>';
+  if (recLabel) html += '<div class="st-ep-side-date">' + esc(recLabel) + '</div>';
+  html += '<div class="st-ep-side-label">Prep for Interview</div>';
+  html += '</div>';
+  html += '<div class="st-ep-side-icon"><svg width="32" height="32" data-lucide="mic"></svg></div>';
+  html += '</div>';
+  return html;
+}
+
+// TBD Episodes side card.
+function stRenderEpTbdCard(ep) {
+  var stateLine = stGetEpStateLine(ep);
+  var html = '<div class="st-ep-side-card">';
+  html += '<div class="st-ep-side-body">';
+  html += '<div class="st-ep-side-name">' + esc(ep.Guest_Name || 'Unknown Guest') + '</div>';
+  html += '<div class="st-ep-side-date">TBD</div>';
+  if (stateLine) html += '<div class="st-ep-side-label">' + esc(stateLine) + '</div>';
+  html += '<div class="st-ep-side-action">Schedule release date</div>';
+  html += '</div>';
+  html += '<div class="st-ep-side-icon"><svg width="32" height="32" data-lucide="calendar"></svg></div>';
   html += '</div>';
   return html;
 }
@@ -5908,41 +6039,85 @@ function stRenderEpisodesView() {
   var allTasks = securityFilter(state.tasks);
   var episodes = state.episodes || [];
 
-  // Sort episodes within each band by Release_Date asc; TBD to bottom.
-  var sorted = episodes.slice().sort(function(a, b) {
-    var rA = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
-    var rB = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
-    if (isNaN(rA)) rA = Infinity;
-    if (isNaN(rB)) rB = Infinity;
-    return rA - rB;
+  // Route each episode to exactly one target.
+  var monthEps    = []; // has Release_Date → month calendar
+  var upcomingEps = []; // Status = upcoming → Upcoming Recordings
+  var tbdEps      = []; // in_production+ with no Release_Date → TBD Episodes
+
+  episodes.forEach(function(ep) {
+    var s     = String(ep.Status || '');
+    var rd    = ep.Release_Date ? new Date(ep.Release_Date) : null;
+    var hasRd = rd && !isNaN(rd.getTime());
+
+    if (s === 'upcoming') {
+      upcomingEps.push(ep);
+    } else if (hasRd) {
+      monthEps.push(ep);
+    } else {
+      tbdEps.push(ep);
+    }
   });
 
-  // Bucket episodes into bands.
-  var bands = {};
-  ST_EP_BANDS.forEach(function(b) { bands[b.key] = []; });
-  sorted.forEach(function(ep) {
-    var key = stGetEpBand(ep);
-    if (!bands[key]) bands[key] = [];
-    bands[key].push(ep);
+  // Sort month episodes by Release_Date asc (stable ordering, not state-driven).
+  monthEps.sort(function(a, b) {
+    return new Date(a.Release_Date).getTime() - new Date(b.Release_Date).getTime();
   });
 
-  var html = '';
-  ST_EP_BANDS.forEach(function(band) {
-    var cards = bands[band.key];
-    if (!cards.length) return; // conditional bands — only render if populated
-    html += '<div class="st-ep-band">';
-    html += '<div class="st-ep-band-header">' + band.label + '</div>';
-    cards.forEach(function(ep) {
-      html += stRenderEpBandCard(ep, allTasks);
-    });
-    html += '</div>';
+  // Group month episodes by month. Key = "YYYY-MM" for uniqueness; label =
+  // "JUNE" current year or "JUNE 2027" for future years (no hardcoded list).
+  var now         = new Date();
+  var monthGroups = {}; // key → { label, eps[] }
+  var monthOrder  = []; // insertion order
+
+  monthEps.forEach(function(ep) {
+    var d     = new Date(ep.Release_Date);
+    var key   = d.getFullYear() + '-' + d.getMonth();
+    var month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+    var label = d.getFullYear() === now.getFullYear()
+      ? month
+      : month + ' ' + d.getFullYear();
+    if (!monthGroups[key]) {
+      monthGroups[key] = { label: label, eps: [] };
+      monthOrder.push(key);
+    }
+    monthGroups[key].eps.push(ep);
   });
 
-  if (!html) {
-    html = '<div style="font-size:13px;color:var(--text-3);text-align:center;padding:32px 24px">No episodes yet.</div>';
+  // Left column: month bands (conditional — empty months absent).
+  var leftHtml = '';
+  monthOrder.forEach(function(key) {
+    var g = monthGroups[key];
+    leftHtml += '<div class="st-ep-band">';
+    leftHtml += '<div class="st-ep-band-header">' + g.label + '</div>';
+    g.eps.forEach(function(ep) { leftHtml += stRenderEpBandCard(ep, allTasks); });
+    leftHtml += '</div>';
+  });
+  if (!leftHtml) {
+    leftHtml = '<div class="st-ep-empty">No episodes with release dates.</div>';
   }
 
-  container.innerHTML = html;
+  // Right column: Upcoming Recordings + TBD Episodes (conditional regions).
+  var rightHtml = '';
+  if (upcomingEps.length) {
+    rightHtml += '<div class="st-ep-region">';
+    rightHtml += '<div class="st-ep-band-header">Upcoming Recordings</div>';
+    upcomingEps.forEach(function(ep) { rightHtml += stRenderEpUpcomingCard(ep); });
+    rightHtml += '</div>';
+  }
+  if (tbdEps.length) {
+    rightHtml += '<div class="st-ep-region">';
+    rightHtml += '<div class="st-ep-band-header">TBD Episodes</div>';
+    tbdEps.forEach(function(ep) { rightHtml += stRenderEpTbdCard(ep); });
+    rightHtml += '</div>';
+  }
+  if (!rightHtml) {
+    rightHtml = '<div class="st-ep-empty">No upcoming or TBD episodes.</div>';
+  }
+
+  container.innerHTML =
+    '<div class="st-ep-bands-col">'   + leftHtml  + '</div>' +
+    '<div class="st-ep-regions-col">' + rightHtml + '</div>';
+
   lucide.createIcons();
 }
 

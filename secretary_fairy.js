@@ -1021,7 +1021,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
 function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episodeUid, rawFolderId, stagingFolderId) {
   // v1.5 Episodes schema — 14 columns.
   // Episode_Sequence and Release_Date: manual, Audra-owned, never written by GAS.
-  // Video_Status and Images_Status: AppSheet-written, initialized to "pending".
+  // Video_Status and Images_Status: web app–written, initialized to "pending".
   // Episode_URL: manual, Audra populates at release.
   // Episode_Type: defaults to "standard"; Secretary has no signal to override.
 

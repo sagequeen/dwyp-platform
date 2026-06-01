@@ -170,3 +170,27 @@ function test_exportSlidesToPng() {
   if (!DECK_ID) throw new Error("test_exportSlidesToPng: set DECK_ID before running.");
   exportSlidesToPng(DECK_ID);
 }
+
+
+// =============================================================================
+// FOLDER REPAIR — Uses ACTIVE_EP_UID
+// =============================================================================
+
+function test_repairStagingSubfolders() {
+  repairStagingSubfolders(ACTIVE_EP_UID);
+}
+
+
+// =============================================================================
+// FILING — Uses ACTIVE_EP_UID
+// =============================================================================
+
+// Runs the full archive flow for a single episode (patch manifest + Episodes tab + move folder).
+function test_runFilingFairy() {
+  runFilingFairy(ACTIVE_EP_UID);
+}
+
+// Runs the full Sunday archive sweep (all live episodes past their promotion window).
+function test_archiveLiveEpisodes() {
+  archiveLiveEpisodes();
+}

@@ -10,8 +10,6 @@
 - **Data store:** Google Sheets (Master Sheet), Google Drive (episode folders, Docs, Slides)
 - **UI:** Single HTML file (`dwyp_ui.html`) served by `doGet()` as a GAS web app
 - **LLM:** Claude API (primary), Gemini (secondary/grounded search), Vertex AI RAG (brand corpus)
-- **AppSheet:** Mobile app reads/writes sheets directly; triggers GAS via webhooks
-
 ---
 
 ## File Inventory
@@ -71,7 +69,7 @@
 
 ---
 
-**`herald_fairy.js`** — Research agent. Owns guest identity research, bio writing, social field extraction, and guest brief generation. Called by Secretary (automatic) or manually from AppSheet.
+**`herald_fairy.js`** — Research agent. Owns guest identity research, bio writing, social field extraction, and guest brief generation. Called by Secretary (automatic).
 
 | Function | One-line responsibility |
 |---|---|
@@ -114,30 +112,27 @@
 
 | Function | One-line responsibility |
 |---|---|
-| `doPost(e)` | Parses AppSheet webhook JSON; routes on `type` field to `runFilingFairy()` or `scribeLetSchedule()`. |
+| `doPost(e)` | Parses webhook JSON; routes on `type` field to `scribeLetSchedule()`. |
 
 ---
 
-**`filing_fairy.js`** — Archive agent. Owns episode preflight check and packaging to Finished folder.
+**`filing_fairy.js`** — Archive agent. Moves Staging folder wholesale to Finished; patches manifest and Episodes row. Triggered by nightly housekeeping on the Sunday after release.
 
 | Function | One-line responsibility |
 |---|---|
-| `preflightCheck(epUid, agentName)` | Validates all required assets are present before Filing runs. |
-| `runFilingFairy(epUid)` | Packages episode: moves files from Staging to Finished folder, patches manifest and Episodes row. |
-| `findGuestBriefInContactLibrary(...)` | Helper used by Vert Fairy to locate the guest brief doc by contact ID. |
+| `runFilingFairy(epUid)` | Patches manifest + Episodes tab, then moves Staging folder to Finished Episodes. |
 
 ---
 
-**`housekeeping.js`** — Corpus maintenance + pipeline block parser. Called nightly or manually.
+**`housekeeping.js`** — Nightly maintenance runner. Pipeline block parsing, subfolder repair, and episode archival.
 
 | Function | One-line responsibility |
 |---|---|
-| `runHousekeeping()` | Nightly job: corpus sync, stale episode checks, log pruning. |
-| `parsePipelineBlock(epUid)` | Reads a Show Notes doc and parses the DWYP PIPELINE DATA block into structured sections. |
+| `runHousekeeping()` | Nightly entry point: runs per-episode maintenance then archive sweep. |
+| `parsePipelineBlock(epUid)` | Reads raw transcript, parses the DWYP PIPELINE DATA block, writes raw_hooks / raw_quotes / image_prompts to manifest. |
+| `repairStagingSubfolders(epUid)` | Ensures full Staging subfolder tree exists; creates any missing folders without touching existing ones. |
+| `archiveLiveEpisodes()` | Sweeps Episodes for Status=live where Release_Date + 5 days ≤ today; calls runFilingFairy() for each. |
 | `parseHooksSection()` / `parseQuotesSection()` / `parseImagePromptsSection()` | Section-specific parsers for the pipeline block. |
-| `syncCorpusFolder()` | Syncs the brand corpus Drive folder to Vertex AI RAG; imports new/changed files. |
-| `importFileToRagCorpus(fileId, fileName)` | Imports a single file into the Vertex RAG corpus. |
-| `onCorpusFolderChange(e)` | Drive change trigger; fires incremental corpus sync on folder modification. |
 
 ---
 
@@ -155,7 +150,7 @@ Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before 
 |---|---|
 | **App shell** | `doGet(e)` — serves `dwyp_ui.html`; `sanitizeEmail()`, `validatePin()` |
 | **Versioning** | `getAllVersions()`, `getDomainVersion()`, `getDomainsBatch()` |
-| **Episodes** | `getEpisodes()`, `getActiveEpisodes()`, `getEpisodeManifest()`, `getEpisodeReviewContext()`, `checkReadyForRelease()`, `triggerReadyForRelease()` |
+| **Episodes** | `getEpisodes()`, `getActiveEpisodes()`, `getEpisodeManifest()`, `getEpisodeReviewContext()`, `approveEpisodeForRelease()`, `completeFinalEpisodeUpload()`, `completeReelRevision()` |
 | **Tasks** | `getTasks()`, `createTask()`, `writeTaskComplete()`, `deleteTaskRow()` |
 | **Contacts** | `getContacts()`, `updateContactField()` |
 | **Social/Publish** | `getPublishSchedule()`, `placeAssetInSlot()`, `unscheduleAsset()`, `unscheduleAssetById()`, `rescheduleAsset()`, `addPostingSlot()`, `getSocialAssets()`, `writeSocialAssetStatus()` |
@@ -245,11 +240,11 @@ DESIGN (Studio — JT)
     → placeAssetInSlot() → schedules post in Social_Assets
 
 ARCHIVE
-  filing_fairy.js: runFilingFairy(epUid)  [triggered via AppSheet webhook → clerk_fairy.js doPost()]
-    → preflightCheck() — validates all required assets
-    → packages episode to Finished folder
-    → patches Episodes row (Status = complete)
-    → patches manifest (phase = 5_Complete)
+  housekeeping.js: archiveLiveEpisodes()  [nightly — Sunday after release]
+    → filing_fairy.js: runFilingFairy(epUid)
+      → patches manifest (phase = 4_Archived, status = complete)
+      → patches Episodes row (Status = complete)
+      → moves Staging folder wholesale to Finished Episodes
 ```
 
 ---
@@ -279,7 +274,6 @@ All Claude calls go through `callClaudeAPI()`. Gemini calls use `callGeminiAPIGr
 | Time-based | `dailyPulse()` | Daily |
 | Time-based | `triggerNightlyHousekeeping()` | Nightly |
 | Drive change | `onCorpusFolderChange(e)` | On corpus folder modification |
-| AppSheet webhook → doPost() | `runFilingFairy()` | On AppSheet action |
 
 Triggers always run as production — `isStaging()` returns false in trigger context. Test trigger-path code via `dev_tools.js` manual invocation.
 
@@ -290,7 +284,7 @@ Triggers always run as production — `isStaging()` returns false in trigger con
 | Tab | Owner | Purpose |
 |---|---|---|
 | Governance_Config | Audra | All API keys, folder IDs, model names, config values |
-| Episodes | Secretary, Filing | Episode records (14 cols, v1.5 schema) |
+| Episodes | Secretary, Filing | Episode records (14 cols, v1.5 schema). Col 12 was `Images_Status` (retired, inert); now `Final_Episode_ID` — Drive file ID of the final mastered episode. |
 | Contacts | Secretary, Herald | Contact records (23 cols, v1.5 schema) |
 | Tasks | fairy_circle | Action items for Audra / JT |
 | Audit_Trail | fairy_circle | All system events (never truncated) |

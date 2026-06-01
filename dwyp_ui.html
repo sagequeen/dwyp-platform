@@ -849,10 +849,7 @@ svg { display: block; flex-shrink: 0; }
   margin: 0 12px 6px;
   padding: 10px 12px;
   box-shadow: var(--shadow);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
-.st-ep-band-card:active { opacity: 0.8; }
 .st-ep-card-hdr {
   display: flex;
   align-items: baseline;
@@ -910,6 +907,103 @@ svg { display: block; flex-shrink: 0; }
 .st-ep-icon.secondary { background: #FEF0E6; color: #E87722; }
 /* muted: no action needed */
 .st-ep-icon.muted { background: var(--surface-2); color: var(--text-3); }
+
+/* Lit icons are tappable; cursor signals this */
+.st-ep-icon.lit,
+.st-ep-icon.secondary { cursor: pointer; }
+
+/* Card body is the expand/collapse tap zone */
+.st-ep-band-card { cursor: default; }
+.st-ep-card-body { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.st-ep-card-body:active { opacity: 0.8; }
+
+/* Two-column layout inside the card body */
+.st-ep-card-layout {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.st-ep-card-left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-ep-card-right {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 6px;
+}
+.st-ep-card-state-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+}
+.st-ep-card-state-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.st-ep-card-blocking {
+  font-size: 11px;
+  color: var(--text-2);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Expanded task list */
+.st-ep-task-list {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.st-ep-task {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.st-ep-task-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.st-ep-task-meta {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.st-ep-task-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.st-ep-task-empty {
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  padding: 4px 0;
+}
+.st-ep-task-link {
+  font-size: 11px;
+  color: var(--gold-deep);
+  text-decoration: none;
+}
+.st-ep-task-link:hover { text-decoration: underline; }
 
 /* Side region cards (Upcoming Recordings / TBD Episodes) */
 .st-ep-side-card {
@@ -2945,27 +3039,6 @@ body.workshop-open .bottom-nav { display: none; }
 .rv-comment-submit:active   { opacity: 0.85; }
 .rv-sorter-icon-btn.comment-active { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.8); }
 
-/* ── READY FOR RELEASE ──────────────────────────────────────── */
-.btn-ready-for-release {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  padding: 13px;
-  background: var(--gold);
-  color: #0D0A0A;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-body);
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: opacity var(--transition);
-  margin-top: 4px;
-}
-.btn-ready-for-release:active { opacity: 0.85; }
-
 /* ── STUDIO OVERLAY ─────────────────────────────────────────── */
 body.studio-open .bottom-nav { display: none; }
 body.studio-open .app-header { display: none; }
@@ -4002,22 +4075,6 @@ body.studio-open .app-header { display: none; }
     </div>
 
     <button class="btn-submit" id="ntSubmitBtn" onclick="submitNewTask()">Create Task</button>
-  </div>
-</div>
-
-<!-- Ready for Release Confirmation Modal -->
-<div class="modal-backdrop" id="rfrModal">
-  <div class="modal">
-    <div class="modal-header">
-      <span class="modal-title">All done reviewing?</span>
-    </div>
-    <p style="font-size:14px;color:var(--text-2);line-height:1.6">
-      Tapping confirm will clear your review tasks. Your files are safe in their folders — nothing is permanently deleted. If you want to revisit a decision, just let Audra know.
-    </p>
-    <div style="display:flex;gap:10px;margin-top:4px">
-      <button class="btn-submit" id="rfrConfirmBtn" onclick="confirmReadyForRelease()">Yes, I'm done</button>
-      <button class="btn btn-complete" style="flex:1;justify-content:center" onclick="closeRfrModal()">Not yet</button>
-    </div>
   </div>
 </div>
 
@@ -6128,29 +6185,101 @@ function stGetEpStateLine(ep) {
   return '';
 }
 
-// Month-band episode card (survives from CP1, gains action label + state line).
+// Maps Episode.Status → { label, icon } for the card state indicator.
+function stGetEpStateIcon(ep) {
+  var s = String(ep.Status || '');
+  if (s === 'live')             return { label: 'Live',             icon: 'radio'    };
+  if (s === 'ready_to_release') return { label: 'Ready to release', icon: 'check'    };
+  if (s === 'review')           return { label: 'Review',           icon: 'eye'      };
+  if (s === 'in_production')    return { label: 'In production',    icon: 'activity' };
+  return { label: '', icon: '' };
+}
+
+// Returns the Action_Title of the task most likely blocking the episode from advancing,
+// or a state-derived label for non-task blocking actions (e.g. JT episode approval).
+function stGetEpBlockingTask(ep, epTasks) {
+  // Non-task blocking action: episode is awaiting JT approval
+  if (String(ep.Video_Status || '') === 'review') return 'Approve episode';
+
+  var BLOCKING_ORDER = [
+    'Upload_Produced_Episode', 'Produce_Episode', 'Revise_Episode',
+    'Upload_Final_Episode', 'release',
+    'Review_Episode', 'Revise_Reels', 'Review_Reels', 'Review_Guest_Brief'
+  ];
+  for (var i = 0; i < BLOCKING_ORDER.length; i++) {
+    for (var j = 0; j < epTasks.length; j++) {
+      if (epTasks[j].Workflow_Step === BLOCKING_ORDER[i]) return epTasks[j].Action_Title;
+    }
+  }
+  return epTasks.length ? epTasks[0].Action_Title : '';
+}
+
+// Month-band episode card — two-column layout; body tap expands/collapses task list.
 function stRenderEpBandCard(ep, allTasks) {
-  var epTasks   = allTasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
-  var hpState   = stGetEpHeadphones(ep);
-  var filmState = stGetEpFilm(ep, epTasks);
-  var dateline  = stGetEpDateline(ep);
-  var action    = stGetEpActionLabel(ep);
-  var stateLine = stGetEpStateLine(ep);
-  var uid       = esc(ep.Episode_UID);
+  var epTasks      = allTasks.filter(function(t) { return t.Episode_UID === ep.Episode_UID; });
+  var hpState      = stGetEpHeadphones(ep);
+  var filmState    = stGetEpFilm(ep, epTasks);
+  var dateline     = stGetEpDateline(ep);
+  var stateInfo    = stGetEpStateIcon(ep);
+  var blockingTask = stGetEpBlockingTask(ep, epTasks);
+  var uid          = esc(ep.Episode_UID);
+  var name         = esc(ep.Guest_Name || 'Unknown Guest');
 
-  var hp   = '<div class="st-ep-icon ' + hpState   + '" title="Episode"><svg width="13" height="13" data-lucide="headphones"></svg></div>';
-  var film = '<div class="st-ep-icon ' + filmState  + '" title="Reels"><svg width="13" height="13" data-lucide="film"></svg></div>';
-  var cal  = '<div class="st-ep-icon muted" title="Calendar"><svg width="13" height="13" data-lucide="calendar"></svg></div>';
+  // Headphones — lit/secondary routes to Studio → episode sub-tab
+  var hpClick = (hpState === 'lit' || hpState === 'secondary')
+    ? ' onclick="event.stopPropagation();stSelectGuestView(\'' + uid + '\',\'' + name + '\',\'episode\')"'
+    : '';
+  var hp = '<div class="st-ep-icon ' + hpState + '" title="Episode"' + hpClick + '>' +
+           '<svg width="13" height="13" data-lucide="headphones"></svg></div>';
 
-  var html = '<div class="st-ep-band-card" onclick="showEpisodeDetail(\'' + uid + '\')">';
-  html += '<div class="st-ep-card-hdr">';
-  html += '<div class="st-ep-card-name">' + esc(ep.Guest_Name || 'Unknown Guest') + '</div>';
-  if (action) html += '<div class="st-ep-card-action">' + esc(action) + '</div>';
-  html += '</div>';
+  // Film — lit routes to Studio → reels sub-tab
+  var filmClick = filmState === 'lit'
+    ? ' onclick="event.stopPropagation();stSelectGuestView(\'' + uid + '\',\'' + name + '\',\'reels\')"'
+    : '';
+  var film = '<div class="st-ep-icon ' + filmState + '" title="Reels"' + filmClick + '>' +
+             '<svg width="13" height="13" data-lucide="film"></svg></div>';
+
+  // Calendar — schedule surface not built; always inert stub
+  var cal = '<div class="st-ep-icon muted" title="Schedule">' +
+            '<svg width="13" height="13" data-lucide="calendar"></svg></div>';
+
+  // State indicator (top-right)
+  var stateHtml = '';
+  if (stateInfo.label) {
+    stateHtml = '<div class="st-ep-card-state-row">' +
+                '<span class="st-ep-card-state-label">' + esc(stateInfo.label) + '</span>' +
+                '<svg width="13" height="13" data-lucide="' + stateInfo.icon + '"></svg>' +
+                '</div>';
+  }
+
+  var html = '<div class="st-ep-band-card">';
+
+  // Card body: tap expands/collapses task list
+  html += '<div class="st-ep-card-body" onclick="stToggleEpCard(\'' + uid + '\')">';
+  html += '<div class="st-ep-card-layout">';
+
+  // Left column: name / dateline / blocking task
+  html += '<div class="st-ep-card-left">';
+  html += '<div class="st-ep-card-name">' + name + '</div>';
   html += '<div class="st-ep-card-dateline">' + esc(dateline) + '</div>';
+  if (blockingTask) html += '<div class="st-ep-card-blocking">' + esc(blockingTask) + '</div>';
+  html += '</div>'; // .st-ep-card-left
+
+  // Right column: state indicator (top) / action icon dots (bottom)
+  html += '<div class="st-ep-card-right">';
+  html += stateHtml;
   html += '<div class="st-ep-card-icons">' + hp + film + cal + '</div>';
-  if (stateLine) html += '<div class="st-ep-card-state">' + esc(stateLine) + '</div>';
+  html += '</div>'; // .st-ep-card-right
+
+  html += '</div>'; // .st-ep-card-layout
+  html += '</div>'; // .st-ep-card-body
+
+  // Expandable task list — hidden by default
+  html += '<div class="st-ep-task-list" id="stEpTasks-' + uid + '" style="display:none">';
+  html += stRenderEpCardTaskList(ep, epTasks);
   html += '</div>';
+
+  html += '</div>'; // .st-ep-band-card
   return html;
 }
 
@@ -6169,7 +6298,7 @@ function stRenderEpUpcomingCard(ep) {
   if (recLabel) html += '<div class="st-ep-side-date">' + esc(recLabel) + '</div>';
   html += '<div class="st-ep-side-label">Prep for Interview</div>';
   html += '</div>';
-  html += '<div class="st-ep-side-icon"><svg width="32" height="32" data-lucide="mic"></svg></div>';
+  html += '<div class="st-ep-side-icon"><svg width="32" height="32" data-lucide="feather"></svg></div>';
   html += '</div>';
   return html;
 }
@@ -6187,6 +6316,177 @@ function stRenderEpTbdCard(ep) {
   html += '<div class="st-ep-side-icon"><svg width="32" height="32" data-lucide="calendar"></svg></div>';
   html += '</div>';
   return html;
+}
+
+function stToggleEpCard(uid) {
+  var el = document.getElementById('stEpTasks-' + uid);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+// Renders the task list HTML for the expanded region of a band card.
+// Runs at render time; actions call dedicated functions below.
+function stRenderEpCardTaskList(ep, epTasks) {
+  var uid      = esc(ep.Episode_UID);
+  var filtered = securityFilter(epTasks);
+
+  if (!filtered.length) {
+    return '<div class="st-ep-task-empty">Nothing pending</div>';
+  }
+
+  var html = '';
+  filtered.forEach(function(task) {
+    var tid  = esc(task.Task_ID);
+    var ridx = task._rowIndex;
+    var ws   = task.Workflow_Step || '';
+    var epUid = esc(task.Episode_UID || ep.Episode_UID);
+    var assetId = esc(task.Asset_ID || '');
+
+    html += '<div class="st-ep-task" id="st-ep-task-' + tid + '">';
+    html += '<div class="st-ep-task-title">' + esc(task.Action_Title) + '</div>';
+    if (task.Assignee) {
+      html += '<div class="st-ep-task-meta">' + esc(task.Assignee) + '</div>';
+    }
+    html += '<div class="st-ep-task-actions">';
+
+    // Kind 1a — GCS episode upload
+    if (ws === 'Upload_Produced_Episode' || ws === 'Produce_Episode' || ws === 'Revise_Episode') {
+      html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
+              ' onclick="startEpisodeUpload(\'' + tid + '\',' + ridx + ',\'' + epUid + '\')">' +
+              '<svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload Proxy</button>';
+      html += '<input type="file" id="ep-file-' + tid + '" accept="video/*" style="display:none"' +
+              ' onchange="onEpisodeFileSelected(\'' + tid + '\',' + ridx + ',\'' + epUid + '\',this)">';
+      html += '<div class="ep-upload-panel" id="ep-upload-panel-' + tid + '" style="display:none">' +
+              '<div class="ep-upload-bar-wrap"><div class="ep-upload-bar" id="ep-upload-bar-' + tid + '"></div></div>' +
+              '<div class="ep-upload-status" id="ep-upload-status-' + tid + '"></div></div>';
+
+    // Kind 1b — Revise reel (Drive swap)
+    } else if (ws === 'Revise_Reels') {
+      if (task.Payload_Link) {
+        html += '<a class="st-ep-task-link" href="' + esc(task.Payload_Link) + '" target="_blank"' +
+                ' onclick="event.stopPropagation()">Open reel</a>';
+      }
+      html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
+              ' onclick="stCompleteReelRevision(\'' + tid + '\',' + ridx + ',\'' + epUid + '\',\'' + assetId + '\')">' +
+              '<svg width="12" height="12" data-lucide="check"></svg> Complete (v2 uploaded)</button>';
+
+    // Kind 1c — Upload final episode to Drive
+    } else if (ws === 'Upload_Final_Episode') {
+      html += '<div class="st-ep-task-meta">Place the final file in the staging Episode/ folder, then mark complete.</div>';
+      html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
+              ' onclick="stCompleteFinalEpisodeUpload(\'' + tid + '\',' + ridx + ',\'' + epUid + '\')">' +
+              '<svg width="12" height="12" data-lucide="check"></svg> Complete (file uploaded)</button>';
+
+    // Kind 2 — Release confirmation
+    } else if (ws === 'release') {
+      html += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer">' +
+              '<input type="checkbox" id="release-check-' + tid + '"' +
+              ' onclick="stConfirmReleaseTask(\'' + tid + '\',' + ridx + ')">' +
+              '<span class="st-ep-task-meta" style="font-style:normal">Mark released</span></label>';
+      if (task.Payload_Link) {
+        html += '<a class="st-ep-task-link" href="' + esc(task.Payload_Link) + '" target="_blank"' +
+                ' onclick="event.stopPropagation()">Open Spotify</a>';
+      }
+
+    // Kind 3 — All other tasks (mutual, etc.)
+    } else {
+      html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
+              ' onclick="stCompleteEpCardTask(\'' + tid + '\',' + ridx + ')">' +
+              '<svg width="12" height="12" data-lucide="check"></svg> Done</button>';
+    }
+
+    html += '</div>'; // .st-ep-task-actions
+    html += '</div>'; // .st-ep-task
+  });
+
+  return html;
+}
+
+// Generic card-task complete — calls writeTaskComplete, removes task from state.
+function stCompleteEpCardTask(taskId, rowIndex) {
+  var btn = document.getElementById('complete-' + taskId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Done'; }
+        return;
+      }
+      removeTaskFromState(taskId);
+      refreshCurrentView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = 'Done'; }
+    })
+    .writeTaskComplete(rowIndex);
+}
+
+// Reel revision complete — GAS scans Reels/ for the v2 file and runs the swap.
+function stCompleteReelRevision(taskId, rowIndex, episodeUid, assetId) {
+  var btn = document.getElementById('complete-' + taskId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Complete (v2 uploaded)'; }
+        return;
+      }
+      removeTaskFromState(taskId);
+      showToast('Reel revised — Review Reels task spawned for JT.');
+      refreshCurrentView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = 'Complete (v2 uploaded)'; }
+    })
+    .completeReelRevision(episodeUid, assetId);
+}
+
+// Final episode upload complete — GAS reads the file from Episode/ folder.
+function stCompleteFinalEpisodeUpload(taskId, rowIndex, episodeUid) {
+  var btn = document.getElementById('complete-' + taskId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Complete (file uploaded)'; }
+        return;
+      }
+      removeTaskFromState(taskId);
+      showToast('Episode ready to release — Filing and Release tasks spawned.');
+      refreshCurrentView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = 'Complete (file uploaded)'; }
+    })
+    .completeFinalEpisodeUpload(episodeUid, rowIndex);
+}
+
+// Release task confirmation — marks complete; checkbox stays checked on success.
+function stConfirmReleaseTask(taskId, rowIndex) {
+  var cb = document.getElementById('release-check-' + taskId);
+  if (cb) cb.disabled = true;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (cb) { cb.disabled = false; cb.checked = false; }
+        return;
+      }
+      removeTaskFromState(taskId);
+      showToast('Release confirmed.');
+      refreshCurrentView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (cb) { cb.disabled = false; cb.checked = false; }
+    })
+    .writeTaskComplete(rowIndex);
 }
 
 function stRenderEpisodesView() {
@@ -7843,20 +8143,6 @@ function renderEpisodeDetail(ep) {
 
   container.innerHTML = html;
   lucide.createIcons();
-
-  var _rfrUid = ep.Episode_UID;
-  google.script.run
-    .withSuccessHandler(function(status) {
-      var section = document.getElementById("rfrSection-" + _rfrUid);
-      if (!section) return;
-      if (status && status.ready) {
-        section.innerHTML = '<button class="btn-ready-for-release" onclick="openRfrModal(\'' + esc(_rfrUid) + '\')">' +
-          '<svg width="15" height="15" data-lucide="party-popper"></svg>Ready for Release</button>';
-        lucide.createIcons({ nodes: [section] });
-      }
-    })
-    .withFailureHandler(function() {})
-    .checkReadyForRelease(ep.Episode_UID);
 }
 
 // ── EPISODE TOOLS CARD ───────────────────────────────────────
@@ -7899,7 +8185,6 @@ function renderEpisodeToolsCard(ep, epTasks) {
         '</div>' +
       '</div>' +
     '</div>' +
-    '<div id="rfrSection-' + uid + '"></div>' +
   '</div>';
 }
 
@@ -8803,52 +9088,6 @@ function epRequestRevisions(episodeUid) {
     .requestEpisodeRevisions(episodeUid, APP_CONFIG.userEmail);
 }
 
-// ── READY FOR RELEASE ─────────────────────────────────────────
-var rfrState = { episodeUid: null };
-
-function openRfrModal(episodeUid) {
-  rfrState.episodeUid = episodeUid;
-  var confirmBtn = document.getElementById("rfrConfirmBtn");
-  if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "Yes, I'm done"; }
-  document.getElementById("rfrModal").classList.add("open");
-}
-
-function closeRfrModal() {
-  document.getElementById("rfrModal").classList.remove("open");
-  rfrState.episodeUid = null;
-}
-
-function confirmReadyForRelease() {
-  var uid = rfrState.episodeUid;
-  if (!uid) { closeRfrModal(); return; }
-  var confirmBtn = document.getElementById("rfrConfirmBtn");
-  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = "Sending…"; }
-  google.script.run
-    .withSuccessHandler(function(result) {
-      closeRfrModal();
-      if (result && result.success !== false) {
-        var section = document.getElementById("rfrSection-" + uid);
-        if (section) section.innerHTML = "";
-        showToast("Done — Audra has been notified");
-        google.script.run
-          .withSuccessHandler(function(tasks) {
-            state.tasks = tasks || [];
-            refreshCurrentView();
-          })
-          .withFailureHandler(function() { refreshCurrentView(); })
-          .getTasks();
-      } else {
-        showToast("Error — please try again", true);
-        if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = "Yes, I'm done"; }
-      }
-    })
-    .withFailureHandler(function(err) {
-      closeRfrModal();
-      showToast("Error: " + ((err && err.message) || err), true);
-    })
-    .triggerReadyForRelease(uid);
-}
-
 // ── EPISODE REVIEW ACTIONS ───────────────────────────────────
 function approveEpisodeVideo(episodeUid) {
   setButtonLoading("epReviewApproveBtn", true);
@@ -8874,7 +9113,7 @@ function approveEpisodeVideo(episodeUid) {
       setButtonLoading("epReviewApproveBtn", false);
       setButtonLoading("epReviewReviseBtn",  false);
     })
-    .writeVideoStatus(episodeUid, "approved");
+    .approveEpisodeForRelease(episodeUid);
 }
 
 function completeEpisodeRevisionTask(taskId, episodeUid) {

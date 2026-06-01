@@ -16,7 +16,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 > ADs 9, 46–47, 56–58, 60–68, 70–71, 79–88 removed (fully superseded by retired features: Marcom Fairy, Safety Fairy, Image Workshop, Frame.io, old Preservation Mandate). See git history for removed text.
 
 1. **CRM-first, podcast-first UX.** Contacts is the primary object. JT's surface feels guest/podcast-first.
-2. **No emoji statuses.** Plain enums everywhere. (Emoji in task `actionTitle` freetext is technically compliant — decision pending on spirit-of-rule enforcement.)
+2. **No emoji statuses.** Plain Enums everywhere. (Emoji in task `actionTitle` free text is technically compliant — decision pending on spirit-of-rule enforcement.)
 3. **No Evergreen_Registry.** Identity lives in Contacts tab.
 4. **Episode foreign key is `Contact_ID`, not `Guest_Email`.**
 5. **Episode_Log replaces Revision_Log.** Entry types: `revision | feedback | note | system`. `Visible_To`: `both | audra_only | jt_only`.
@@ -31,16 +31,15 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 15. **Returning guest context (Podcast_Player_Copy): deferred.** Feature removed from `herald_fairy` pending storage design. Revisit after first end-to-end test.
 16. **Approval gate is subfolder-level — Artist Fairy handoff only.** `_ready` suffix on subfolder name is the handoff signal from Audra to Daily Pulse for Artist Fairy output. **Superseded for Images/Reels review:** New review flow uses file-presence detection in `Images/` and `Reels/` root folders — no `_ready` suffix involved. See Asset Review Flow (locked).
 17. **Artist Fairy spawns no tasks.** Audra signals readiness via `_ready`.
-18. **Filing Fairy is Audra-triggered.** Single `doPost()` call from task button. Preflight check is the safety net.
-19. **AppSheet retired.** Web app (shadow-build) is the primary frontend. AppSheet is no longer in use.
+18. **Filing Fairy is nightly-triggered.** `archiveLiveEpisodes()` in `housekeeping.js` sweeps for `Status = live` episodes where `Release_Date + 5 days ≤ today` and calls `runFilingFairy()`. No preflight gate. No manual trigger.
 20. **`createEpisodeFolder()` is private to `secretary_fairy`.** Not promoted to `fairy_circle`.
 21. **Initial manifest shape locked.** Fields: `episode_uid, contact_id, guest_name, recording_date, raw_folder_id, staging_folder_id, status, phase, created_at, herald_form_data`.
 22. **Approval state authority is Episodes tab.** `Video_Status` and `Images_Status` written by web app on JT action. GAS does not independently verify.
 23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Upload_Produced_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
-24. **`clerk_fairy.gs` owns `doPost()`.** Routes: `filing` → `runFilingFairy()`, `invite` → `scribeLetSchedule()`. `filing_fairy` exposes `runFilingFairy()` as callable entry point only. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
+24. **`clerk_fairy.gs` owns `doPost()`.** Route: `invite` → `scribeLetSchedule()`. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
 25. **Scribe Fairy is a new file, not a port.** Five defined touchpoints. No `doPost()`.
 26. **Filing and Scribe stay separate files.**
-27. **AppSheet webhook actions use POST + JSON body.** `doGet()` / query string pattern retired.
+27. **Webhook actions use POST + JSON body.** `doGet()` / query string pattern retired.
 28. **Episode_Sequence and Release_Date are plain values.** GAS never writes either column. Manually managed. Load-bearing constraint.
 29. **App-triggered invite creates Gmail draft only.** JT creates calendar event manually. Secretary fires when recording date appears on calendar.
 30. **Three Scribe T1 template variants.** `SCRIBE_LETS_SCHEDULE_LINK_KEY`, `SCRIBE_LETS_SCHEDULE_SUGGESTED_KEY`, `SCRIBE_LETS_SCHEDULE_MANUAL_KEY`.
@@ -55,12 +54,12 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 39. **Guest Brief lookup via Contact Library.** Not episode Staging folder.
 40. **`Contact_Library_Folder_ID` lives on Contacts tab.**
 41. **Production Notes lives in Raw folder.** Guest Brief lives in Contact Library folder.
-42. **Roundtable episodes: permanent Roundtable contact record.** `Contact_ID` on episode row points to a manually-created Roundtable contact (`Source = manual`, `Relationship_Type = Roundtable`). Actual guest names in freetext `Guest_Name` field.
+42. **Roundtable episodes: permanent Roundtable contact record.** `Contact_ID` on episode row points to a manually-created Roundtable contact (`Source = manual`, `Relationship_Type = Roundtable`). Actual guest names in free text `Guest_Name` field.
 43. **Guest tab retired.** All fields migrated to Contacts tab. No Guest tab references remain in codebase.
 44. **Contacts tab is the single contact authority.** Role flags (`Is_Guest`, `Is_Sponsor`, `Is_Donor`) retired — replaced by `Relationship_Type` EnumList on Contacts tab. `Relationship_Type` describes both role and relationship state.
 45. **Headshot URL pattern.** Herald detects `_headshot` in filename in Contact Library folder, resolves Drive URL (`uc?export=view&id=FILE_ID`), writes to `Headshot_URL` on Contacts tab.
 48. **Google Slides export: manual.** Audra exports via personal script, drops image files into asset subfolders. Artist Fairy unchanged.
-49. **Shadow-build is the primary frontend.** Custom HTML/JS web app deployed as GAS web app. Auth: Google OAuth. Data: Sheets API reads + `clerk_fairy doPost()` writes. AppSheet is retired.
+49. **Web app is the primary frontend.** Custom HTML/JS web app deployed as GAS web app. Auth: Google OAuth. Data: Sheets API reads + `clerk_fairy doPost()` writes.
 50. **Web app security filter.** `HOST_EMAIL` from Governance_Config. JT sees only tasks where `Assignee = HOST_EMAIL` OR `Assignee` is blank. Audra sees all tasks.
 51. **Approve action in web app writes `Video_Status` on episode row directly.** Does not depend on Courier Fairy or Frame.io webhooks.
 52. **`DAILY_DIGEST_TIME` governance key intentionally blank.** Pulse trigger time managed in Apps Script trigger UI only.
@@ -78,7 +77,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 78. **GCS signing — signBlob path (locked).** `getEpisodeStreamUrl()` uses IAM signBlob API (`https://iam.googleapis.com/v1/projects/-/serviceAccounts/{SA}:signBlob`). Signer: `309883149140-compute@developer.gserviceaccount.com`. Auth: owner's `ScriptApp.getOAuthToken()` (`cloud-platform` scope in manifest). V4 canonical request: `UNSIGNED-PAYLOAD`, `host` signed-headers only, credential scope `{date}/auto/storage/goog4_request`. No stored JSON key. Prerequisite: `iamcredentials.googleapis.com` API enabled in GCP Console.
 89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Vert Fairy: automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript. Social Vert and Librarian Vert as named sub-roles were subsequently retired (AD #97) — superseded by Vert (retrieval) + Claude (generation) model. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
 90. **Tasks is the primary home screen.** `renderDashboard()` is the entry point. Episode cards at top (action state, release pill, four tappable icons); loose tasks at bottom (Podcast · People · Personal containers). Release_Date is the sole sort key for episode cards — recording date is display context only, never a sort signal. TBD episodes sort below all dated episodes.
-91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
+91. **EH flag is implemented via `Influence_Tier = "EH"` on the Contacts tab.** No separate `Everyday_Hero` column. `EH` is a valid `Influence_Tier` Enum value (LF | HI | EH). The EH toggle in the Contacts front end writes `Influence_Tier = "EH"`. Herald reads `Influence_Tier` to detect EH guest designation. No trigger fires on EH toggle.
 92. **Guest Brief removed from task flow.** Brief auto-closes after Herald creates it. JT pulls directly from Contact Library when she is ready. Guest Brief Enrich (Audra) and Guest Brief Review (JT) tasks remain in the pipeline, but the brief itself is not surfaced via a task card in the dashboard.
 93. **Vertex AI RAG corpus relocated to us-south1 (Dallas) with Spanner vector backend.** Previous corpus (us-central1, Managed Agent Retrieval) is retired. Working configuration: us-south1, Spanner. All GAS functions querying the corpus must reference us-south1 explicitly. Governance key: `VERTEX_RAG_REGION = us-south1` — must be populated in Governance_Config before Vert Fairy spoke opens. `STUDIO_CORPUS_ID` must be updated to reflect the new us-south1 corpus resource path.
 94. **Snapping spoke closed.** Center button in Publish canvas covers the alignment need. No further snapping work planned.
@@ -96,8 +95,8 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 106. **Progressive image loading adopted.** Thumbnails render first; high-res swaps in on load. Drive thumbnail URLs used for initial render.
 107. **Image caption grounding requirements (locked).** Every image caption call must include: `Quote_Text` (exact quote on canvas, from Asset_Library), `Speaker` (host or guest), `HOST_NAME` (from Governance_Config), guest name (from episode record), episode topic/emotional core (from episode record), brand voice (from `BRAND_VOICE_ID` doc). Required prompt instruction: *"Do not restate the quote. Write a caption that responds to it — what does this quote make someone feel? What does it mean for someone sitting with pain right now? Write in JT's voice. Short, punchy, direct. End with 'Link in bio.'"* Caption regenerates automatically when a new quote is placed on the canvas — not on a manual tap.
 108. **Reel caption grounding requirements (locked).** Every reel caption call must include: `Reel_Summary` (Gemini audio summary for this specific reel, from Asset_Library), guest name, episode topic (from episode record), brand voice. `Reel_Summary` must exist before caption generates — if null, show "Summarizing reel…" and trigger the summary call first. Required prompt instruction: *"Write a caption for this reel clip. Use the summary as your source — the caption should reflect what's actually in this clip, not the episode generally. Write in JT's voice. 2–3 lines maximum. End with 'Link in bio.'"*
-109. **Asset_Library row creation triggers (locked).** Reel: Daily Pulse detects reel file in Drive → row created immediately. Bank_Clip: Audra adds to bank → row created at that moment. Quote_Graphic: `materializeQuoteGraphicAssets` (Bridge Fairy, Track C) reads Show Notes Doc → one row per hook or guest quote, written in a single batch. Thumbnail: Artist Fairy or equivalent → one row per variant. Social_Assets row is created only on Add to Week (commit). Social_Assets row is deleted (clean delete — no cancelled status) on Unschedule.
-110. **Unschedule flow (locked).** (1) Social_Assets row deleted. (2) Asset_Library `Status` → `available`. (3) Asset_Library `Availability` → `available`. (4) If Quote_Graphic: find sibling row (same `Slide_Index`, same `Episode_UID`) → `Availability` → `available`. (5) Slot clears in Panel 2. Asset reappears in candidate pool.
+109. **Asset_Library row creation triggers (locked).** Reel: Daily Pulse detects reel file in Drive → row created immediately. Bank_Clip: Audra adds to bank → row created at that moment. Quote_Graphic: `materializeQuoteGraphicAssets` (Bridge Fairy, Track C) reads Show Notes Doc → one row per hook or guest quote, written in a single batch. Thumbnail: Artist Fairy or equivalent → one row per variant. Social_Assets row is created only on Add to Week (commit). Social_Assets row is deleted (clean delete — no cancelled status) on Unscheduled.
+110. **Unscheduled flow (locked).** (1) Social_Assets row deleted. (2) Asset_Library `Status` → `available`. (3) Asset_Library `Availability` → `available`. (4) If Quote_Graphic: find sibling row (same `Slide_Index`, same `Episode_UID`) → `Availability` → `available`. (5) Slot clears in Panel 2. Asset reappears in candidate pool.
 111. **Scribe Fairy retired. Never deployed.** Pipeline email events now spawn Writer email tasks (JT autonomous). Seven blank template keys migrate to Writer Email quick-start templates. Scribe Fairy joins Safety Fairy and Marcom Fairy as a dead-code stub under the intentional deletion policy (AD #101). `clerk_fairy.gs` AD #24 route `invite → scribeLetSchedule()` is dead — address when Clerk Fairy rebuild opens. Retirement confirmed Reframe #8, May 2026.
 112. **Quote attribution schema (QUOTE blocks).** Guest-quote blocks in Master Template `# Show Notes` section carry attribution on a dedicated `ATTRIBUTION:` line, not inline with the quote text. Block format: `QUOTE N: "[quote text]"` / `ATTRIBUTION: [Guest First Name Last Name]` / `SLOT_TAGS: [tags]` / `QUALITY_SCORE: [1-5]`. `_bridgeParseRankedItems_` (vert_fairy.js) reads the `ATTRIBUTION:` line and reconstructs `Quote_Text` as `"[quote text]" — [Name]` — this is the canonical downstream format; no downstream caller changed. Missing `ATTRIBUTION:` logs WARNING to Audit_Trail and passes bare quote text through — no hard fail. HOOK blocks have no `ATTRIBUTION:` line and parse unchanged. `materializeQuoteGraphicAssets` consumes `Quote_Text` by field name.
 113. **Master Template voice injection: in-template sections, not external docs.** Brand-voice and show-philosophy content lives in keyed sections of the Master Template and is composed into prompts at call time via `extractPrompt("# Section Name")`. `BRAND_VOICE_ID`, `CAPTION_VOICE_SUPPLEMENT_ID`, and `DELIVERABLES_VOICE_SPEC_ID` governance keys are retired (all blanked 2026-05-19). `extractPrompt` matches on literal section-key text as plain text lines beginning with `# `; not dependent on Google Docs heading styling. Call-site composition: Guest Brief (herald_fairy.js) — `# Show Philosophy`, `# Pillars`, `# Peer Shows` assembled into `brandContext`, substituted for `${brandVoice}` token. Editorial pass (vert_fairy.js `runEditorialPass`) — `# Host Voice`, `# Voice Prohibitions`, `# Caption Mechanics`, `# Ranking Schema`, `# Show Notes`. Soft-fail contract: empty `extractPrompt` return logged per-section to Audit_Trail, generation continues — a voiceless prompt that silently succeeds is the failure mode this guards against; `test_extractPromptSmokeTest` is the verification gate. `buildEpisodeIndexV2` has no injection point (pure Vertex RAG retrieval, no Claude calls). `_buildEditorialPassSystemInstruction_` signature: `(masterTemplateStructure)`; retains hardcoded voice-prohibitions block as redundant safeguard.
@@ -136,7 +135,7 @@ attempts a target, never gates on it.
 
 **Task taxonomy — Destination only (live).** Origin (system-spawned / manual / self-assigned) and Scope (episode-linked / loose / set-scoped) are obsoleted by the Episodes/Buckets workspace split: the container determines origin, the workspace determines scope. Only **Destination** (routes to a room / resolve-in-place) survives as a live design axis — deferred to task semantics spoke.
 
-**Tasks schema (18 cols, May 2026):** `Bucket` (col 18) added — user bucket enum, sourced from User Registry. `Raw_Input` (talk-to-text keeper) and `Target_Surface` enum remain queued schema additions; not yet written. Reel-revision (§4) schema deps tracked in Build Playbook.
+**Tasks schema (18 cols, May 2026):** `Bucket` (col 18) added — user bucket Enum, sourced from User Registry. `Raw_Input` (talk-to-text keeper) and `Target_Surface` Enum remain queued schema additions; not yet written. Reel-revision (§4) schema deps tracked in Build Playbook.
 
 122. **GCS signed URL signing and resumable upload — org policy constraints + browser gotchas (May 2026).**
 
@@ -149,7 +148,7 @@ attempts a target, never gates on it.
    2. **308 Resume Incomplete kills XHR.** Browsers fire `onerror` (status 0) on a 308 with no `Location` header — they treat it as a failed redirect. Use `fetch(redirect:'manual')` instead; a 308 resolves as `response.type === 'opaqueredirect'`.
    3. **Do not set `Content-Length`.** It is a forbidden request header in browsers. The browser computes it from the body. Attempting to set it throws a console error and may abort the request.
 
-123. **Episode Status: five-state lifecycle model (SPOKE_Tasks_1, May 2026).** `upcoming` (Secretary on creation) → `in_production` (Loop D on transcript detect) → `ready_to_release` (`triggerReadyForRelease()` on assets approved) → `archived` (Filing redesign — not yet auto-fired). `archived` is the sole terminal gate: all loop skip checks are `status === "archived"`; all "active" filters are `status !== "archived"`. Prior-appearance count in Herald: `ready_to_release` OR `archived` (a released episode is public — don't wait for archive). Housekeeping processes `in_production` and `ready_to_release` only — `upcoming` has no transcript. `active` and `complete` are retired enum values; existing rows carry `active` until Audra's in-sheet relabel. **AD #22 partial note:** `Images_Status` has no active write path (AppSheet retired, web app never implemented it) — column is inert, left in sheet pending Filing redesign.
+123. **Episode Status: six-state lifecycle model.** `upcoming` (Secretary on creation) → `in_production` (Loop D on transcript detect) → `ready_to_release` (`triggerReadyForRelease()` on assets approved) → `live` (manual — Audra sets at release) → `archived` (nightly housekeeping, Sunday after release). `archived` is the sole terminal gate: all loop skip checks are `status === "archived"`; all "active" filters are `status !== "archived"`. Prior-appearance count in Herald: `ready_to_release` OR `live` OR `archived` (a released episode is public — don't wait for archive). Housekeeping processes `in_production`, `ready_to_release`, and `live` — `upcoming` has no transcript. `active` and `complete` are retired Enum values; existing rows carry `active` until Audra's in-sheet relabel. **AD #22 partial note:** `Images_Status` has no active write path (web app never implemented it) — column is inert, left in sheet pending Filing redesign.
 
 ---
 
@@ -174,7 +173,7 @@ attempts a target, never gates on it.
 | 11 | K | Social_X | URL | Herald extracts and writes. |
 | 12 | L | Social_Other | URL | Catchall — TikTok, Facebook, etc. Herald extracts and writes. |
 | 13 | M | Organization | String | Lower-third format: "Title, Role at Org". Herald extracts and writes. |
-| 14 | N | Referred_By | String (freetext) | JT-managed. Never system-written. |
+| 14 | N | Referred_By | String (free text) | JT-managed. Never system-written. |
 | 15 | O | Personal_Note | LongText | JT-only. Never system-written. Simple overwrite. Herald uses as research anchor. |
 | 16 | P | Bio_Summary | LongText | Herald-written. 75-word hard limit. |
 | 17 | Q | Tags | Multi-value | Freeform. JT-managed. Post-episode only. No automation writes Tags. |
@@ -193,7 +192,7 @@ attempts a target, never gates on it.
 | 2 | B | Release_Date | Date | Manually managed. GAS never writes. AD #28. |
 | 3 | C | Episode_UID | String | Primary key. Format: `EP-YYMMDD-HHmm`. |
 | 4 | D | Contact_ID | String | Foreign key → Contacts. |
-| 5 | E | Guest_Name | String | Denormalized display name. Freetext for Roundtable. |
+| 5 | E | Guest_Name | String | Denormalized display name. Free text for Roundtable. |
 | 6 | F | Status | Enum: upcoming \| in_production \| ready_to_release \| archived | Secretary writes `upcoming` on creation. `archived` is the sole terminal gate. `active`/`complete` are legacy values — in-sheet relabel pending. See AD #123. |
 | 7 | G | Raw_Folder_ID | String | Drive folder ID of the episode subfolder inside `02_RAW_PRODUCTION`. Secretary writes. |
 | 8 | H | Production_Folder_ID | String | Drive folder ID of the episode subfolder inside `03_STAGING_DRAFTS`. Secretary writes. |
@@ -673,7 +672,6 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 
 | Pattern | Status |
 |---|---|
-| AppSheet as frontend | Retired (AD #19). |
 | Frame.io for asset review | Retired (AD #72). |
 | Make.com → Frame.io outbound | Retired (AD #72). |
 | Gemini as Marcom fallback | Retired (AD #81). |
@@ -686,7 +684,7 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 | `fairyNudge` key in `spawnTask()` | Retired. Use `executiveSummary` only. |
 | `Staging_Folder_ID` column | Renamed `Production_Folder_ID` in live sheet. Points to `03_STAGING_DRAFTS` episode subfolder. Distinct from `Raw_Folder_ID` (`02_RAW_PRODUCTION`). |
 | `Relationship_Status` / Contact_Type enum | Replaced by `Relationship_Type` EnumList on Contacts tab. |
-| `Pipeline_Status` AppSheet virtual column | Web app derives pipeline state client-side. |
+| `Pipeline_Status` virtual column | Web app derives pipeline state client-side. |
 | Secretary creating Frame.io project | Retired (AD #72). |
 | Safety Fairy creating Frame.io project via Make.com | Retired (AD #72). `callMakeCreateProject()` is dead code. |
 | Make.com Frame.io outbound scenario | Retired (AD #72). |

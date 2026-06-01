@@ -12,7 +12,7 @@
 //   runHeraldBrief(contactId, episodeUid) — Create Guest Swipe subfolder,
 //                                           generate guest brief doc
 //
-// Called by: Secretary (automatic); AppSheet manual trigger buttons
+// Called by: Secretary (automatic)
 // Dependencies: fairy_circle.gs (getGovernance, logToAuditTrail, spawnTask,
 //               extractPrompt, callGeminiAPIGrounded, callGeminiAPINoSearch,
 //               extractJson, getManifest, writeManifest, getStagingFolderIdByUid,

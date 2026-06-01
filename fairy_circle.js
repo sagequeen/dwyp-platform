@@ -14,7 +14,7 @@
 //   error        — any failure, exception, fatal, or blocked state
 //   state_change — any system write: manifest patch, task spawn, folder created,
 //                  email drafted, log entry written, status update
-//   human_action — triggered by human tap (AppSheet webhook, manual call, dailyPulse)
+//   human_action — triggered by human tap (manual call, dailyPulse)
 //
 // level param (INFO | WARNING | ERROR): not written as its own column.
 //   Collapsed into detail as a prefix: "[WARNING] Manifest not found."
@@ -1413,7 +1413,7 @@ function getContactLibraryFolderIdByContactId(contactId) {
 // Manual columns — GAS never writes:
 //   Episode_Sequence, Release_Date, Episode_URL
 //
-// AppSheet-written columns — GAS initializes only, AppSheet owns thereafter:
+// Web app–written columns — GAS initializes only:
 //   Video_Status, Images_Status
 // =============================================================================
 

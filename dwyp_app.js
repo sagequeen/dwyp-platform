@@ -193,7 +193,7 @@ var EPISODES_COLS = {
   Recording_Date:      9,
   Calendar_Event_ID:   10,
   Video_Status:        11,
-  Images_Status:       12,
+  Final_Episode_ID:    12,
   Episode_URL:         13,
   Episode_Type:        14,
 };
@@ -406,7 +406,7 @@ function getEpisodes() {
       Production_Folder_ID: row[EPISODES_COLS.Production_Folder_ID - 1],
       Recording_Date:       row[EPISODES_COLS.Recording_Date - 1] ? String(row[EPISODES_COLS.Recording_Date - 1]) : "",
       Video_Status:         row[EPISODES_COLS.Video_Status - 1],
-      Images_Status:        row[EPISODES_COLS.Images_Status - 1],
+      Final_Episode_ID:     row[EPISODES_COLS.Final_Episode_ID - 1],
       Episode_URL:          row[EPISODES_COLS.Episode_URL - 1],
       Episode_Type:         row[EPISODES_COLS.Episode_Type - 1]
     });
@@ -632,6 +632,56 @@ function writeVideoStatus(episodeUid, status) {
       }
     }
     return { success: false, error: "Episode not found: " + episodeUid };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Marks Video_Status = "approved" and spawns Upload_Final_Episode task for Audra.
+ * Idempotent: skips spawn if an open Upload_Final_Episode task already exists.
+ */
+function approveEpisodeForRelease(episodeUid) {
+  try {
+    var result = writeVideoStatus(episodeUid, "approved");
+    if (!result.success) return result;
+
+    var sheetId   = getMasterSheetId();
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var taskSheet = ss.getSheetByName("Tasks");
+    var tData     = taskSheet.getDataRange().getValues();
+    var tHeaders  = tData[0];
+    var tEpCol    = tHeaders.indexOf("Episode_UID");
+    var tWfCol    = tHeaders.indexOf("Workflow_Step");
+    var tStCol    = tHeaders.indexOf("Status");
+
+    for (var t = 1; t < tData.length; t++) {
+      if (String(tData[t][tEpCol]) !== String(episodeUid))       continue;
+      if (String(tData[t][tWfCol]) !== "Upload_Final_Episode")   continue;
+      var ts = String(tData[t][tStCol]);
+      if (ts === "open" || ts === "in_progress")                 return { success: true };
+    }
+
+    var epSheet   = ss.getSheetByName("Episodes");
+    var epData    = epSheet.getDataRange().getValues();
+    var guestName = episodeUid;
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      break;
+    }
+
+    spawnTask({
+      episodeUid:   episodeUid,
+      workflowStep: "Upload_Final_Episode",
+      actionTitle:  "Upload final episode — " + guestName,
+      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:   "The Fairy Team",
+      status:       "open",
+      priority:     "normal"
+    });
+
+    return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -2285,6 +2335,110 @@ function completeUploadEpisode(rowIndex, episodeUid) {
 }
 
 /**
+ * Called when Audra has placed the final episode file in the staging Episode/ folder
+ * and taps Complete on the Upload_Final_Episode card task.
+ * Reads the single file in Episode/, writes its Drive ID to Final_Episode_ID,
+ * flips Episode Status → ready_to_release, spawns Filing + Release tasks.
+ */
+function completeFinalEpisodeUpload(episodeUid, rowIndex) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { ok: false, error: "Staging folder not found." };
+
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var epFolderIt    = stagingFolder.getFoldersByName("Episode");
+    if (!epFolderIt.hasNext()) return { ok: false, error: "Episode/ subfolder not found." };
+    var epFolder = epFolderIt.next();
+
+    var allFiles = epFolder.getFiles();
+    var files    = [];
+    while (allFiles.hasNext()) files.push(allFiles.next());
+    if (files.length === 0) return { ok: false, error: "No file found in Episode/ folder yet." };
+    if (files.length > 1)  return { ok: false, error: "Multiple files in Episode/ folder — move the extra file before completing." };
+    var finalFileId = files[0].getId();
+
+    var sheetId   = getMasterSheetId();
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var taskSheet = ss.getSheetByName("Tasks");
+    var tData     = taskSheet.getDataRange().getValues();
+    var tHeaders  = tData[0];
+    var tEpCol    = tHeaders.indexOf("Episode_UID");
+    var tWfCol    = tHeaders.indexOf("Workflow_Step");
+    var tStCol    = tHeaders.indexOf("Status");
+    var tCaCol    = tHeaders.indexOf("Completed_At");
+
+    var epSheet   = ss.getSheetByName("Episodes");
+    var epData    = epSheet.getDataRange().getValues();
+    var guestName = episodeUid, contactId = "";
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || "");
+      break;
+    }
+
+    var hasRelease = false;
+    for (var t = 1; t < tData.length; t++) {
+      if (String(tData[t][tEpCol]) !== String(episodeUid)) continue;
+      if (String(tData[t][tWfCol]) !== "release")          continue;
+      var rs = String(tData[t][tStCol]);
+      if (rs === "open" || rs === "in_progress") { hasRelease = true; break; }
+    }
+
+    // Writes
+    var now = new Date();
+    patchEpisodes(episodeUid, { Status: "ready_to_release", Final_Episode_ID: finalFileId });
+
+    taskSheet.getRange(rowIndex, TASKS_COLS.Status).setValue("complete");
+    taskSheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(now);
+
+    var REVIEW_STEPS = ["Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics", "Review_Reels"];
+    for (var r = 1; r < tData.length; r++) {
+      if (String(tData[r][tEpCol]) !== String(episodeUid))        continue;
+      if (String(tData[r][tStCol]) === "complete")                continue;
+      if (REVIEW_STEPS.indexOf(String(tData[r][tWfCol])) === -1) continue;
+      taskSheet.getRange(r + 1, tStCol + 1).setValue("complete");
+      taskSheet.getRange(r + 1, tCaCol + 1).setValue(now);
+    }
+
+    spawnTask({
+      episodeUid:   episodeUid,
+      contactId:    contactId,
+      workflowStep: "Filing",
+      actionTitle:  "Assets ready to file — " + guestName,
+      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:   "The Fairy Team",
+      status:       "open",
+      priority:     "normal"
+    }, true);
+
+    if (!hasRelease) {
+      spawnTask({
+        episodeUid:   episodeUid,
+        contactId:    contactId,
+        workflowStep: "release",
+        actionTitle:  "Confirm release — " + guestName,
+        assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+        assignedBy:   "The Fairy Team",
+        status:       "open",
+        priority:     "normal",
+        payloadLink:  getGovernance("SPOTIFY_EPISODE_BASE")
+      }, true);
+    }
+
+    bumpVersion("episodes", "completeFinalEpisodeUpload");
+    bumpVersion("tasks",    "completeFinalEpisodeUpload");
+
+    logToAuditTrail("completeFinalEpisodeUpload", "state_change", episodeUid, contactId,
+      "[INFO] Final episode uploaded. Drive ID: " + finalFileId + ". Status → ready_to_release.", "INFO");
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Returns the Episode_Log revision history for the episode review rail, plus
  * the current video state and staging folder URL for the deep-link payload.
  * @param {string} episodeUid
@@ -2489,49 +2643,6 @@ function completeEpisodeRevision(episodeUid, taskId) {
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
-  }
-}
-
-// ── END EPISODE REVISION FLOW ────────────────────────────────────────────────
-
-/**
- * Checks whether both the Images/ and Reels/ staging roots have zero files.
- * Only counts files directly in each root — Approved/Save/Delete subfolders are excluded.
- * @param {string} episodeUid
- * @returns {{ ready: boolean, imagesEmpty: boolean, reelsEmpty: boolean }}
- */
-function checkReadyForRelease(episodeUid) {
-  try {
-    var folderId = getStagingFolderIdByUid(episodeUid);
-    if (!folderId) return { ready: false, imagesEmpty: false, reelsEmpty: false };
-    var stagingFolder = DriveApp.getFolderById(folderId);
-
-    function countRootFiles(subfolderName) {
-      var subs = stagingFolder.getFoldersByName(subfolderName);
-      if (!subs.hasNext()) return 0;
-      var files = subs.next().getFiles();
-      var n = 0;
-      while (files.hasNext()) { files.next(); n++; }
-      return n;
-    }
-
-    function countApprovedFiles(subfolderName) {
-      var subs = stagingFolder.getFoldersByName(subfolderName);
-      if (!subs.hasNext()) return 0;
-      var approvedIt = subs.next().getFoldersByName("Approved");
-      if (!approvedIt.hasNext()) return 0;
-      var files = approvedIt.next().getFiles();
-      var n = 0;
-      while (files.hasNext()) { files.next(); n++; }
-      return n;
-    }
-
-    var imagesEmpty = countRootFiles("Images") === 0;
-    var reelsEmpty  = countRootFiles("Reels")  === 0;
-    var hasApproved = countApprovedFiles("Images") > 0 || countApprovedFiles("Reels") > 0;
-    return { ready: imagesEmpty && reelsEmpty && hasApproved, imagesEmpty: imagesEmpty, reelsEmpty: reelsEmpty };
-  } catch (err) {
-    throw new Error("checkReadyForRelease failed for " + episodeUid + ": " + err.message);
   }
 }
 
@@ -2776,53 +2887,6 @@ function stLoadEpisodeIndex(episodeUid) {
     logToAuditTrail("Studio", "state_change", episodeUid, "", "stLoadEpisodeIndex fallback: " + e.message, "warning");
   }
   return '';
-}
-
-/**
- * Closes all open review tasks for the episode, then spawns an Audra filing task.
- * Workflow_Steps closed: Review_Episode, Review_Host_Graphics, Review_Guest_Graphics, Review_Reels.
- * @param {string} episodeUid
- * @returns {{ success: true }}
- */
-function triggerReadyForRelease(episodeUid) {
-  try {
-    var REVIEW_STEPS = ["Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics", "Review_Reels"];
-
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var sheet   = ss.getSheetByName("Tasks");
-    var data    = sheet.getDataRange().getValues();
-    var now     = new Date();
-
-    for (var r = 1; r < data.length; r++) {
-      var row = data[r];
-      if (String(row[TASKS_COLS.Episode_UID - 1]) !== String(episodeUid))         continue;
-      if (String(row[TASKS_COLS.Status      - 1]) === "complete")                 continue;
-      if (REVIEW_STEPS.indexOf(String(row[TASKS_COLS.Workflow_Step - 1])) === -1) continue;
-      sheet.getRange(r + 1, TASKS_COLS.Status).setValue("complete");
-      sheet.getRange(r + 1, TASKS_COLS.Completed_At).setValue(now);
-    }
-    bumpVersion("tasks", "triggerReadyForRelease");
-
-    patchEpisodes(episodeUid, { Status: "ready_to_release" });
-
-    var manifest  = getManifest(getStagingFolderIdByUid(episodeUid));
-    var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : episodeUid;
-
-    spawnTask({
-      episodeUid:   episodeUid,
-      workflowStep: "Filing",
-      actionTitle:  "Assets ready to file — " + guestName,
-      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:   "The Fairy Team",
-      status:       "open",
-      priority:     "normal"
-    });
-
-    return { success: true };
-  } catch (err) {
-    throw new Error("triggerReadyForRelease failed for " + episodeUid + ": " + err.message);
-  }
 }
 
 
@@ -3093,42 +3157,28 @@ function continueQuickCaption(userMessage, history) {
  */
 function getEpisodeHooksAndQuotes(episodeUid) {
   try {
-    // Primary: read Quote_Graphic rows from Asset_Library — each row is an extractable asset
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet = ss.getSheetByName(alName);
+    var manifest = getEpisodeManifest(episodeUid);
 
-    if (alSheet) {
-      var alData = alSheet.getDataRange().getValues();
-      var hooks  = [];
-      var quotes = [];
-      for (var i = 1; i < alData.length; i++) {
-        var row = alData[i];
-        if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-        var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g,'');
-        if (normType !== 'quotegraphic') continue;
-        var text    = String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || '').trim();
-        var name    = String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || '').trim();
-        var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]);
-        if (!text) continue;
-        var captionHost = String(row[ASSET_LIBRARY_COLS.Caption_Host - 1] || '').trim();
-        var entry = { assetId: assetId, text: text, captionHost: captionHost || null };
-        // Display_Name prefix "Hook" → hooks, "Quote" → quotes; default quotes
-        if (name.toLowerCase().indexOf('hook') === 0) {
-          hooks.push(entry);
-        } else {
-          quotes.push(entry);
-        }
-      }
-      if (hooks.length || quotes.length) {
-        var manifest = getEpisodeManifest(episodeUid);
-        return { hooks: hooks, quotes: quotes, imagePrompts: (manifest && manifest.image_prompts) || [] };
-      }
+    // Primary: Show Notes Doc — source of truth for hooks and quotes display
+    if (manifest && manifest.show_notes) {
+      try {
+        var docText     = DocumentApp.openById(manifest.show_notes).getBody().getText();
+        var toEntryNull = function(l) { return { assetId: null, text: l.trim().replace(/^\d+\.\s*/, '') }; };
+        var toDocEntry  = function(item) { return { assetId: null, text: item.text }; };
+
+        var hooksBlock = extractSectionFromProse(docText, "HOOKS");
+        var fallHooks  = hooksBlock
+          ? hooksBlock.split("\n").map(toEntryNull).filter(function(e) { return e.text.length > 0; })
+          : [];
+
+        var quotesSection = _bridgeSliceSection_(docText, 'GUEST QUOTES:', 'HOST INSTAGRAM CAPTIONS:');
+        var fallQuotes    = _bridgeParseRankedItems_(quotesSection || '', 'QUOTE').map(toDocEntry);
+
+        return { hooks: fallHooks, quotes: fallQuotes, imagePrompts: (manifest.image_prompts) || [] };
+      } catch (docErr) { /* Doc read failed — fall through */ }
     }
 
-    // Fallback: doc/manifest — no Asset_IDs available yet
-    var manifest = getEpisodeManifest(episodeUid);
+    // Fallback: manifest raw arrays
     if (manifest && manifest.raw_hooks && manifest.raw_hooks.length) {
       var toEntry = function(t) { return { assetId: null, text: t }; };
       return {
@@ -3138,23 +3188,35 @@ function getEpisodeHooksAndQuotes(episodeUid) {
       };
     }
 
-    if (manifest && manifest.show_notes) {
-      try {
-        var docText = DocumentApp.openById(manifest.show_notes).getBody().getText();
-        var toEntryNull = function(l) { return { assetId: null, text: l.trim().replace(/^\d+\.\s*/, '') }; };
-
-        var hooksBlock  = extractSectionFromProse(docText, "HOOKS");
-        var fallHooks   = hooksBlock
-          ? hooksBlock.split("\n").map(toEntryNull).filter(function(e) { return e.text.length > 0; })
-          : [];
-
-        var quotesBlock = extractSectionFromProse(docText, "QUOTES");
-        var fallQuotes  = quotesBlock
-          ? quotesBlock.split("\n").map(toEntryNull).filter(function(e) { return e.text.length > 0; })
-          : [];
-
-        return { hooks: fallHooks, quotes: fallQuotes, imagePrompts: manifest.image_prompts || [] };
-      } catch (docErr) { /* Doc read failed */ }
+    // Fallback: Asset_Library rows (episodes with no doc)
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+    if (alSheet) {
+      var alData  = alSheet.getDataRange().getValues();
+      var hooks   = [];
+      var quotes  = [];
+      for (var i = 1; i < alData.length; i++) {
+        var row = alData[i];
+        if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var normType = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g,'');
+        if (normType !== 'quotegraphic') continue;
+        var text    = String(row[ASSET_LIBRARY_COLS.Quote_Text   - 1] || '').trim();
+        var name    = String(row[ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
+        var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1]);
+        if (!text) continue;
+        var captionHost = String(row[ASSET_LIBRARY_COLS.Caption_Host - 1] || '').trim();
+        var entry = { assetId: assetId, text: text, captionHost: captionHost || null };
+        if (name.toLowerCase().indexOf('hook') === 0) {
+          hooks.push(entry);
+        } else {
+          quotes.push(entry);
+        }
+      }
+      if (hooks.length || quotes.length) {
+        return { hooks: hooks, quotes: quotes, imagePrompts: (manifest && manifest.image_prompts) || [] };
+      }
     }
 
     return { hooks: [], quotes: [], imagePrompts: [] };
@@ -4292,11 +4354,13 @@ function spawnReelEditTask(episodeUid, assetId, type, revisionNotes) {
     var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
     var sheet   = ss.getSheetByName(alName);
     var displayName = assetId;
+    var driveFileId = '';
     if (sheet) {
       var data = sheet.getDataRange().getValues();
       for (var i = 1; i < data.length; i++) {
         if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
         displayName = String(data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || assetId);
+        driveFileId = String(data[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
         break;
       }
     }
@@ -4315,7 +4379,8 @@ function spawnReelEditTask(episodeUid, assetId, type, revisionNotes) {
       workflowStep:     'Revise_Reels',
       executiveSummary: 'JT requested a reel edit. Asset_ID: ' + assetId,
       revisionNotes:    revisionNotes || '',
-      assetId:          assetId
+      assetId:          assetId,
+      payloadLink:      driveFileId ? 'https://drive.google.com/file/d/' + driveFileId + '/view' : ''
     });
 
     return { ok: true };
@@ -4444,6 +4509,52 @@ function closeReelRevision(episodeUid, assetId, newDriveFileId) {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Called when Audra taps Complete on a Revise_Reels card task.
+ * Scans the episode's Reels/ folder for any file that is NOT the original reel
+ * (identified by Drive_File_ID in Asset_Library). Expects exactly one new file.
+ * Delegates swap + task completion to closeReelRevision().
+ */
+function completeReelRevision(episodeUid, assetId) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { ok: false, error: "Staging folder not found." };
+
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var reelsFolderIt = stagingFolder.getFoldersByName("Reels");
+    if (!reelsFolderIt.hasNext()) return { ok: false, error: "Reels/ folder not found." };
+    var reelsFolder = reelsFolderIt.next();
+
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return { ok: false, error: "Asset_Library not found." };
+
+    var alData    = alSheet.getDataRange().getValues();
+    var oldFileId = "";
+    for (var i = 1; i < alData.length; i++) {
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+      oldFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || "");
+      break;
+    }
+
+    var allFiles = reelsFolder.getFiles();
+    var newFiles = [];
+    while (allFiles.hasNext()) {
+      var f = allFiles.next();
+      if (f.getId() !== oldFileId) newFiles.push(f);
+    }
+
+    if (newFiles.length === 0) return { ok: false, error: "No revised reel found in Reels/ root. Upload the v2 file there first." };
+    if (newFiles.length > 1)   return { ok: false, error: "Multiple new reels found in Reels/ root. Leave only the v2 reel." };
+
+    return closeReelRevision(episodeUid, assetId, newFiles[0].getId());
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 }
 

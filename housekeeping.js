@@ -9,9 +9,10 @@
 //   parsePipelineBlock() — reads the NotebookLM pipeline block from the raw
 //     transcript file and writes raw_hooks, raw_quotes, and image_prompts
 //     to the episode manifest.
-//
-// FUTURE:
-//   Mending Fairy (AI-assisted repair tasks) will live here. Do not scaffold.
+//   repairStagingSubfolders() — ensures the full Staging subfolder tree exists
+//     for an episode. Idempotent; skips folders that already exist.
+//   archiveLiveEpisodes() — sweeps Episodes for Status="live" where
+//     Release_Date + 5 days ≤ today, calls runFilingFairy() for each.
 //
 // CALLED BY:
 //   fairy_circle.gs: triggerNightlyHousekeeping() → runHousekeeping()
@@ -213,6 +214,66 @@ function parsePipelineBlock(epUid) {
 
 
 // =============================================================================
+// STAGING FOLDER REPAIR
+// =============================================================================
+
+/**
+ * Ensures the full Staging subfolder tree exists for an episode.
+ * Creates only what is missing — existing folders are untouched.
+ * Safe to run nightly; no-ops when the tree is already complete.
+ *
+ * Expected tree inside Staging:
+ *   Episode/
+ *   Images/  →  Approved/, Save/, Delete/
+ *   Reels/   →  Approved/, Save/, Delete/
+ *   Thumbnails/
+ *
+ * @param {string} epUid - Episode_UID to repair (e.g. "EP-260315-1430")
+ */
+function repairStagingSubfolders(epUid) {
+  const agentName = "Housekeeping";
+
+  if (!epUid) return;
+
+  const stagingId = getStagingFolderIdByUid(epUid);
+  if (!stagingId) {
+    logToAuditTrail(agentName, "error", epUid, "",
+      "[WARNING] repairStagingSubfolders: no staging folder found. Skipping.", "WARNING");
+    return;
+  }
+
+  try {
+    const staging = DriveApp.getFolderById(stagingId);
+
+    function ensure(parent, name) {
+      const it = parent.getFoldersByName(name);
+      if (it.hasNext()) return it.next();
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        `[INFO] repairStagingSubfolders: created missing subfolder "${name}".`, "INFO");
+      return parent.createFolder(name);
+    }
+
+    ensure(staging, "Episode");
+    ensure(staging, "Thumbnails");
+
+    const images = ensure(staging, "Images");
+    ensure(images, "Approved");
+    ensure(images, "Save");
+    ensure(images, "Delete");
+
+    const reels = ensure(staging, "Reels");
+    ensure(reels, "Approved");
+    ensure(reels, "Save");
+    ensure(reels, "Delete");
+
+  } catch (e) {
+    logToAuditTrail(agentName, "error", epUid, "",
+      `[ERROR] repairStagingSubfolders failed: ${e.message}`, "ERROR");
+  }
+}
+
+
+// =============================================================================
 // SECTION PARSERS (private — used only by parsePipelineBlock)
 // =============================================================================
 
@@ -287,6 +348,84 @@ function parseImagePromptsSection(sectionText) {
 
 
 // =============================================================================
+// EPISODE ARCHIVAL
+// =============================================================================
+
+/**
+ * Sweeps Episodes tab for all rows where Status = "live" and
+ * Release_Date + 5 days ≤ today, then calls runFilingFairy() for each.
+ *
+ * Tuesday release + 5 days = Sunday archive. Idempotent — episodes already
+ * patched to "complete" by runFilingFairy are not matched by the status filter.
+ */
+function archiveLiveEpisodes() {
+  const agentName = "Housekeeping";
+
+  logToAuditTrail(agentName, "state_change", "", "",
+    "[INFO] archiveLiveEpisodes: sweep starting.", "INFO");
+
+  try {
+    const ss    = SpreadsheetApp.openById(getMasterSheetId());
+    const sheet = ss.getSheetByName("Episodes");
+    if (!sheet) {
+      logToAuditTrail(agentName, "error", "", "",
+        "[ERROR] archiveLiveEpisodes: Episodes tab not found.", "ERROR");
+      return;
+    }
+
+    const data           = sheet.getDataRange().getValues();
+    const headers        = data[0];
+    const uidCol         = headers.indexOf("Episode_UID");
+    const statusCol      = headers.indexOf("Status");
+    const releaseDateCol = headers.indexOf("Release_Date");
+
+    if (uidCol === -1 || statusCol === -1 || releaseDateCol === -1) {
+      logToAuditTrail(agentName, "error", "", "",
+        "[ERROR] archiveLiveEpisodes: required column missing (Episode_UID, Status, or Release_Date).", "ERROR");
+      return;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let archived = 0;
+    let skipped  = 0;
+
+    for (let i = 1; i < data.length; i++) {
+      const epUid  = data[i][uidCol];
+      const status = String(data[i][statusCol]);
+
+      if (!epUid || status !== "live") { skipped++; continue; }
+
+      const releaseDate = new Date(data[i][releaseDateCol]);
+      if (isNaN(releaseDate.getTime())) { skipped++; continue; }
+
+      releaseDate.setHours(0, 0, 0, 0);
+      const archiveAfter = new Date(releaseDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+
+      if (archiveAfter > today) { skipped++; continue; }
+
+      try {
+        runFilingFairy(epUid);
+        archived++;
+      } catch (e) {
+        logToAuditTrail(agentName, "error", epUid, "",
+          `[ERROR] archiveLiveEpisodes: runFilingFairy threw for ${epUid}: ${e.message}`, "ERROR");
+        skipped++;
+      }
+    }
+
+    logToAuditTrail(agentName, "state_change", "", "",
+      `[INFO] archiveLiveEpisodes: sweep complete. Archived: ${archived}. Skipped: ${skipped}.`, "INFO");
+
+  } catch (e) {
+    logToAuditTrail(agentName, "error", "", "",
+      `[ERROR] archiveLiveEpisodes threw a fatal error: ${e.message}`, "ERROR");
+  }
+}
+
+
+// =============================================================================
 // NIGHTLY RUNNER
 // =============================================================================
 
@@ -329,14 +468,15 @@ function runHousekeeping() {
       const epUid  = data[i][uidCol];
       const status = String(data[i][statusCol]);
 
-      if (!epUid)                                                              continue;
-      if (status !== "in_production" && status !== "ready_to_release") { skipped++; continue; }
+      if (!epUid)                                                                                          continue;
+      if (status !== "in_production" && status !== "ready_to_release" && status !== "live") { skipped++; continue; }
 
       try {
         parsePipelineBlock(epUid);
+        repairStagingSubfolders(epUid);
         processed++;
       } catch (e) {
-        logToAuditTrail(agentName, "error", epUid, "", `[ERROR] parsePipelineBlock threw for ${epUid}: ${e.message}`, "ERROR");
+        logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Housekeeping threw for ${epUid}: ${e.message}`, "ERROR");
         skipped++;
       }
     }
@@ -349,6 +489,8 @@ function runHousekeeping() {
       `[INFO] Housekeeping run complete. Active episodes processed: ${processed}. Skipped (non-active or error): ${skipped}.`,
       "INFO"
     );
+
+    archiveLiveEpisodes();
 
   } catch (e) {
     logToAuditTrail(agentName, "error", "", "", `[ERROR] Housekeeping run threw a fatal error: ${e.message}`, "ERROR");

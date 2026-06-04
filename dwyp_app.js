@@ -133,7 +133,7 @@ var ASSET_LIBRARY_COLS = {
   Slide_Index:   6,
   Quote_Text:    7,
   Reel_Summary:  8,
-  Image_Prompt:  9,
+  Reel_Summary_Clean: 9,  // Claude editorial pass output; Gemini raw lives in Reel_Summary (col 8)
   Caption_Host:  10,  // working caption — sole source of truth for card render, schedule, Make pull
   Caption_Guest: 11,  // omni-voice caption for guest package (Guest Package builder populates; empty until then)
   Notes:         12,
@@ -1402,7 +1402,7 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
 
 /**
  * Returns the display-layer state for a single asset: display_text, caption_host,
- * caption_guest, canvas_state, and quote_text_fallback.
+ * caption_guest, canvas_state, quote_text_fallback, and background_id.
  * Used by the frontend to do a targeted refresh without re-fetching the full candidate list.
  */
 function getAssetDisplayState(assetId) {
@@ -1420,10 +1420,126 @@ function getAssetDisplayState(assetId) {
         caption_guest:       String(data[i][ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         caption_host:        String(data[i][ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
         canvas_state:        String(data[i][ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
-        quote_text_fallback: String(data[i][ASSET_LIBRARY_COLS.Quote_Text    - 1] || '')
+        quote_text_fallback: String(data[i][ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
+        background_id:       String(data[i][ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null
       };
     }
     return { ok: false, error: 'Asset not found: ' + assetId };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Promotes a reel to the Schedule candidate pool.
+ * Flips the reel's existing Asset_Library row to Status: schedule.
+ * No render or write beyond the status field — the reel is already a native Library row.
+ * @param {string} reelAssetId
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function sendReelToSchedule(reelAssetId) {
+  try {
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var sheet  = ss.getSheetByName(alName);
+    if (!sheet) return { ok: false, error: 'Asset_Library tab not found' };
+    var data = sheet.getDataRange().getValues();
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(reelAssetId)) continue;
+      sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status).setValue('schedule');
+      bumpVersion('asset_library', 'sendReelToSchedule');
+      return { ok: true };
+    }
+    return { ok: false, error: 'Reel not found: ' + reelAssetId };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Upserts an image asset into the Schedule candidate pool.
+ * - If assetId matches an existing row: updates Status, Canvas_State, Drive_File_ID, Caption_Host, Background_ID.
+ * - If assetId is null or not found: creates a new row at Status: schedule.
+ * Saves the PNG thumbnail to Staging/Schedule_Renders/ and stores the Drive file ID.
+ * @param {string} episodeUid
+ * @param {string|null} assetId  — null on first send; existing Asset_ID on re-send
+ * @param {string} canvasJson    — Fabric JSON with background objects stripped (no base64 srcs)
+ * @param {string} b64           — base64 PNG, no data: prefix
+ * @param {string} captionHost
+ * @param {string|null} backgroundId — Drive file ID of the background image, for round-trip restore
+ * @returns {{ ok: boolean, assetId?: string, error?: string }}
+ */
+function sendImageToSchedule(episodeUid, assetId, canvasJson, b64, captionHost, backgroundId) {
+  try {
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return { ok: false, error: 'Asset_Library tab not found' };
+
+    // Write thumbnail PNG to Staging/Schedule_Renders/
+    var driveFileId = '';
+    if (b64) {
+      try {
+        var stagingId = getStagingFolderIdByUid(episodeUid);
+        if (stagingId) {
+          var stagingFolder  = DriveApp.getFolderById(stagingId);
+          var renderFolderIt = stagingFolder.getFoldersByName('Schedule_Renders');
+          var renderFolder   = renderFolderIt.hasNext()
+            ? renderFolderIt.next()
+            : stagingFolder.createFolder('Schedule_Renders');
+          var cleanB64 = b64.replace(/^data:image\/[^;]+;base64,/, '');
+          var bytes    = Utilities.base64Decode(cleanB64);
+          var blob     = Utilities.newBlob(bytes, 'image/png', Utilities.getUuid() + '.png');
+          driveFileId  = renderFolder.createFile(blob).getId();
+        }
+      } catch (driveErr) {
+        // Non-fatal: card thumbnail will be blank until next send
+      }
+    }
+
+    // Find existing row if assetId provided
+    var data = alSheet.getDataRange().getValues();
+    var foundRow = -1;
+    if (assetId) {
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(assetId)) {
+          foundRow = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (foundRow !== -1) {
+      // Update existing row
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Status).setValue('schedule');
+      alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson || '');
+      if (driveFileId) alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(driveFileId);
+      if (captionHost !== undefined && captionHost !== null) {
+        alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Caption_Host).setValue(captionHost);
+      }
+      if (backgroundId) alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Background_ID).setValue(backgroundId);
+      bumpVersion('asset_library', 'sendImageToSchedule');
+      return { ok: true, assetId: assetId };
+    } else {
+      // Create new row
+      var newId   = Utilities.getUuid();
+      var numCols = alSheet.getLastColumn();
+      var row     = new Array(numCols).fill('');
+      row[ASSET_LIBRARY_COLS.Asset_ID      - 1] = newId;
+      row[ASSET_LIBRARY_COLS.Episode_UID   - 1] = episodeUid;
+      row[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
+      row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = driveFileId;
+      row[ASSET_LIBRARY_COLS.Canvas_State  - 1] = canvasJson || '';
+      row[ASSET_LIBRARY_COLS.Caption_Host  - 1] = captionHost || '';
+      row[ASSET_LIBRARY_COLS.Background_ID - 1] = backgroundId || '';
+      row[ASSET_LIBRARY_COLS.Status        - 1] = 'schedule';
+      row[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
+      row[ASSET_LIBRARY_COLS.Created_At    - 1] = new Date();
+      row[ASSET_LIBRARY_COLS.Created_By    - 1] = 'jt';
+      alSheet.appendRow(row);
+      bumpVersion('asset_library', 'sendImageToSchedule');
+      return { ok: true, assetId: newId };
+    }
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -2312,6 +2428,7 @@ function completeUploadEpisode(rowIndex, episodeUid) {
       epSheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue('review');
       break;
     }
+    patchEpisodes(episodeUid, { Status: 'review' });
 
     bumpVersion('episodes', 'completeUploadEpisode');
     bumpVersion('tasks',    'completeUploadEpisode');
@@ -2335,10 +2452,14 @@ function completeUploadEpisode(rowIndex, episodeUid) {
 }
 
 /**
- * Called when Audra has placed the final episode file in the staging Episode/ folder
- * and taps Complete on the Upload_Final_Episode card task.
+ * Called when Audra completes the Upload_Final_Episode task (UI path) or when the
+ * Daily Pulse detects the final video in the episode Drive folder (backup path).
  * Reads the single file in Episode/, writes its Drive ID to Final_Episode_ID,
  * flips Episode Status → ready_to_release, spawns Filing + Release tasks.
+ *
+ * @param {string} episodeUid
+ * @param {number} [rowIndex]  1-based Tasks sheet row. If omitted (pulse backup path),
+ *                              the function scans Tasks for the open Upload_Final_Episode task.
  */
 function completeFinalEpisodeUpload(episodeUid, rowIndex) {
   try {
@@ -2389,8 +2510,22 @@ function completeFinalEpisodeUpload(episodeUid, rowIndex) {
     var now = new Date();
     patchEpisodes(episodeUid, { Status: "ready_to_release", Final_Episode_ID: finalFileId });
 
-    taskSheet.getRange(rowIndex, TASKS_COLS.Status).setValue("complete");
-    taskSheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(now);
+    if (rowIndex) {
+      // UI path — complete the task at the known row
+      taskSheet.getRange(rowIndex, TASKS_COLS.Status).setValue("complete");
+      taskSheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(now);
+    } else {
+      // Pulse backup path — find and complete the open Upload_Final_Episode task
+      for (var u = 1; u < tData.length; u++) {
+        if (String(tData[u][tEpCol]) !== String(episodeUid))    continue;
+        if (String(tData[u][tWfCol]) !== "Upload_Final_Episode") continue;
+        var us = String(tData[u][tStCol]);
+        if (us !== "open" && us !== "in_progress")              continue;
+        taskSheet.getRange(u + 1, tStCol + 1).setValue("complete");
+        taskSheet.getRange(u + 1, tCaCol + 1).setValue(now);
+        break;
+      }
+    }
 
     var REVIEW_STEPS = ["Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics", "Review_Reels"];
     for (var r = 1; r < tData.length; r++) {
@@ -2734,104 +2869,6 @@ function getStudioDriveLink(episodeUid) {
 }
 
 /**
- * Lightweight keyword heuristic for image generation intent.
- * Intentionally broad — false positives are acceptable; the image path handles them gracefully.
- */
-function isImageRequest(userMessage) {
-  var msg = (userMessage || '').toLowerCase();
-  return ['background', 'image', 'generate', 'create', 'visualize', 'picture',
-          'photo', 'make me', 'show me', 'try something', 'different one',
-          'change it', 'new version', 'darker', 'lighter', 'more', 'less',
-          'option', 'instead'
-  ].some(function(term) { return msg.indexOf(term) !== -1; });
-}
-
-/**
- * Explicit text-writing intent — takes priority over isImageRequest.
- * Catches requests like "write a caption", "draft a hook", etc., where image keywords
- * in pasted context (reel summaries, episode descriptions) would otherwise misfire.
- */
-function isExplicitTextRequest(userMessage) {
-  var msg = (userMessage || '').toLowerCase().slice(0, 200);
-  return ['caption', 'write a', 'write me', 'draft a', 'draft me',
-          'give me a', 'give me text', 'describe', 'hook for', 'script for',
-          'copy for', 'headline', 'tagline', 'bio', 'post copy', 'caption for',
-          'write copy', 'summarize', 'rewrite'
-  ].some(function(term) { return msg.indexOf(term) !== -1; });
-}
-
-/**
- * Studio routing function. Detects image vs text intent and routes accordingly.
- * Image path: callGeminiImageConversational() — imageHistory only, never touches conversationHistory.
- * Text path:  callClaudeAPI() with ragContext injected into system prompt.
- * Two separate history arrays — image iterations never pollute the main text thread.
- *
- * @param {string}   prompt
- * @param {string}   ragContext            — retrieved corpus context (may be empty string)
- * @param {object[]} conversationHistory   — [{role, parts:[{text}]}] for main text thread
- * @param {object[]} imageHistory          — [{role, parts}] raw turns for image thread
- * @param {object}   options               — { mode: string, episodeUid: string|null }
- * @returns {{ type: 'text'|'image', text?, base64?, mimeType?, updatedConversationHistory?, updatedImageHistory?, tokenCount }}
- */
-function generateWithClaude(prompt, ragContext, conversationHistory, imageHistory, options) {
-  var mode       = (options && options.mode)       || 'images';
-  var episodeUid = (options && options.episodeUid) || '';
-
-  // ── Image path ──────────────────────────────────────────────────────────────
-  // isExplicitTextRequest takes priority — pasted summaries often contain image keywords
-  // ("background", "create") that would otherwise misfire into the image path.
-  if (isImageRequest(prompt) && !isExplicitTextRequest(prompt)) {
-    try {
-      var imgResult = callGeminiImageConversational(prompt, imageHistory || []);
-      return {
-        type:                'image',
-        base64:              imgResult.base64,
-        mimeType:            imgResult.mimeType,
-        text:                imgResult.text,
-        updatedImageHistory: imgResult.updatedHistory,
-        tokenCount:          imgResult.tokenCount
-      };
-    } catch (imgErr) {
-      // Gemini returned text-only — fall through to text path below
-      Logger.log('Image path failed, routing to text: ' + imgErr.message);
-    }
-  }
-
-  // ── Text path ───────────────────────────────────────────────────────────────
-  var modeInstr  = STUDIO_MODE_INSTRUCTIONS[mode] || STUDIO_MODE_INSTRUCTIONS['brainstorm'];
-  var systemText = CLAUDE_STUDIO_SYSTEM + modeInstr;
-  if (ragContext) {
-    systemText += "\n\nCORPUS CONTEXT (retrieved):\n" + ragContext;
-  }
-
-  // Convert GAS-style history [{role, parts:[{text}]}] to Claude messages [{role, content}]
-  var history  = Array.isArray(conversationHistory) ? conversationHistory : [];
-  var messages = [];
-  for (var i = 0; i < history.length; i++) {
-    var turn    = history[i];
-    var role    = (turn.role === 'model' || turn.role === 'assistant') ? 'assistant' : 'user';
-    var content = turn.parts ? turn.parts.map(function(p) { return p.text || ''; }).join('') : (turn.content || '');
-    messages.push({ role: role, content: content });
-  }
-
-  var responseText = callClaudeAPI(prompt, systemText, 'Studio', messages, { maxTokens: 8192 });
-
-  var updatedHistory = history.concat([
-    { role: 'user',  parts: [{ text: prompt }] },
-    { role: 'model', parts: [{ text: responseText }] }
-  ]);
-
-  var tokenCount = Math.round((systemText.length + prompt.length + responseText.length) / 4);
-
-  return {
-    type:                       'text',
-    text:                       responseText,
-    updatedConversationHistory: updatedHistory,
-    tokenCount:                 tokenCount
-  };
-}
-
-/**
  * Saves a generated Studio background image to the background library folder.
  * Called by the UI when JT explicitly saves an image from the Studio canvas.
  * @param {string} base64Data
@@ -2889,6 +2926,90 @@ function stLoadEpisodeIndex(episodeUid) {
   return '';
 }
 
+
+// ── COMPANION ─────────────────────────────────────────────────────────────────
+// Reusable spine shared by all four surface companions (Episode, Images, Reels, Schedule).
+// Passes 2–4 add a context-assembly case to _companionBuildSystem and
+// _companionBuildUserPrompt — the spine functions are unchanged.
+
+/**
+ * Assembles the layered companion prompt and calls Claude.
+ *
+ * surface:        'episode' | 'images' | 'reels' | 'schedule'
+ * episodeUid:     EUID for the current episode
+ * history:        Prior turns [{role:'user'|'assistant', content:string}] (in-session, client-managed)
+ * userMessage:    JT's current message (raw — no transcript preamble)
+ * workspaceState: Per-surface live state object:
+ *   Episode:  { showNotesText: string }
+ *   Images:   { activeAssetText: string }  — Pass 2 stub
+ *   Reels:    { captionText: string }       — Pass 3 stub
+ *   Schedule: { placedAssets: Array }       — Pass 4 stub
+ */
+function companionChat(surface, episodeUid, history, userMessage, workspaceState) {
+  var companionVoice = extractPrompt("# Companion Voice");
+  var showPhilosophy = extractPrompt("# Show Philosophy");
+  var pillars        = extractPrompt("# Pillars");
+
+  var system = _companionBuildSystem(surface, episodeUid, companionVoice, showPhilosophy, pillars);
+  var prompt = _companionBuildUserPrompt(surface, workspaceState, userMessage);
+
+  return callClaudeAPI(prompt, system, "companion_" + surface, history, { maxTokens: 2048 });
+}
+
+/**
+ * Builds the system instruction: voice + brand from template + episode transcript.
+ * Transcript injected into system instruction so it's always in context without
+ * cluttering message history.
+ */
+function _companionBuildSystem(surface, episodeUid, companionVoice, showPhilosophy, pillars) {
+  var system = '';
+
+  if (companionVoice)  system += companionVoice + '\n\n';
+  if (showPhilosophy)  system += '## SHOW PHILOSOPHY\n' + showPhilosophy + '\n\n';
+  if (pillars)         system += '## PILLARS\n'         + pillars        + '\n\n';
+
+  switch (surface) {
+    case 'episode':
+      var transcript = stLoadEpisodeIndex(episodeUid);
+      if (transcript) {
+        system += '## EPISODE TRANSCRIPT\n' +
+                  'This is the source of truth for all factual claims. Use it to answer questions ' +
+                  'about what was said, when, and by whom.\n\n' +
+                  transcript + '\n\n';
+      }
+      system += 'IMPORTANT: Show notes visible in the conversation are JT\'s working draft to assist ' +
+                'with — do not treat them as factual source. The transcript is the only source of truth. ' +
+                'Never ground new copy on previously-generated copy.';
+      break;
+    case 'images':   // Pass 2
+    case 'reels':    // Pass 3
+    case 'schedule': // Pass 4
+      break;
+  }
+
+  return system;
+}
+
+/**
+ * Builds the per-turn user prompt: workspace state preamble + user message.
+ * Workspace state is sent every turn so the companion always sees the live draft.
+ */
+function _companionBuildUserPrompt(surface, workspaceState, userMessage) {
+  switch (surface) {
+    case 'episode':
+      var showNotes = workspaceState && workspaceState.showNotesText
+        ? workspaceState.showNotesText.trim() : '';
+      if (showNotes) {
+        return '[SHOW NOTES — JT\'s current working draft]\n' + showNotes + '\n\n---\n\n' + userMessage;
+      }
+      return userMessage;
+    case 'images':   // Pass 2 stub
+    case 'reels':    // Pass 3 stub
+    case 'schedule': // Pass 4 stub
+    default:
+      return userMessage;
+  }
+}
 
 // ── CONTACTS ─────────────────────────────────────────────────────────────────
 
@@ -3227,60 +3348,6 @@ function getEpisodeHooksAndQuotes(episodeUid) {
 
 
 /**
- * Returns the stored summary for a reel, or generates + stores one if missing.
- * Called on-demand when a reel is selected and has no summary.
- * @param {string} postId
- * @param {string} episodeUid
- * @returns {{ success: boolean, summary: string }}
- */
-/**
- * Generates a 5–8 word title card hook for a reel clip.
- * Uses the AL Reel_Summary as context. Audra uses this text in DaVinci as an overlay.
- * @param {string} assetId
- * @param {string} episodeUid
- * @returns {{ titleCard: string, error?: string }}
- */
-function generateReelTitleCard(assetId, episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet   = ss.getSheetByName(alName);
-    if (!sheet) return { titleCard: '', error: "Asset_Library tab not found" };
-    var data = sheet.getDataRange().getValues();
-
-    var summary = '';
-    var displayName = '';
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      summary     = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
-      break;
-    }
-
-    var manifest  = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name) ? manifest.guest_name : '';
-
-    var prompt =
-      "Write a single title card for a social media reel — 5 to 8 words maximum.\n\n" +
-      "The title card is a short text hook that appears overlaid on the first seconds of the reel. " +
-      "It must stop the scroll. No punctuation at the end unless it's a question mark. No quotation marks.\n\n" +
-      (displayName ? "Clip name: " + displayName + "\n" : "") +
-      (guestName   ? "Guest: " + guestName + "\n" : "") +
-      (summary     ? "What the clip is about: " + summary + "\n" : "") +
-      "\nRules: Draw from the content above — name the specific thing (a decision, a revelation, a moment, a person). " +
-      "Never describe what someone 'talks about' or use phrases like 'the truth about' or 'what happens when.' " +
-      "State the thing itself. DWYP voice — honest, not hype. No 'This will change your life' energy.\n\n" +
-      "Return ONLY the title card text — nothing else.";
-
-    var result = callClaudeAPI(prompt, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 64 });
-    return { titleCard: result ? result.trim().replace(/^["']|["']$/g, '') : '' };
-  } catch (err) {
-    return { titleCard: '', error: err.message };
-  }
-}
-
-/**
  * Sets a Drive reel file to "anyone with link can view" and returns its
  * direct streaming URL for use in a <video> element.
  */
@@ -3294,99 +3361,6 @@ function getReelStreamUrl(fileId) {
   }
 }
 
-
-function getOrGenerateReelSummary(assetId, episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet   = ss.getSheetByName(alName);
-    if (!sheet) return { success: false, summary: '', error: "Asset_Library tab not found" };
-    var data    = sheet.getDataRange().getValues();
-
-    var rowIndex    = -1;
-    var existing    = '';
-    var displayName = '';
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      rowIndex    = i + 1;
-      existing    = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary  - 1] || '').trim();
-      displayName = String(data[i][ASSET_LIBRARY_COLS.Quote_Text - 1] || data[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '').trim();
-      break;
-    }
-    if (existing) return { success: true, summary: existing };
-
-    var manifest  = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-
-    var promptText =
-      "In 1-2 sentences, describe what this social media video clip is likely about.\n\n" +
-      "Clip name: " + (displayName || 'Reel clip') + "\n" +
-      (epTitle   ? "Episode: " + epTitle + "\n"   : "") +
-      (guestName ? "Guest: "   + guestName + "\n" : "") +
-      "\nWrite as a factual note for internal use — no filler, no hype. " +
-      "This will be used as context when generating captions.";
-
-    var summaryText = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 256 });
-    if (summaryText) {
-      var summary = summaryText.trim();
-      if (rowIndex > 0) {
-        sheet.getRange(rowIndex, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
-        bumpVersion("asset_library", "getOrGenerateReelSummary");
-      }
-      return { success: true, summary: summary };
-    }
-    return { success: false, summary: '' };
-  } catch (e) {
-    return { success: false, summary: '', error: e.message };
-  }
-}
-
-/**
- * Background: pre-generates summaries for all reels in this episode that lack one.
- * Client fires this fire-and-forget after setting the episode.
- * @param {string} episodeUid
- */
-function ensureReelSummaries(episodeUid) {
-  try {
-    var sheetId  = getMasterSheetId();
-    var ss       = SpreadsheetApp.openById(sheetId);
-    var alName   = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet    = ss.getSheetByName(alName);
-    if (!sheet) return { done: false, error: "Asset_Library tab not found" };
-    var data     = sheet.getDataRange().getValues();
-    var manifest = getEpisodeManifest(episodeUid);
-    var guestName = (manifest && manifest.guest_name)    ? manifest.guest_name    : '';
-    var epTitle   = (manifest && manifest.episode_title) ? manifest.episode_title : '';
-
-    for (var i = 1; i < data.length; i++) {
-      var row    = data[i];
-      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      var normAt = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g,'');
-      if (normAt !== 'reel' && normAt !== 'bankclip') continue;
-      var existing = String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
-      if (existing) continue;
-
-      var displayName = String(row[ASSET_LIBRARY_COLS.Quote_Text - 1] || row[ASSET_LIBRARY_COLS.Display_Name - 1] || 'Reel clip').trim();
-      var promptText =
-        "In 1-2 sentences, describe what this social media video clip is likely about.\n\n" +
-        "Clip name: " + displayName + "\n" +
-        (epTitle   ? "Episode: " + epTitle   + "\n" : "") +
-        (guestName ? "Guest: "   + guestName + "\n" : "") +
-        "\nFactual note for internal use — no filler. Used for caption generation context.";
-
-      try {
-        var reelSummary = callClaudeAPI(promptText, CLAUDE_STUDIO_SYSTEM + STUDIO_MODE_INSTRUCTIONS['social'], 'Studio', null, { maxTokens: 256 });
-        if (reelSummary) sheet.getRange(i + 1, ASSET_LIBRARY_COLS.Reel_Summary).setValue(reelSummary.trim());
-      } catch (genErr) { /* non-fatal — skip this reel */ }
-    }
-    bumpVersion("asset_library", "ensureReelSummaries");
-    return { done: true };
-  } catch (e) {
-    return { done: false, error: e.message };
-  }
-}
 
 /**
  * Normalizes curly quotes to ASCII in Quote_Text before any write to Asset_Library.
@@ -3981,6 +3955,7 @@ function syncReelAssets(epUid, opts) {
       continue;
     }
 
+    // raw summary — companion-only context feed; not orphan, do not clear
     alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
     summarized++;
     Utilities.sleep(2000);
@@ -4164,82 +4139,6 @@ function getRankedAssetLibraryCandidates(episodeUid, assetType) {
   }
 }
 
-/**
- * Assembles the slot foreground context for the right-rail Claude companion.
- * Called on every right-rail Claude send. Returns the active card + same-date siblings + episode.
- * Sibling cap = 4 hardcoded; OQ-D is the deferred UX question — replace literal with
- * getGovernance("PUBLISH_SIBLING_CONTEXT_CAP") when that question resolves.
- */
-function assembleSlotForegroundContext(activeAssetId, activeAssetType, episodeUid) {
-  var SIBLING_CAP = 4;
-  var result = {
-    active_card:        null,
-    same_date_siblings: [],
-    episode:            { episode_uid: episodeUid, guest_name: '', release_date: '' }
-  };
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet   = ss.getSheetByName(alName);
-    if (!sheet || !activeAssetId) return result;
-
-    var data     = sheet.getDataRange().getValues();
-    var siblings = [];
-
-    for (var i = 1; i < data.length; i++) {
-      var row       = data[i];
-      var rowEpUid  = String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]);
-      var rowId     = String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1]);
-      if (rowEpUid !== String(episodeUid)) continue;
-
-      var cardObj = {
-        asset_id:      rowId,
-        asset_type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
-        quote_text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
-        reel_summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
-        caption_host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
-        caption_guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
-        background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
-        quality_score: Number(row[ASSET_LIBRARY_COLS.Quality_Score - 1]) || 0,
-        slot_tags:     String(row[ASSET_LIBRARY_COLS.Slot_Tags     - 1] || '')
-      };
-
-      if (rowId === String(activeAssetId)) {
-        result.active_card = cardObj;
-      } else {
-        var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
-        if (avail === 'available' || avail === 'placed') {
-          siblings.push(cardObj);
-        }
-      }
-    }
-
-    siblings.sort(function(a, b) {
-      if (b.quality_score !== a.quality_score) return b.quality_score - a.quality_score;
-      return String(a.asset_id).localeCompare(String(b.asset_id));
-    });
-    result.same_date_siblings = siblings.slice(0, SIBLING_CAP);
-
-    try {
-      var epSheet = ss.getSheetByName("Episodes");
-      if (epSheet) {
-        var epData = epSheet.getDataRange().getValues();
-        for (var j = 1; j < epData.length; j++) {
-          if (String(epData[j][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
-            result.episode.guest_name   = String(epData[j][EPISODES_COLS.Guest_Name   - 1] || '');
-            result.episode.release_date = String(epData[j][EPISODES_COLS.Release_Date - 1] || '');
-            break;
-          }
-        }
-      }
-    } catch(e2) {}
-
-    return result;
-  } catch (e) {
-    return result;
-  }
-}
 
 /**
  * Writes Caption_Host to the Asset_Library row matching Asset_ID.
@@ -4559,72 +4458,6 @@ function completeReelRevision(episodeUid, assetId) {
 }
 
 /**
- * Routes a Reels Surface caption chat request to Claude or Gemini per PUBLISH_LLM_MODE.
- * Assembles system prompt + episode/reel context from sheets (never shown to JT).
- * payload: { episodeUid, assetId, platform, day, captionCurrent, conversationHistory, userMessage }
- */
-function callPublishLLM(payload) {
-  try {
-    var episodeUid     = payload.episodeUid      || '';
-    var assetId        = payload.assetId         || '';
-    var platform       = payload.platform        || '';
-    var day            = payload.day             || '';
-    var captionCurrent = payload.captionCurrent  || '';
-    var history        = payload.conversationHistory || [];
-    var userMessage    = payload.userMessage     || "Please give me 3 caption options for this reel.";
-
-    var reelSummary = '';
-    var sheetId     = getMasterSheetId();
-    var ss          = SpreadsheetApp.openById(sheetId);
-    var alName      = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet     = ss.getSheetByName(alName);
-    if (alSheet && assetId) {
-      var alData = alSheet.getDataRange().getValues();
-      for (var i = 1; i < alData.length; i++) {
-        if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-        reelSummary = String(alData[i][ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
-        break;
-      }
-    }
-
-    var guestName = '';
-    if (episodeUid) {
-      var manifest = getEpisodeManifest(episodeUid);
-      guestName    = (manifest && manifest.guest_name) ? manifest.guest_name : '';
-    }
-
-    var systemPrompt =
-      "You are a social media caption collaborator for the Don't Waste Your Pain podcast, hosted by JT (Jennifer Trepanier). " +
-      "You write in JT's brand voice: warm, direct, faith-adjacent but not churchy, emotionally honest. " +
-      "You are a collaborator, not a caption bot. Respond conversationally. " +
-      "When generating caption options, return them as discrete options formatted with [[CAPTION:option text]] " +
-      "delimiters so the UI can render them as tappable chips.\n\n" +
-      "Context:\n" +
-      (guestName       ? "- Episode guest: "  + guestName      + "\n" : "") +
-      (episodeUid      ? "- Episode UID: "    + episodeUid     + "\n" : "") +
-      (day && platform ? "- Slot: Reel for "  + platform + " on " + day + "\n" : "") +
-      (reelSummary     ? "- Reel summary: "   + reelSummary    + "\n" : "") +
-      (captionCurrent  ? "- Current caption: "+ captionCurrent + "\n" : "");
-
-    var mode = (getGovernance("PUBLISH_LLM_MODE") || "claude").toLowerCase();
-    var responseText;
-    if (mode === "gemini") {
-      var historyText = '';
-      history.forEach(function(msg) {
-        historyText += (msg.role === 'user' ? 'User: ' : 'Assistant: ') + msg.content + '\n';
-      });
-      var fullPrompt = systemPrompt + (historyText ? '\n\n' + historyText : '') + '\nUser: ' + userMessage;
-      responseText   = callGeminiAPI(fullPrompt, null);
-    } else {
-      responseText = callClaudeAPI(userMessage, systemPrompt, 'Publish', history, { maxTokens: 512 });
-    }
-    return { success: true, text: responseText || '' };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
  * Schedules a reel into a slot (new) or reschedules it (existing SA row for same slot).
  * Reschedule path: updates SA row in place, resets old asset to candidate/available if
  * a different asset is being placed.
@@ -4804,4 +4637,364 @@ function unscheduleReel(assetId) {
   } catch (e) {
     return { success: false, error: e.message };
   }
+}
+
+// ── SCHEDULE SURFACE ─────────────────────────────────────────
+
+/**
+ * Loads all data needed to render the Schedule surface in one round-trip.
+ * Candidate pool: Asset_Library rows for this episode where Status='schedule'.
+ * Week structure: Posting_Schedule (days, slots, why sentences).
+ * Placements: Social_Assets rows for this episode (week + swipe).
+ */
+function getScheduleData(episodeUid) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // — Candidate pool (Status='schedule') —
+    var alSheet    = ss.getSheetByName("Asset_Library");
+    var candidates = [];
+    if (alSheet) {
+      var alData = alSheet.getDataRange().getValues();
+      for (var i = 1; i < alData.length; i++) {
+        var row = alData[i];
+        if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        if (String(row[ASSET_LIBRARY_COLS.Status      - 1]).toLowerCase() !== 'schedule') continue;
+        var fileId = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+        candidates.push({
+          assetId:      String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]),
+          assetType:    String(row[ASSET_LIBRARY_COLS.Asset_Type     - 1]),
+          driveFileId:  fileId,
+          displayName:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
+          quoteText:    String(row[ASSET_LIBRARY_COLS.Quote_Text     - 1] || ''),
+          reelSummary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary   - 1] || ''),
+          captionHost:  String(row[ASSET_LIBRARY_COLS.Caption_Host   - 1] || ''),
+          captionGuest: String(row[ASSET_LIBRARY_COLS.Caption_Guest  - 1] || ''),
+          canvasState:  String(row[ASSET_LIBRARY_COLS.Canvas_State   - 1] || ''),
+          availability: String(row[ASSET_LIBRARY_COLS.Availability   - 1]),
+          thumbnailUrl: fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200' : ''
+        });
+      }
+    }
+
+    // — Social_Assets placement records for this episode —
+    var saSheet    = ss.getSheetByName("Social_Assets");
+    var placements = [];
+    if (saSheet) {
+      var saData = saSheet.getDataRange().getValues();
+      for (var j = 1; j < saData.length; j++) {
+        var saRow = saData[j];
+        if (String(saRow[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var slot = String(saRow[SOCIAL_ASSETS_COLS.Slot - 1]);
+        if (!slot) continue;
+        placements.push({
+          postId:         String(saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1]),
+          assetLibraryId: String(saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]),
+          slot:           slot
+        });
+      }
+    }
+
+    // — Posting_Schedule week structure —
+    var schedSheet = ss.getSheetByName("Posting_Schedule");
+    var days       = [];
+    if (schedSheet) {
+      var schedData = schedSheet.getDataRange().getValues();
+      var DAY_ORDER = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+      var dayMap    = {};
+      DAY_ORDER.forEach(function(d) { dayMap[d] = []; });
+      for (var k = 1; k < schedData.length; k++) {
+        var s   = schedData[k];
+        var sid = String(s[POSTING_SCHEDULE_COLS.Slot_ID - 1]);
+        var day = String(s[POSTING_SCHEDULE_COLS.Day    - 1]);
+        if (!sid || !day || !dayMap[day]) continue;
+        dayMap[day].push({
+          slotId:    sid,
+          assetType: String(s[POSTING_SCHEDULE_COLS.Asset_Type - 1]),
+          platform:  String(s[POSTING_SCHEDULE_COLS.Platform   - 1]),
+          why:       String(s[POSTING_SCHEDULE_COLS.Why        - 1]),
+          sortOrder: Number(s[POSTING_SCHEDULE_COLS.Sort_Order - 1]) || 0
+        });
+      }
+      days = DAY_ORDER
+        .filter(function(d) { return dayMap[d].length > 0; })
+        .map(function(d) {
+          var slots = dayMap[d].slice().sort(function(a, b) { return a.sortOrder - b.sortOrder; });
+          var why   = slots[0] ? slots[0].why : '';
+          return { day: d, why: why, slots: slots };
+        });
+    }
+
+    return { candidates: candidates, placements: placements, days: days };
+  } catch (err) {
+    return { candidates: [], placements: [], days: [], error: err.message };
+  }
+}
+
+/**
+ * Places an asset into a Schedule slot (week or swipe).
+ * Week slot: creates SA row + sets AL.Availability='placed'.
+ * Swipe slot ('SWIPE'): creates SA row only (Availability is week-only; unchanged).
+ */
+function placeAssetSchedule(episodeUid, assetId, slotId, caption) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    var saSheet = ss.getSheetByName("Social_Assets");
+    if (!saSheet) return { success: false, error: "Social_Assets tab not found" };
+
+    var postId = "SA-" + assetId + "-" + slotId + "-" + Date.now();
+    var saRow  = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
+    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
+    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = assetId;
+    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
+    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
+    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
+    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
+    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
+    saSheet.appendRow(saRow);
+
+    if (slotId !== 'SWIPE') {
+      var alSheet = ss.getSheetByName("Asset_Library");
+      if (alSheet) {
+        var alData = alSheet.getDataRange().getValues();
+        for (var i = 1; i < alData.length; i++) {
+          if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
+          break;
+        }
+      }
+    }
+
+    bumpVersion("social_assets", "placeAssetSchedule");
+    return { success: true, postId: postId };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Removes an asset from a Schedule slot.
+ * Deletes the SA row matching assetId + slotId + episodeUid.
+ * Week slot: flips AL.Availability back to 'available'.
+ * Swipe slot: no Availability change.
+ *
+ * PROPOSED RULE (Audra confirm): on week-slot removal, always flip to 'available'.
+ * Rationale: Availability is week-only; one asset should not normally occupy two
+ * week-slots (sink+badge discourages it); binary flag reads as "currently in the week."
+ */
+function removeAssetFromSchedule(episodeUid, assetId, slotId) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    var saSheet = ss.getSheetByName("Social_Assets");
+    if (saSheet) {
+      var saData = saSheet.getDataRange().getValues();
+      for (var i = saData.length - 1; i >= 1; i--) {
+        if (String(saData[i][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]) !== String(assetId))   continue;
+        if (String(saData[i][SOCIAL_ASSETS_COLS.Slot             - 1]) !== String(slotId))    continue;
+        if (String(saData[i][SOCIAL_ASSETS_COLS.Episode_UID      - 1]) !== String(episodeUid)) continue;
+        saSheet.deleteRow(i + 1);
+        break;
+      }
+    }
+
+    if (slotId !== 'SWIPE') {
+      var alSheet = ss.getSheetByName("Asset_Library");
+      if (alSheet) {
+        var alData = alSheet.getDataRange().getValues();
+        for (var j = 1; j < alData.length; j++) {
+          if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
+          alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+          break;
+        }
+      }
+    }
+
+    bumpVersion("social_assets", "removeAssetFromSchedule");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Assembles a hand-off package in Staging/[GuestName]/ for the episode's scheduled assets.
+ * Re-run strategy: clear-and-rebuild (guest folder is trashed and recreated each run).
+ * Day folders created only for days that have placements; SWIPE folder only if swipe placements exist.
+ * Images: existing PNG copied from Schedule_Renders/ + matching-filename .txt (Caption_Host).
+ * Reels: .txt containing title + caption (Caption_Host for week, Caption_Guest for SWIPE) + Drive link.
+ * Reel reference form: Drive URL written into the .txt (link-in-text, not a Drive shortcut).
+ * @param {string} episodeUid
+ * @returns {{ success: boolean, folderUrl?: string, summary?: object, error?: string }}
+ */
+function exportAllSchedule(episodeUid) {
+  try {
+    var ss = SpreadsheetApp.openById(getMasterSheetId());
+
+    // Resolve guest name from Episodes
+    var guestName = episodeUid;
+    var epSheet   = ss.getSheetByName("Episodes");
+    if (epSheet) {
+      var epData = epSheet.getDataRange().getValues();
+      for (var i = 1; i < epData.length; i++) {
+        if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
+          guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+          break;
+        }
+      }
+    }
+
+    // Staging folder
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
+    var stagingFolder   = DriveApp.getFolderById(stagingId);
+
+    // Clear-and-rebuild: trash any existing guest folder by this name
+    var folderSlug = _safeFilename(guestName) || episodeUid;
+    var existingIt = stagingFolder.getFoldersByName(folderSlug);
+    if (existingIt.hasNext()) existingIt.next().setTrashed(true);
+    var guestFolder = stagingFolder.createFolder(folderSlug);
+
+    // Build AL map for this episode: assetId → asset record
+    var alSheet = ss.getSheetByName("Asset_Library");
+    var alMap   = {};
+    if (alSheet) {
+      var alRows = alSheet.getDataRange().getValues();
+      for (var a = 1; a < alRows.length; a++) {
+        var alRow = alRows[a];
+        if (String(alRow[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var aid = String(alRow[ASSET_LIBRARY_COLS.Asset_ID - 1]);
+        alMap[aid] = {
+          assetType:    String(alRow[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
+          driveFileId:  String(alRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || ''),
+          displayName:  String(alRow[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
+          captionHost:  String(alRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
+          captionGuest: String(alRow[ASSET_LIBRARY_COLS.Caption_Guest - 1] || '')
+        };
+      }
+    }
+
+    // Partition Social_Assets placements: day-slots vs. SWIPE
+    var saSheet = ss.getSheetByName("Social_Assets");
+    if (!saSheet) return { success: false, error: 'Social_Assets tab not found' };
+    var saRows        = saSheet.getDataRange().getValues();
+    var dayPlacements = {}; // "MON" → [alId, ...]
+    var swipePlacements = [];
+
+    for (var s = 1; s < saRows.length; s++) {
+      var sr    = saRows[s];
+      if (String(sr[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      var slot  = String(sr[SOCIAL_ASSETS_COLS.Slot             - 1] || '');
+      var alId  = String(sr[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] || '');
+      if (!slot || !alId) continue;
+
+      if (slot === 'SWIPE') {
+        swipePlacements.push(alId);
+      } else {
+        var day = slot.split('-')[0].toUpperCase();
+        if (!dayPlacements[day]) dayPlacements[day] = [];
+        dayPlacements[day].push(alId);
+      }
+    }
+
+    // Populate day folders (only days with placements, in schedule order)
+    var DAY_ORDER    = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    var imageCount   = 0;
+    var reelCount    = 0;
+    var missingCount = 0;
+
+    DAY_ORDER.forEach(function(day) {
+      var ids = dayPlacements[day];
+      if (!ids || ids.length === 0) return;
+      var dayFolder = guestFolder.createFolder(day);
+      ids.forEach(function(alId) {
+        var al = alMap[alId];
+        if (!al) { missingCount++; return; }
+        var isReel = al.assetType.toLowerCase() === 'reel';
+        _writeAssetToExportFolder(al, dayFolder, false);
+        if (isReel) reelCount++; else imageCount++;
+      });
+    });
+
+    // Populate SWIPE folder (only if swipe placements exist)
+    if (swipePlacements.length > 0) {
+      var swipeFolder = guestFolder.createFolder('SWIPE');
+      swipePlacements.forEach(function(alId) {
+        var al = alMap[alId];
+        if (!al) { missingCount++; return; }
+        var isReel = al.assetType.toLowerCase() === 'reel';
+        _writeAssetToExportFolder(al, swipeFolder, true);
+        if (isReel) reelCount++; else imageCount++;
+      });
+    }
+
+    return {
+      success:   true,
+      folderUrl: 'https://drive.google.com/drive/folders/' + guestFolder.getId(),
+      summary:   {
+        days:    Object.keys(dayPlacements).filter(function(d) { return dayPlacements[d].length > 0; }).length,
+        swipe:   swipePlacements.length,
+        images:  imageCount,
+        reels:   reelCount,
+        missing: missingCount
+      }
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Writes one asset into an export folder.
+ * Image: copies the existing PNG from Schedule_Renders + writes a matching-filename .txt (Caption_Host).
+ * Reel: writes a .txt with title + caption (host in week, guest in SWIPE) + Drive link.
+ * @param {object} al       — AL record { assetType, driveFileId, displayName, captionHost, captionGuest }
+ * @param {Folder} folder   — target Drive folder
+ * @param {boolean} isSwipe — true when writing into the SWIPE folder (affects reel caption variant)
+ */
+function _writeAssetToExportFolder(al, folder, isSwipe) {
+  var baseName = _safeFilename(al.displayName) || al.driveFileId || 'asset';
+  var isReel   = al.assetType.toLowerCase() === 'reel';
+
+  if (isReel) {
+    var caption = isSwipe
+      ? (al.captionGuest || al.captionHost || '')
+      : (al.captionHost || '');
+    var parts = [];
+    if (al.displayName) parts.push(al.displayName.trim());
+    if (caption)        parts.push(caption.trim());
+    if (al.driveFileId) parts.push('Drive: https://drive.google.com/file/d/' + al.driveFileId + '/view');
+    var body    = parts.join('\n\n');
+    var txtBlob = Utilities.newBlob(body, 'text/plain', baseName + '.txt');
+    folder.createFile(txtBlob);
+  } else {
+    // Image: copy existing PNG, write caption .txt
+    if (al.driveFileId) {
+      try {
+        var srcFile = DriveApp.getFileById(al.driveFileId);
+        srcFile.makeCopy(baseName + '.png', folder);
+      } catch (copyErr) {
+        // Non-fatal: write error note into a .txt so the slot is visible
+        var errBlob = Utilities.newBlob('[Image render not found: ' + al.driveFileId + ']', 'text/plain', baseName + '.png.missing.txt');
+        folder.createFile(errBlob);
+      }
+    }
+    var caption   = al.captionHost || '';
+    var txtBlob2  = Utilities.newBlob(caption, 'text/plain', baseName + '.txt');
+    folder.createFile(txtBlob2);
+  }
+}
+
+/**
+ * Strips filesystem-invalid characters from a name and trims to 120 chars.
+ * Reuses the same pattern as exportReelToDrive.
+ */
+function _safeFilename(name) {
+  if (!name) return '';
+  return String(name).replace(/[\\/:*?"<>|#%&{}]/g, '').replace(/\s+/g, ' ').trim().substring(0, 120);
 }

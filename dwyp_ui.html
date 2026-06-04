@@ -2070,106 +2070,6 @@ body.workshop-open .bottom-nav { display: none; }
   max-width: 100%;
 }
 
-/* Social Vert chat panel */
-.sv-chat-history {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.sv-msg {
-  max-width: 92%;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-.sv-msg.user {
-  align-self: flex-end;
-  background: var(--surface-2);
-  color: var(--text);
-}
-.sv-msg.model {
-  align-self: flex-start;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-.sv-msg.typing { color: var(--text-3); font-style: italic; }
-.sv-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 20px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  border: 1.5px solid transparent;
-  margin: 2px 2px 0 0;
-  transition: opacity var(--transition);
-  vertical-align: middle;
-}
-.sv-chip:hover { opacity: 0.75; }
-.sv-chip.hook {
-  background: var(--red-light);
-  color: var(--red);
-  border-color: var(--red);
-}
-.sv-chip.quote {
-  background: var(--gold-light);
-  color: #a07010;
-  border-color: var(--gold);
-}
-.sv-chip.prompt {
-  background: var(--surface-2);
-  color: var(--text-2);
-  border-color: var(--border);
-}
-.sv-input-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.sv-input {
-  width: 100%;
-  padding: 7px 10px;
-  font-family: var(--font-body);
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-2);
-  color: var(--text);
-  resize: none;
-  line-height: 1.4;
-}
-.sv-input:focus { outline: none; border-color: var(--red); }
-.sv-send {
-  align-self: flex-end;
-  padding: 5px 14px;
-  background: var(--red);
-  color: #fff;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: opacity var(--transition);
-}
-.sv-send:disabled { opacity: 0.45; cursor: not-allowed; }
-.sv-empty-msg {
-  font-size: 12px;
-  color: var(--text-3);
-  text-align: center;
-  padding: 24px 12px;
-  line-height: 1.6;
-}
 /* Add Text toolbar picker dropdown */
 .iw-addtext-wrap { position: relative; display: inline-flex; }
 .iw-addtext-picker {
@@ -2879,6 +2779,60 @@ body.workshop-open .bottom-nav { display: none; }
   text-align: center;
   padding: 4px 0;
 }
+/* ── STUDIO — Episode companion chat ──────────────────────── */
+.ep-chat-history {
+  flex: 1; overflow-y: auto; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 10px; min-height: 0;
+}
+.ep-chat-msg {
+  padding: 8px 11px; border-radius: 10px;
+  font-size: 12px; line-height: 1.55; word-break: break-word;
+}
+.ep-chat-msg-user {
+  background: var(--red); color: #fff;
+  align-self: flex-end; max-width: 85%; border-bottom-right-radius: 3px;
+}
+.ep-chat-msg-asst {
+  background: var(--surface-2); color: var(--text);
+  align-self: flex-start; max-width: 100%; border-bottom-left-radius: 3px;
+}
+.ep-chat-msg-asst strong { font-weight: 700; }
+.ep-chat-msg-asst .ep-chat-li { padding-left: 4px; }
+.ep-chat-msg-asst .ep-chat-li::before { content: '• '; }
+.ep-chat-msg-asst .ep-chat-h2 { font-weight: 700; font-size: 12px; margin-top: 4px; }
+.ep-chat-msg-asst .ep-chat-h3 { font-weight: 600; font-size: 11px; margin-top: 3px; color: var(--text-2); }
+.ep-chat-loading {
+  text-align: center; color: var(--text-3); font-size: 11px;
+  padding: 10px; font-style: italic;
+}
+.ep-chat-error {
+  background: rgba(209,34,37,0.06); border: 1px solid rgba(209,34,37,0.2);
+  border-radius: 6px; padding: 8px 10px; font-size: 11px; color: var(--red); align-self: stretch;
+}
+.ep-chat-input-wrap {
+  padding: 8px 12px 10px; flex-shrink: 0;
+  border-top: 1px solid var(--border); display: flex; gap: 6px; align-items: flex-end;
+}
+.ep-chat-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-family: var(--font-body); font-size: 12px; padding: 7px 9px;
+  resize: none; min-height: 34px; max-height: 90px; overflow-y: auto;
+  outline: none; line-height: 1.45; transition: border-color var(--transition);
+}
+.ep-chat-input:focus { border-color: var(--gold); }
+.ep-chat-send {
+  flex-shrink: 0; background: var(--gold); color: #0D0A0A; border: none;
+  border-radius: var(--radius-sm); padding: 7px 13px;
+  font-family: var(--font-body); font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: opacity var(--transition); white-space: nowrap;
+}
+.ep-chat-send:disabled { opacity: 0.4; cursor: not-allowed; }
+.ep-chat-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--text-3); font-style: italic;
+  text-align: center; padding: 16px; line-height: 1.5;
+}
 .ep-receipt {
   background: var(--surface);
   border-radius: var(--radius);
@@ -3239,21 +3193,6 @@ body.studio-open .app-header { display: none; }
 }
 .st-drag:hover, .st-drag.dragging { background: var(--gold); }
 
-/* Chat column */
-.st-chat-col {
-  flex-shrink: 0; width: 340px;
-  background: var(--surface); border-right: 1px solid var(--border);
-  display: flex; flex-direction: column; overflow: hidden;
-}
-/* Brand gradient header — top of companion column in Design */
-.st-chat-brand-hdr {
-  flex-shrink: 0; height: 36px; display: flex; align-items: center; padding: 0 14px;
-  background: linear-gradient(120deg, #D12026 0%, #d4652a 50%, #FEBE18 100%);
-}
-.st-chat-brand-lbl {
-  font-family: var(--font-display); font-style: italic; font-size: 13px;
-  color: #fff; letter-spacing: 0.01em;
-}
 /* Caption region — top half of companion (resizable via draggable divider) */
 .st-caption-wrap {
   flex: 0 0 40%; overflow: hidden; padding: 8px 12px 6px;
@@ -3279,11 +3218,6 @@ body.studio-open .app-header { display: none; }
 .st-title-card-field:empty::before {
   content: attr(data-ph); color: var(--text-3);
 }
-/* Reels-mode companion fields */
-.st-reels-fields {
-  flex-shrink: 0; padding: 8px 12px 6px;
-  border-bottom: 1px solid var(--border);
-}
 /* Reel card enhancements */
 .st-reel-card-inner  { display: flex; flex-direction: row; gap: 10px; align-items: flex-start; }
 .st-reel-thumb-col   { flex: 0 0 33%; }
@@ -3294,18 +3228,6 @@ body.studio-open .app-header { display: none; }
 }
 .st-reel-card-summary {
   font-size: 10px; color: var(--text-3); line-height: 1.4; margin-top: 4px;
-}
-/* Chat hist — light column */
-.st-chat-hist { color: var(--text); }
-.st-chat-hist:empty::after { color: var(--text-3); }
-.st-chat-header {
-  display: flex; align-items: center;
-  padding: 0 14px; height: 40px;
-  border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.st-chat-header-lbl {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--text-3); white-space: nowrap;
 }
 /* Episode picker bar */
 .st-ep-bar {
@@ -3349,15 +3271,6 @@ body.studio-open .app-header { display: none; }
 .st-ep-item.sel { color: var(--red); }
 .st-ep-date { font-size: 11px; color: var(--text-3); font-weight: 400; flex-shrink: 0; }
 .st-ep-none { padding: 7px 10px; font-size: 13px; color: var(--text-3); font-style: italic; }
-.st-chat-hist {
-  flex: 1; overflow-y: auto; padding: 12px;
-  display: flex; flex-direction: column; gap: 8px;
-}
-.st-chat-hist:empty::after {
-  content: attr(data-ph); display: block;
-  color: var(--text-3); font-size: 13px; text-align: center;
-  margin-top: 32px; line-height: 1.7; white-space: pre-line;
-}
 /* Blank state + setup card */
 #studio-blank-state {
   font-size: 13px; line-height: 1.6; color: var(--text-2);
@@ -3431,19 +3344,7 @@ body.studio-open .app-header { display: none; }
   border: 1px solid rgba(250,176,22,0.3); padding: 3px 9px; border-radius: 20px;
   cursor: pointer; font-weight: 700; display: inline-flex; align-items: center; gap: 3px; margin-top: 5px;
 }
-.st-chat-input-wrap {
-  padding: 9px 10px 20px; border-top: 1px solid var(--border);
-  display: flex; gap: 6px; align-items: flex-end; flex-shrink: 0; background: transparent;
-}
-.st-chat-input {
-  flex: 1; background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 7px 10px;
-  font-family: var(--font-body); font-size: 14px; color: var(--text);
-  resize: none; outline: none; min-height: 56px; max-height: 240px; overflow-y: auto;
-  caret-color: var(--gold);
-}
-.st-chat-input::placeholder { color: var(--text-3); }
-.st-chat-input:focus { border-color: var(--gold); }
+
 .st-send-btn {
   background: var(--red); border: none; border-radius: var(--radius-sm);
   width: 34px; height: 34px; cursor: pointer; color: #fff; font-size: 15px;
@@ -3844,6 +3745,158 @@ body.studio-open .app-header { display: none; }
 /* ── STUDIO — companion divider ────────────────────────────── */
 .st-companion-div { flex-shrink: 0; height: 1px; background: var(--border); margin: 0; }
 
+/* ── SCHEDULE SURFACE ───────────────────────────────────────── */
+/* Workspace sits on var(--bg) = #F4F6FA; pool on var(--surface) = #FFFFFF */
+.sch-header {
+  flex-shrink: 0; padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sch-toggle {
+  display: flex; gap: 4px;
+  background: var(--surface-2); border-radius: 8px; padding: 3px;
+}
+.sch-toggle-btn {
+  flex: 1; padding: 5px 10px; font-size: 11px; font-weight: 600;
+  border-radius: 6px; border: none; cursor: pointer;
+  color: var(--text-3); background: transparent;
+  transition: background 0.14s, color 0.14s;
+}
+.sch-toggle-btn.active {
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+/* Day bands in The Week */
+.sch-day-band { margin-bottom: 18px; }
+.sch-day-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--red); margin-bottom: 2px;
+}
+.sch-day-why {
+  font-size: 11px; color: var(--text-2); margin-bottom: 8px; line-height: 1.4;
+  font-style: italic;
+}
+.sch-slots-row { display: flex; flex-direction: column; gap: 6px; }
+/* Individual slot drop targets */
+.sch-slot {
+  border: 1px dashed var(--border); border-radius: 8px;
+  padding: 8px 10px; min-height: 54px; display: flex; align-items: center;
+  background: var(--surface);
+  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
+  position: relative;
+}
+.sch-slot.sch-slot-empty {
+  cursor: default; justify-content: center;
+  color: var(--text-3); font-size: 11px;
+}
+.sch-slot.sch-slot-glow {
+  border-color: var(--gold); background: #FFF8EA; border-style: dashed;
+}
+.sch-slot.sch-slot-over {
+  border-color: var(--gold); background: #FFF3D6; border-style: solid;
+  box-shadow: 0 0 0 2px rgba(250,176,22,0.25);
+}
+.sch-slot.sch-slot-filled { border-style: solid; border-color: var(--border); }
+/* Card inside a filled slot */
+.sch-slot-card {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  cursor: grab;
+}
+.sch-slot-card:active { cursor: grabbing; }
+.sch-slot-thumb {
+  width: 38px; height: 38px; border-radius: 4px; object-fit: cover;
+  background: var(--surface-2); flex-shrink: 0; display: block;
+}
+.sch-slot-info { flex: 1; min-width: 0; }
+.sch-slot-name {
+  font-size: 11px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sch-slot-caption {
+  font-size: 10px; color: var(--text-2); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sch-slot-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.sch-slot-action-btn {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--text-2);
+  background: transparent; cursor: pointer; transition: color 0.12s, border-color 0.12s;
+}
+.sch-slot-action-btn:hover { color: var(--text); border-color: var(--text-3); }
+.sch-slot-action-btn.sch-remove { color: var(--text-3); }
+.sch-slot-action-btn.sch-remove:hover { color: var(--red); border-color: var(--red); }
+.sch-slot-type-tag {
+  position: absolute; top: 3px; right: 6px; font-size: 9px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+}
+/* Swipe region */
+.sch-swipe-header {
+  font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 10px;
+}
+.sch-swipe-zone {
+  min-height: 44px; border: 1px dashed var(--border); border-radius: 8px;
+  padding: 0 10px; display: flex; align-items: center; justify-content: center;
+  background: var(--surface); margin-top: 6px;
+  transition: border-color 0.14s, background 0.14s;
+}
+.sch-swipe-zone.sch-slot-glow { border-color: var(--gold); background: #FFF8EA; }
+.sch-swipe-zone.sch-slot-over { border-color: var(--gold); background: #FFF3D6; box-shadow: 0 0 0 2px rgba(250,176,22,0.25); }
+.sch-swipe-empty {
+  font-size: 11px; color: var(--text-3); text-align: center;
+  padding: 12px 0; pointer-events: none; font-style: italic;
+}
+/* Footer */
+.sch-footer {
+  flex-shrink: 0; padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.sch-export-btn {
+  width: 100%; padding: 8px 0; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-2); background: var(--surface); cursor: pointer;
+  transition: color 0.14s, border-color 0.14s;
+}
+.sch-export-btn:hover { color: var(--text); border-color: var(--text-3); }
+/* Pool (right rail — sits on var(--surface) = white) */
+.sch-pool-list {
+  flex: 1; overflow-y: auto; padding: 4px 8px; display: flex;
+  flex-direction: column; gap: 6px; min-height: 0;
+}
+.sch-pool-list.sch-pool-drop-over { background: #FFF8EA; }
+.sch-pool-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); padding: 8px 10px;
+  cursor: grab; transition: border-color 0.12s, opacity 0.14s, box-shadow 0.12s;
+  display: flex; align-items: center; gap: 8px;
+}
+.sch-pool-card:hover { box-shadow: var(--shadow); border-color: var(--text-3); }
+.sch-pool-card:active { cursor: grabbing; }
+.sch-pool-card.sch-placed {
+  opacity: 0.5; order: 99; border-style: dashed;
+}
+.sch-pool-card-thumb {
+  width: 38px; height: 38px; border-radius: 4px; object-fit: cover;
+  background: var(--surface-2); flex-shrink: 0; display: block;
+}
+.sch-pool-card-body { flex: 1; min-width: 0; }
+.sch-pool-card-name {
+  font-size: 11px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sch-pool-card-cap {
+  font-size: 10px; color: var(--text-2); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sch-pool-card-badge {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--gold-deep); margin-top: 2px;
+}
+.sch-pool-card-edit {
+  font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+  border: 1px solid var(--border); color: var(--text-2);
+  background: transparent; cursor: pointer; flex-shrink: 0; white-space: nowrap;
+  transition: color 0.12s, border-color 0.12s;
+}
+.sch-pool-card-edit:hover { color: var(--text); border-color: var(--text-3); }
+
 </style>
 </head>
 
@@ -4213,6 +4266,7 @@ body.studio-open .app-header { display: none; }
           <!-- Middle controls -->
           <div style="display:flex;align-items:center;gap:8px">
             <a class="iw-view-btn" id="stDriveBtn" href="#" onclick="stOpenDrive();return false;">View Images</a>
+            <button class="iw-export-btn" id="stSendToScheduleBtn" onclick="stSendToScheduleImage()" style="background:var(--gold);color:#0D0A0A;">Schedule</button>
             <button class="iw-export-btn" id="stSaveReturnBtn" onclick="stSaveAndReturn()" style="display:none;background:var(--gold);color:#0D0A0A;">Save &amp; Return</button>
             <span class="st-toolbar-sep"></span>
             <button class="iw-tool-btn" onclick="stClearCanvas()">Clear</button>
@@ -4313,6 +4367,7 @@ body.studio-open .app-header { display: none; }
         <!-- Reel action bar — shown when a reel is selected -->
         <div class="st-reel-actions" id="stReelActions" style="display:none">
           <button class="st-export-btn-red" id="stReelExportBtn" onclick="stExportReel(st.episodeUid)">Export</button>
+          <button class="st-reel-action-btn" id="stReelSendToScheduleBtn" onclick="stSendToScheduleReel()">Send to Schedule</button>
           <button class="st-reel-action-btn" id="stRequestRevisionBtn" onclick="stRequestRevision()">Request Revision</button>
         </div>
       </div>
@@ -4378,9 +4433,25 @@ body.studio-open .app-header { display: none; }
         <!-- Populated by stRenderEpisodesView() -->
       </div>
 
-      <!-- Schedule stub (Guest > Schedule sub-item) -->
-      <div id="stScheduleStubView" style="display:none;flex:1;align-items:center;justify-content:center">
-        <div style="font-size:13px;color:var(--text-3);text-align:center;padding:24px;line-height:1.6">Schedule — not yet built.</div>
+      <!-- Schedule surface (Guest > Schedule sub-item) -->
+      <div id="stScheduleView" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden">
+        <!-- Toggle: The Week / Swipe Package -->
+        <div class="sch-header">
+          <div class="sch-toggle">
+            <button id="schToggleWeek"  class="sch-toggle-btn active" onclick="stScheduleToggle('week')">The Week</button>
+            <button id="schToggleSwipe" class="sch-toggle-btn"        onclick="stScheduleToggle('swipe')">Swipe Package</button>
+          </div>
+        </div>
+        <!-- The Week workspace -->
+        <div id="schWeekView" style="flex:1;overflow-y:auto;padding:10px 14px 0">
+          <div style="font-size:12px;color:var(--text-3);text-align:center;padding:32px 0">Loading schedule…</div>
+        </div>
+        <!-- Swipe Package workspace -->
+        <div id="schSwipeView" style="display:none;flex:1;overflow-y:auto;padding:10px 14px 0"></div>
+        <!-- Footer -->
+        <div class="sch-footer">
+          <button class="sch-export-btn" id="schExportAllBtn" onclick="schExportAll()">Export All ⬇</button>
+        </div>
       </div>
 
     </div><!-- /st-content-col -->
@@ -4397,7 +4468,7 @@ body.studio-open .app-header { display: none; }
         <div class="st-tab-bar" id="stRailTabBar">
           <button class="st-tab-btn active" id="stRailTabHq"  onclick="stSetRailTab('hq')">Hooks &amp; Quotes</button>
           <button class="st-tab-btn"        id="stRailTabBg"  onclick="stSetRailTab('bg')">Backgrounds</button>
-          <button class="st-tab-btn"        id="stRailTabChatImg" onclick="showToast('AI Chat — coming soon.')">AI Chat</button>
+          <button class="st-tab-btn"        id="stRailTabChatImg">AI Chat</button>
         </div>
         <!-- H&Q panel (populated by stRenderHqPanel) -->
         <div class="st-tab-pane st-hq-rail-pane" id="stHqRailPane">
@@ -4430,10 +4501,20 @@ body.studio-open .app-header { display: none; }
       <div id="stReelBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
         <div class="st-assets-section" style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
           <div class="st-assets-lbl">Reels</div>
-          <button class="st-tab-btn" style="flex-shrink:0;font-size:10px;padding:3px 8px;margin-right:8px" onclick="showToast('AI Chat — coming soon.')">AI Chat</button>
+          <button class="st-tab-btn" style="flex-shrink:0;font-size:10px;padding:3px 8px;margin-right:8px" id="stRailTabChatReel">AI Chat</button>
         </div>
         <div class="st-reel-list" id="stRailReelList">
           <div class="st-reel-empty">Select a guest to browse reels.</div>
+        </div>
+      </div>
+
+      <!-- Schedule pool (right rail — Schedule mode) -->
+      <div id="stSchedulePool" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+        <div class="st-assets-section" style="flex-shrink:0;display:flex;align-items:center;padding:10px 12px 6px">
+          <div class="st-assets-lbl">Candidates</div>
+        </div>
+        <div class="sch-pool-list" id="schPoolList">
+          <div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 8px">Loading…</div>
         </div>
       </div>
 
@@ -4755,15 +4836,17 @@ var epReviewState = {
   composerLocked:  false
 };
 
+var epChat = { history: [], loading: false, uid: null };
+
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
 var REVIEW_STEPS_ALL = [
   "Review_Guest_Brief", "Review_Episode", "Review_Host_Graphics",
-  "Review_Guest_Graphics", "Review_Thumbnails", "Review_Reels",
-  "Review_Images", "Review_Episode_Card", "Review_Social_Assets"
+  "Review_Guest_Graphics", "Review_Thumbnails",
+  "Review_Episode_Card", "Review_Social_Assets"
 ];
 var REVIEW_STEPS_WITH_LINK = [
   "Review_Episode", "Review_Host_Graphics", "Review_Guest_Graphics",
-  "Review_Thumbnails", "Review_Reels", "Review_Episode_Card",
+  "Review_Thumbnails", "Review_Episode_Card",
   "Review_Social_Assets"
 ];
 var APPROVE_STEPS = REVIEW_STEPS_ALL;
@@ -4862,7 +4945,7 @@ function securityFilter(tasks) {
   var email = APP_CONFIG.userEmail.toLowerCase();
   return tasks.filter(function(t) {
     var assignee = (t.Assignee || "").toLowerCase();
-    return assignee === email || assignee === "";
+    return assignee === email || assignee === "" || assignee === "team";
   });
 }
 
@@ -4873,7 +4956,8 @@ function applyFilters(tasks) {
 
   if (state.filters.assignee === "me") {
     filtered = filtered.filter(function(t) {
-      return (t.Assignee || "").toLowerCase() === email;
+      var assignee = (t.Assignee || "").toLowerCase();
+      return assignee === email || assignee === "team";
     });
   } else if (state.filters.assignee === "none") {
     filtered = filtered.filter(function(t) {
@@ -4973,8 +5057,9 @@ var st = {
   publishOrigin:  null,
   designTab:      'qg',
   hqContent:      null,
-  exportDay:      'MON',
-  selectedReelId: null
+  exportDay:       'MON',
+  selectedReelId:  null,
+  editingAssetId:  null   // Asset_ID of the AL row currently open in the canvas (set on edit ↗ round-trip or after first Send to Schedule)
 };
 
 // ── PUBLISH STATE ─────────────────────────────────────────────
@@ -5018,7 +5103,8 @@ function closeStudio() {
   document.body.classList.remove('studio-open');
   document.getElementById('studioOverlay').style.display = 'none';
   st.history = []; st.redoStack = [];
-  st.publishOrigin = null;
+  st.publishOrigin  = null;
+  st.editingAssetId = null;
 }
 
 // ── NAV COLLAPSE ──────────────────────────────────────────────
@@ -6038,7 +6124,7 @@ function stSelectGuestView(uid, name, view) {
   stSelectEpisode(uid, name);
   if (view === 'schedule') {
     if (st.currentTab !== 'design') stSwitchTab('design');
-    stShowScheduleStub();
+    stShowSchedule(uid);
     return;
   }
   if (st.currentTab !== 'design') stSwitchTab('design');
@@ -6047,27 +6133,665 @@ function stSelectGuestView(uid, name, view) {
 
 function stHideAllPanels() {
   ['stCanvasView','stEpView','stReelView','stCaptionWrap',
-   'stDocView','stTasksStubView','stBucketsView','stEpisodesView','stScheduleStubView',
-   'stImgAssets','stWriteAssets','stReelBrowser','stEpBrowser'
+   'stDocView','stTasksStubView','stBucketsView','stEpisodesView','stScheduleView',
+   'stImgAssets','stWriteAssets','stReelBrowser','stEpBrowser','stSchedulePool'
   ].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
 }
 
-function stShowScheduleStub() {
+function stShowSchedule(uid) {
   st.designTab = 'schedule';
   stHideAllPanels();
-  var sched = document.getElementById('stScheduleStubView');
-  if (sched) sched.style.display = 'flex';
-  // Clear segmented toggle active state (buttons not in DOM, but defensive)
+  var schedView = document.getElementById('stScheduleView');
+  var schedPool = document.getElementById('stSchedulePool');
+  if (schedView) schedView.style.display = 'flex';
+  if (schedPool) schedPool.style.display = 'flex';
   var segImages  = document.getElementById('stSegImages');
   var segReels   = document.getElementById('stSegReels');
   var segEpisode = document.getElementById('stSegEpisode');
   if (segImages)  segImages.classList.remove('active');
   if (segReels)   segReels.classList.remove('active');
   if (segEpisode) segEpisode.classList.remove('active');
-  stSyncSubItemActive(st.episodeUid, 'schedule');
+  stSyncSubItemActive(uid || st.episodeUid, 'schedule');
+  stLoadSchedule(uid || st.episodeUid);
+}
+
+// ── SCHEDULE SURFACE ─────────────────────────────────────────
+
+var sch = {
+  episodeUid:  null,
+  guestName:   null,
+  candidates:  [],
+  placements:  [],   // [{postId, assetLibraryId, slot}]
+  days:        [],
+  workspaceMode: 'week',  // 'week' | 'swipe'
+  draggingAssetId:   null,
+  draggingAssetType: null,
+  draggingFromSlot:  null   // slotId if dragging from a slot, null if from pool
+};
+
+function stLoadSchedule(uid) {
+  if (!uid) return;
+  sch.episodeUid = uid;
+  // Derive guest name from loaded episodes
+  var ep = state.episodes && state.episodes.filter(function(e) { return e.Episode_UID === uid; })[0];
+  sch.guestName = ep ? (ep.Guest_Name || uid) : uid;
+
+  var weekEl  = document.getElementById('schWeekView');
+  var swipeEl = document.getElementById('schSwipeView');
+  var poolEl  = document.getElementById('schPoolList');
+  if (weekEl)  weekEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:32px 0">Loading…</div>';
+  if (swipeEl) swipeEl.innerHTML = '';
+  if (poolEl)  poolEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:24px 8px">Loading…</div>';
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      if (!data) return;
+      sch.candidates = data.candidates || [];
+      sch.placements = data.placements || [];
+      sch.days       = data.days       || [];
+      stRenderSchedulePool();
+      stRenderScheduleWeek();
+      stRenderScheduleSwipe();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Schedule load failed: ' + (err.message || err));
+    })
+    .getScheduleData(uid);
+}
+
+// Returns Set of assetIds that are placed in the week (Availability='placed' check is client-only)
+function schWeekPlacedSet() {
+  var s = {};
+  sch.placements.forEach(function(p) {
+    if (p.slot && p.slot !== 'SWIPE') s[p.assetLibraryId] = true;
+  });
+  return s;
+}
+
+// Returns map of slotId → placement record
+function schSlotMap() {
+  var m = {};
+  sch.placements.forEach(function(p) {
+    if (p.slot !== 'SWIPE') m[p.slot] = p;
+  });
+  return m;
+}
+
+// Returns placements in swipe (slot='SWIPE')
+function schSwipePlacements() {
+  return sch.placements.filter(function(p) { return p.slot === 'SWIPE'; });
+}
+
+// Returns candidate data by assetId
+function schCandidateById(assetId) {
+  return sch.candidates.filter(function(c) { return c.assetId === assetId; })[0] || null;
+}
+
+// Normalizes any asset type string → broad category 'reel' or 'image'
+function schNormType(t) {
+  t = (t || '').toLowerCase().replace(/[\s_\-]/g, '');
+  if (t === 'reel' || t === 'video' || t === 'mp4' || t === 'clip') return 'reel';
+  return 'image';  // quote_graphic, hook_graphic, quotegraphic, image, graphic, etc.
+}
+
+// Returns true if the card type is compatible with the slot type.
+// Both sides normalize to 'reel' or 'image'; absence of slot type = no constraint.
+function schTypeMatches(cardType, slotType) {
+  if (!slotType) return true;
+  return schNormType(cardType) === schNormType(slotType);
+}
+
+// Drag from a filled slot — allows drag-to-unschedule
+function schSlotDragStart(e, assetId, assetType, fromSlotId) {
+  sch.draggingAssetId   = assetId;
+  sch.draggingAssetType = assetType;
+  sch.draggingFromSlot  = fromSlotId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', assetId);
+  schApplyGlow(assetType);
+  // Glow the pool list too — it's a valid "unschedule" drop zone
+  var poolEl = document.getElementById('schPoolList');
+  if (poolEl) poolEl.classList.add('sch-slot-glow');
+}
+
+function schSlotDragEnd(e) {
+  sch.draggingAssetId   = null;
+  sch.draggingAssetType = null;
+  sch.draggingFromSlot  = null;
+  schClearGlow();
+  var poolEl = document.getElementById('schPoolList');
+  if (poolEl) { poolEl.classList.remove('sch-slot-glow'); poolEl.classList.remove('sch-pool-drop-over'); }
+}
+
+// Drop on the pool = unschedule (only meaningful when dragging from a slot)
+function schDropOnPool(e) {
+  e.preventDefault();
+  var poolEl = document.getElementById('schPoolList');
+  if (poolEl) { poolEl.classList.remove('sch-pool-drop-over'); poolEl.classList.remove('sch-slot-glow'); }
+  schClearGlow();
+  if (sch.draggingFromSlot) {
+    var assetId   = sch.draggingAssetId;
+    var fromSlot  = sch.draggingFromSlot;
+    sch.draggingFromSlot  = null;
+    sch.draggingAssetId   = null;
+    sch.draggingAssetType = null;
+    schRemoveFromSlot(assetId, fromSlot);
+  }
+  // If dragging from pool to pool, no-op
+}
+
+// Pool rendering
+function stRenderSchedulePool() {
+  var poolEl = document.getElementById('schPoolList');
+  if (!poolEl) return;
+  var weekPlaced = schWeekPlacedSet();
+
+  // Sort: unplaced float top, placed sink bottom
+  var sorted = sch.candidates.slice().sort(function(a, b) {
+    var ap = weekPlaced[a.assetId] ? 1 : 0;
+    var bp = weekPlaced[b.assetId] ? 1 : 0;
+    return ap - bp;
+  });
+
+  if (!sorted.length) {
+    poolEl.innerHTML = '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 8px;line-height:1.5">No schedule candidates.<br>Set assets to <em>Status: schedule</em> to see them here.</div>';
+    poolEl.ondragover = poolEl.ondragleave = poolEl.ondrop = null;
+    return;
+  }
+
+  poolEl.innerHTML = '';
+  // Pool is itself a drop zone for unscheduling (drag from slot → pool)
+  poolEl.ondragover = function(e) {
+    if (sch.draggingFromSlot) {
+      e.preventDefault();
+      poolEl.classList.add('sch-pool-drop-over');
+    }
+  };
+  poolEl.ondragleave = function() { poolEl.classList.remove('sch-pool-drop-over'); };
+  poolEl.ondrop = function(e) { schDropOnPool(e); };
+
+  sorted.forEach(function(c) {
+    var isPlaced = !!weekPlaced[c.assetId];
+    var isReel   = schNormType(c.assetType) === 'reel';
+    var label    = c.displayName || (isReel ? (c.reelSummary || '').substring(0, 40) : (c.quoteText || '').substring(0, 40)) || c.assetId;
+    var caption  = c.captionHost || '';
+
+    var card = document.createElement('div');
+    card.className = 'sch-pool-card' + (isPlaced ? ' sch-placed' : '');
+    card.setAttribute('draggable', 'true');
+    card.setAttribute('data-asset-id', c.assetId);
+    card.setAttribute('data-asset-type', c.assetType);
+
+    var thumbHtml = c.thumbnailUrl
+      ? '<img class="sch-pool-card-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+      : '<div class="sch-pool-card-thumb"></div>';
+
+    var badgeHtml = isPlaced ? '<div class="sch-pool-card-badge">✓ placed</div>' : '';
+
+    card.innerHTML = thumbHtml +
+      '<div class="sch-pool-card-body">' +
+        '<div class="sch-pool-card-name">' + esc(label) + '</div>' +
+        '<div class="sch-pool-card-cap">' + esc(caption.substring(0, 60)) + '</div>' +
+        badgeHtml +
+      '</div>' +
+      '<button class="sch-pool-card-edit" onclick="schEditCard(\'' + esc(c.assetId) + '\',\'' + esc(c.assetType) + '\');event.stopPropagation()">edit ↗</button>';
+
+    card.addEventListener('dragstart', function(e) {
+      sch.draggingAssetId   = c.assetId;
+      sch.draggingAssetType = c.assetType;
+      sch.draggingFromSlot  = null;  // coming from pool, not a slot
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', c.assetId);
+      schApplyGlow(c.assetType);
+    });
+    card.addEventListener('dragend', function() {
+      sch.draggingAssetId   = null;
+      sch.draggingAssetType = null;
+      sch.draggingFromSlot  = null;
+      schClearGlow();
+    });
+
+    poolEl.appendChild(card);
+  });
+}
+
+// Glow: highlight compatible slots while dragging
+function schApplyGlow(assetType) {
+  document.querySelectorAll('.sch-slot').forEach(function(el) {
+    var slotType = el.getAttribute('data-slot-type') || '';
+    if (schTypeMatches(assetType, slotType)) {
+      el.classList.add('sch-slot-glow');
+    }
+  });
+  var swipe = document.getElementById('schSwipeDrop');
+  if (swipe) swipe.classList.add('sch-slot-glow');
+}
+
+function schClearGlow() {
+  document.querySelectorAll('.sch-slot-glow').forEach(function(el) { el.classList.remove('sch-slot-glow'); });
+  document.querySelectorAll('.sch-slot-over').forEach(function(el) { el.classList.remove('sch-slot-over'); });
+}
+
+// Week rendering
+function stRenderScheduleWeek() {
+  var weekEl = document.getElementById('schWeekView');
+  if (!weekEl) return;
+  var slotMap = schSlotMap();
+
+  if (!sch.days.length) {
+    weekEl.innerHTML = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:32px 0">No Posting_Schedule rows found.</div>';
+    return;
+  }
+
+  var DAY_ABBR = { Monday:'MON', Tuesday:'TUE', Wednesday:'WED', Thursday:'THU', Friday:'FRI', Saturday:'SAT' };
+  var html = '';
+  sch.days.forEach(function(dayData) {
+    var abbr = DAY_ABBR[dayData.day] || dayData.day.substring(0, 3).toUpperCase();
+    html += '<div class="sch-day-band">';
+    html += '<div class="sch-day-label">' + esc(abbr) + '</div>';
+    if (dayData.why) html += '<div class="sch-day-why">' + esc(dayData.why) + '</div>';
+    html += '<div class="sch-slots-row">';
+    dayData.slots.forEach(function(slot) {
+      var placed = slotMap[slot.slotId];
+      html += schRenderSlot(slot, placed);
+    });
+    html += '</div></div>';
+  });
+  weekEl.innerHTML = html;
+}
+
+function schRenderSlot(slot, placed) {
+  var baseClass = 'sch-slot' + (placed ? ' sch-slot-filled' : ' sch-slot-empty');
+  var html = '<div class="' + baseClass + '"'
+    + ' data-slot-id="' + esc(slot.slotId) + '"'
+    + ' data-slot-type="' + esc(slot.assetType) + '"'
+    + ' ondragover="schOnDragOver(event,\'' + esc(slot.slotId) + '\')"'
+    + ' ondragleave="schOnDragLeave(event)"'
+    + ' ondrop="schOnDrop(event,\'' + esc(slot.slotId) + '\')"'
+    + '>';
+  html += '<span class="sch-slot-type-tag">' + esc(slot.assetType) + '</span>';
+
+  if (placed) {
+    var c = schCandidateById(placed.assetLibraryId);
+    var isReel = c && schNormType(c.assetType) === 'reel';
+    var label  = c ? (c.displayName || (isReel ? c.reelSummary : c.quoteText) || c.assetId).substring(0, 40) : placed.assetLibraryId;
+    var thumbUrl = c && c.thumbnailUrl ? c.thumbnailUrl : '';
+    var aType    = c ? c.assetType : '';
+    html += '<div class="sch-slot-card"'
+      + ' draggable="true"'
+      + ' ondragstart="schSlotDragStart(event,\'' + esc(placed.assetLibraryId) + '\',\'' + esc(aType) + '\',\'' + esc(slot.slotId) + '\')"'
+      + ' ondragend="schSlotDragEnd(event)"'
+      + '>';
+    if (thumbUrl) {
+      html += '<img class="sch-slot-thumb" src="' + esc(thumbUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    } else {
+      html += '<div class="sch-slot-thumb"></div>';
+    }
+    html += '<div class="sch-slot-info">'
+      + '<div class="sch-slot-name">' + esc(label) + '</div>';
+    if (c && c.captionHost) html += '<div class="sch-slot-caption">' + esc(c.captionHost.substring(0, 60)) + '</div>';
+    html += '</div>';
+    html += '<div class="sch-slot-actions" ondragstart="event.stopPropagation()">';
+    if (c) html += '<button class="sch-slot-action-btn" onclick="schEditCard(\'' + esc(c.assetId) + '\',\'' + esc(c.assetType) + '\')">edit ↗</button>';
+    html += '<button class="sch-slot-action-btn sch-remove" onclick="schRemoveFromSlot(\'' + esc(placed.assetLibraryId) + '\',\'' + esc(slot.slotId) + '\')">✕</button>';
+    html += '</div>';
+    html += '</div>';
+  } else {
+    html += '+ drag here';
+  }
+  html += '</div>';
+  return html;
+}
+
+// Swipe rendering — placed cards individually above an always-present drop zone
+function stRenderScheduleSwipe() {
+  var swipeEl = document.getElementById('schSwipeView');
+  if (!swipeEl) return;
+  var swipePlacements = schSwipePlacements();
+  var html = '<div class="sch-swipe-header">Assets for ' + esc(sch.guestName || '—') + '</div>';
+
+  // Each placed card is its own row (draggable out, removable with ✕)
+  swipePlacements.forEach(function(p) {
+    var c      = schCandidateById(p.assetLibraryId);
+    var isReel = c && schNormType(c.assetType) === 'reel';
+    var label  = c ? (c.displayName || (isReel ? c.reelSummary : c.quoteText) || c.assetId).substring(0, 40) : p.assetLibraryId;
+    var aType  = c ? c.assetType : '';
+    var cap    = c ? (c.captionGuest || c.captionHost || '') : '';
+    html += '<div class="sch-slot sch-slot-filled" style="margin-bottom:6px">'
+      + '<div class="sch-slot-card"'
+      + ' draggable="true"'
+      + ' ondragstart="schSlotDragStart(event,\'' + esc(p.assetLibraryId) + '\',\'' + esc(aType) + '\',\'SWIPE\')"'
+      + ' ondragend="schSlotDragEnd(event)"'
+      + '>';
+    if (c && c.thumbnailUrl) {
+      html += '<img class="sch-slot-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    } else {
+      html += '<div class="sch-slot-thumb"></div>';
+    }
+    html += '<div class="sch-slot-info"><div class="sch-slot-name">' + esc(label) + '</div>';
+    if (cap) html += '<div class="sch-slot-caption">' + esc(cap.substring(0, 60)) + '</div>';
+    html += '</div>';
+    html += '<div class="sch-slot-actions" ondragstart="event.stopPropagation()">';
+    if (c) html += '<button class="sch-slot-action-btn" onclick="schEditCard(\'' + esc(c.assetId) + '\',\'' + esc(c.assetType) + '\')">edit ↗</button>';
+    html += '<button class="sch-slot-action-btn sch-remove" onclick="schRemoveFromSlot(\'' + esc(p.assetLibraryId) + '\',\'SWIPE\')">✕</button>';
+    html += '</div></div></div>';
+  });
+
+  // Always-present drop zone — signals "add another"
+  html += '<div class="sch-swipe-zone" id="schSwipeDrop"'
+    + ' ondragover="schOnDragOver(event,\'SWIPE\')"'
+    + ' ondragleave="schOnDragLeave(event)"'
+    + ' ondrop="schOnDrop(event,\'SWIPE\')"'
+    + '><div class="sch-swipe-empty">'
+    + (swipePlacements.length ? '+ drag more here' : 'Drag candidates here to build the guest package')
+    + '</div></div>';
+
+  swipeEl.innerHTML = html;
+}
+
+// Toggle workspace mode
+function stScheduleToggle(mode) {
+  sch.workspaceMode = mode;
+  document.getElementById('schToggleWeek').classList.toggle('active',  mode === 'week');
+  document.getElementById('schToggleSwipe').classList.toggle('active', mode === 'swipe');
+  var weekEl  = document.getElementById('schWeekView');
+  var swipeEl = document.getElementById('schSwipeView');
+  if (weekEl)  weekEl.style.display  = (mode === 'week')  ? 'block' : 'none';
+  if (swipeEl) swipeEl.style.display = (mode === 'swipe') ? 'block' : 'none';
+}
+
+// Drag/drop handlers
+function schOnDragOver(e, slotId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  var el = e.currentTarget;
+  el.classList.add('sch-slot-over');
+}
+
+function schOnDragLeave(e) {
+  e.currentTarget.classList.remove('sch-slot-over');
+}
+
+function schOnDrop(e, slotId) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('sch-slot-over');
+  schClearGlow();
+  var poolEl = document.getElementById('schPoolList');
+  if (poolEl) poolEl.classList.remove('sch-pool-drop-over');
+
+  var assetId      = sch.draggingAssetId || e.dataTransfer.getData('text/plain');
+  var fromSlot     = sch.draggingFromSlot;
+  sch.draggingAssetId   = null;
+  sch.draggingAssetType = null;
+  sch.draggingFromSlot  = null;
+
+  if (!assetId || !sch.episodeUid) return;
+
+  // If dropped on the same slot it came from, no-op
+  if (fromSlot && fromSlot === slotId) return;
+
+  // Type check for week slots
+  if (slotId !== 'SWIPE') {
+    var slotType = e.currentTarget.getAttribute('data-slot-type') || '';
+    var c = schCandidateById(assetId);
+    if (c && slotType && !schTypeMatches(c.assetType, slotType)) {
+      showToast('Type mismatch — slot expects ' + slotType);
+      return;
+    }
+  }
+
+  // If card came from another slot, remove it first; then place
+  if (fromSlot && fromSlot !== slotId) {
+    schRemoveFromSlot(assetId, fromSlot, function() {
+      schDoPlaceAfterClear(assetId, slotId);
+    });
+    return;
+  }
+
+  // Swipe: block duplicate — same asset can only appear once
+  if (slotId === 'SWIPE') {
+    var alreadySwipe = sch.placements.some(function(p) {
+      return p.assetLibraryId === assetId && p.slot === 'SWIPE';
+    });
+    if (alreadySwipe) { showToast('Already in swipe package'); return; }
+  }
+
+  // From pool: displace any existing card in this week slot first
+  if (slotId !== 'SWIPE') {
+    var slotMap_ = schSlotMap();
+    var existing = slotMap_[slotId];
+    if (existing) {
+      schRemoveFromSlot(existing.assetLibraryId, slotId, function() {
+        schDoPlaceAfterClear(assetId, slotId);
+      });
+      return;
+    }
+  }
+
+  schDoPlaceAfterClear(assetId, slotId);
+}
+
+// Thin wrapper: after any removals settle, check placement eligibility and call schDoPlace
+function schDoPlaceAfterClear(assetId, slotId) {
+  schDoPlace(assetId, slotId);
+}
+
+function schDoPlace(assetId, slotId) {
+  var c      = schCandidateById(assetId);
+  var caption = c ? c.captionHost : '';
+
+  // Optimistic update
+  sch.placements.push({ postId: 'pending', assetLibraryId: assetId, slot: slotId });
+  if (slotId !== 'SWIPE') {
+    var cand = schCandidateById(assetId);
+    if (cand) cand.availability = 'placed';
+  }
+  stRenderSchedulePool();
+  stRenderScheduleWeek();
+  stRenderScheduleSwipe();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        showToast('Placement failed — reverting');
+        schRefreshFromServer();
+        return;
+      }
+      // Update the optimistic postId with the real one
+      sch.placements.forEach(function(p) {
+        if (p.assetLibraryId === assetId && p.slot === slotId && p.postId === 'pending') {
+          p.postId = result.postId;
+        }
+      });
+    })
+    .withFailureHandler(function(err) {
+      showToast('Placement failed: ' + (err.message || err));
+      schRefreshFromServer();
+    })
+    .placeAssetSchedule(sch.episodeUid, assetId, slotId, caption);
+}
+
+function schRemoveFromSlot(assetId, slotId, callback) {
+  // Optimistic removal — only the FIRST matching placement (guard against duplicates)
+  var removedOne = false;
+  sch.placements = sch.placements.filter(function(p) {
+    if (!removedOne && p.assetLibraryId === assetId && p.slot === slotId) {
+      removedOne = true;
+      return false;
+    }
+    return true;
+  });
+  if (slotId !== 'SWIPE') {
+    var c = schCandidateById(assetId);
+    if (c) c.availability = 'available';
+  }
+  stRenderSchedulePool();
+  stRenderScheduleWeek();
+  stRenderScheduleSwipe();
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (!result || !result.success) {
+        showToast('Remove failed — reverting');
+        schRefreshFromServer();
+      }
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Remove failed: ' + (err.message || err));
+      schRefreshFromServer();
+      if (callback) callback();
+    })
+    .removeAssetFromSchedule(sch.episodeUid, assetId, slotId);
+}
+
+// Assembles the Export All package in Drive (Staging/[GuestName]/).
+// Clear-and-rebuild: prior run's folder is trashed before the new one is created.
+function schExportAll() {
+  if (!sch.episodeUid) { showToast('No episode in context.'); return; }
+  var btn = document.getElementById('schExportAllBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
+      if (!result || !result.success) {
+        showToast('Export failed: ' + (result && result.error ? result.error : 'unknown error'));
+        return;
+      }
+      var s = result.summary || {};
+      var msg = 'Exported — ' +
+        (s.images || 0) + ' image' + (s.images === 1 ? '' : 's') + ', ' +
+        (s.reels  || 0) + ' reel'  + (s.reels  === 1 ? '' : 's') +
+        (s.missing > 0 ? ' (' + s.missing + ' missing)' : '') + '.';
+      showToast(msg);
+      if (result.folderUrl) {
+        window.open(result.folderUrl, '_blank');
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
+      showToast('Export failed: ' + (err.message || err));
+    })
+    .exportAllSchedule(sch.episodeUid);
+}
+
+// Re-fetches from server to correct any optimistic drift
+function schRefreshFromServer() {
+  if (!sch.episodeUid) return;
+  google.script.run
+    .withSuccessHandler(function(data) {
+      if (!data) return;
+      sch.candidates = data.candidates || [];
+      sch.placements = data.placements || [];
+      sch.days       = data.days       || [];
+      stRenderSchedulePool();
+      stRenderScheduleWeek();
+      stRenderScheduleSwipe();
+    })
+    .getScheduleData(sch.episodeUid);
+}
+
+// Edit round-trip: navigate to Images or Reels surface with target asset
+function schEditCard(assetId, assetType) {
+  var isReel = schNormType(assetType) === 'reel';
+  var view   = isReel ? 'reels' : 'qg';
+  st.scheduleEditTarget = assetId;
+  st.publishOrigin      = 'schedule';  // shows Save & Return on canvas toolbar
+  stSelectGuestView(sch.episodeUid, sch.guestName, view);
+}
+
+// ── SEND TO SCHEDULE ──────────────────────────────────────────
+
+// Returns Fabric canvas JSON with _isBackground objects removed (avoids base64 payload limit).
+// Background_ID is stored separately in the AL row and re-applied on round-trip restore.
+function stCanvasJsonStripped() {
+  var json = st.fabricCanvas.toJSON(['_isBackground','_isText','_textType','_isLogo','_isOverlay']);
+  if (json.objects) {
+    json.objects = json.objects.filter(function(obj) { return !obj._isBackground; });
+  }
+  return json;
+}
+
+// Renders the canvas, upserts the AL row, stores thumbnail in Drive.
+// On success: stores returned assetId in st.editingAssetId and calls callback (if provided).
+function stSendToScheduleImage(callback) {
+  var canvas = st.fabricCanvas;
+  if (!canvas) { showToast('Canvas not ready.'); return; }
+  var uid = st.episodeUid;
+  if (!uid) { showToast('Select a guest first.'); return; }
+
+  var sendBtn = document.getElementById('stSendToScheduleBtn');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+
+  var origVpt = canvas.viewportTransform.slice();
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  var dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
+  canvas.setViewportTransform(origVpt);
+  var b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+
+  var canvasJson = JSON.stringify(stCanvasJsonStripped());
+  var captionEl  = document.getElementById('stCaptionField');
+  var caption    = captionEl ? captionEl.textContent.trim() : '';
+  var assetId    = st.editingAssetId || null;
+  var bgId       = st.selectedBgId  || null;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Schedule'; }
+      if (!res || !res.ok) {
+        showToast('Send failed: ' + (res && res.error || 'unknown'), true);
+        return;
+      }
+      st.editingAssetId = res.assetId;
+      showToast('Sent to Schedule ✓');
+      if (callback) callback();
+    })
+    .withFailureHandler(function(err) {
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Schedule'; }
+      showToast('Send failed: ' + (err.message || err), true);
+    })
+    .sendImageToSchedule(uid, assetId, canvasJson, b64, caption, bgId);
+}
+
+// Save & Return: used in the edit ↗ round-trip. Sends to Schedule then navigates back.
+function stSaveAndReturn() {
+  var btn = document.getElementById('stSaveReturnBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  var returnTo = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+
+  stSendToScheduleImage(function() {
+    st.editingAssetId = null;
+    st.publishOrigin  = null;
+    if (btn) { btn.style.display = 'none'; btn.disabled = false; btn.textContent = 'Save & Return'; }
+    stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+  });
+}
+
+// Flips the selected reel's Status to schedule (no render — reel is already a native AL row).
+function stSendToScheduleReel() {
+  var reelId = st.selectedReelId;
+  if (!reelId) { showToast('Select a reel first.'); return; }
+  var btn = document.getElementById('stReelSendToScheduleBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Send to Schedule'; }
+      if (!res || !res.ok) {
+        showToast('Send failed: ' + (res && res.error || 'unknown'), true);
+        return;
+      }
+      showToast('Reel sent to Schedule ✓');
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Send to Schedule'; }
+      showToast('Send failed: ' + (err.message || err), true);
+    })
+    .sendReelToSchedule(reelId);
 }
 
 function stSyncSubItemActive(uid, view) {
@@ -6157,11 +6881,10 @@ function stGetEpHeadphones(ep) {
   return 'muted';
 }
 
-// Film: lit when open Review_Reels task exists (Loop C proxy for folder-truth;
-// no blocking Drive call — Loop C creates/maintains this task when
-// files are in Reels/ root).
-function stGetEpFilm(ep, epTasks) {
-  return epTasks.some(function(t) { return t.Workflow_Step === 'Review_Reels'; })
+// Film: lit when episode is in production or later (reels pipeline active).
+function stGetEpFilm(ep) {
+  var status = String(ep.Status || '');
+  return (status === 'in_production' || status === 'review' || status === 'ready_to_release')
     ? 'lit' : 'muted';
 }
 
@@ -6204,7 +6927,7 @@ function stGetEpBlockingTask(ep, epTasks) {
   var BLOCKING_ORDER = [
     'Upload_Produced_Episode', 'Produce_Episode', 'Revise_Episode',
     'Upload_Final_Episode', 'release',
-    'Review_Episode', 'Revise_Reels', 'Review_Reels', 'Review_Guest_Brief'
+    'Review_Episode', 'Revise_Reels', 'Review_Guest_Brief'
   ];
   for (var i = 0; i < BLOCKING_ORDER.length; i++) {
     for (var j = 0; j < epTasks.length; j++) {
@@ -7013,8 +7736,7 @@ function stSubmitReelRevisionPopup() {
 
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
 function stSetDesignTab(tab) {
-  // Schedule is handled by its own stub — delegate and return
-  if (tab === 'schedule') { stShowScheduleStub(); return; }
+  if (tab === 'schedule') { stShowSchedule(st.episodeUid); return; }
 
   st.designTab = tab;
   var isQg   = (tab === 'qg');
@@ -7034,7 +7756,12 @@ function stSetDesignTab(tab) {
   // Center: show only the panel for this tab
   if (isQg) {
     document.getElementById('stCanvasView').style.display = 'flex';
-    if (st.fabricCanvas) setTimeout(stApplyDisplaySize, 0);
+    if (!st.fabricCanvas) {
+      stInitCanvas();
+      stLoadBackgrounds();
+    } else {
+      setTimeout(stApplyDisplaySize, 0);
+    }
   }
   if (isReel) { var reelView = document.getElementById('stReelView'); if (reelView) reelView.style.display = 'flex'; }
   if (isEp)   { var epView   = document.getElementById('stEpView');   if (epView)   epView.style.display   = 'flex'; }
@@ -7077,9 +7804,42 @@ function stSetDesignTab(tab) {
   // Load content for each mode
   if (isQg) {
     if (st.episodeUid) stLoadHqContent(st.episodeUid);
+    // edit ↗ round-trip from Schedule: restore saved canvas state for this asset
+    if (st.scheduleEditTarget) {
+      var _schTarget = st.scheduleEditTarget;
+      st.scheduleEditTarget = null;
+      st.editingAssetId = _schTarget;
+      google.script.run
+        .withSuccessHandler(function(assetData) {
+          if (!assetData) return;
+          var captionEl = document.getElementById('stCaptionField');
+          if (captionEl && assetData.caption_host) captionEl.textContent = assetData.caption_host;
+          if (assetData.canvas_state && st.fabricCanvas) {
+            try {
+              var json = JSON.parse(assetData.canvas_state);
+              st.fabricCanvas.loadFromJSON(json, function() {
+                stReattachBgControls();
+                stApplyTextControls();
+                st.fabricCanvas.renderAll();
+                stApplyDisplaySize();
+                // Re-apply background stripped during Send to Schedule serialization
+                if (assetData.background_id) stSelectBg(assetData.background_id, null);
+              });
+            } catch(e) { /* canvas_state parse error — skip */ }
+          }
+        })
+        .getAssetDisplayState(_schTarget);
+    }
   } else if (isReel) {
     if (st.episodeUid) stLoadRailReels(st.episodeUid);
     else stRenderRailReelList();
+    // edit ↗ round-trip from Schedule: auto-select the target reel
+    if (st.scheduleEditTarget) {
+      var _schReelTarget = st.scheduleEditTarget;
+      st.scheduleEditTarget = null;
+      // stLoadRailReels is async; defer selection until list renders
+      setTimeout(function() { stSelectRailReel(_schReelTarget); }, 800);
+    }
   } else if (isEp) {
     if (st.episodeUid) stLoadDesignEpisode(st.episodeUid);
   }
@@ -7100,6 +7860,7 @@ function stLoadDesignEpisode(uid) {
   epReviewState.revisionRound   = 0;
   epReviewState.composerLocked  = ep && ep.Video_Status === 'revision_requested';
 
+  epChatReset(uid);
   stEpRenderBrowser(uid, ep);
 
   google.script.run
@@ -7169,9 +7930,16 @@ function stEpRenderBrowser(uid, ep) {
   }
   html += '</div>'; // /stEpRevisionPane
 
-  // AI Chat stub pane
-  html += '<div id="stEpChatPane" style="display:none;flex:1;align-items:center;justify-content:center">';
-  html += '<div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px">AI Chat — coming soon.</div>';
+  // AI Chat pane — Episode companion
+  html += '<div id="stEpChatPane" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">';
+  html += '<div class="ep-chat-history" id="epChatHistory">';
+  html += '<div class="ep-chat-empty" id="epChatEmpty">Ask about the episode — what was said, where, and why it matters.</div>';
+  html += '</div>';
+  html += '<div class="ep-chat-input-wrap">';
+  html += '<textarea class="ep-chat-input" id="epChatInput" placeholder="Ask about this episode…" rows="1"';
+  html += ' onkeydown="epChatKeydown(event)"></textarea>';
+  html += '<button class="ep-chat-send" id="epChatSend" onclick="epChatSend()">Send</button>';
+  html += '</div>';
   html += '</div>';
 
   browser.innerHTML = html;
@@ -7187,6 +7955,128 @@ function stSetEpRailTab(tab) {
   if (tabChat)  tabChat.classList.toggle('active', !isRevisions);
   if (revPane)  revPane.style.display  = isRevisions ? 'flex' : 'none';
   if (chatPane) chatPane.style.display = isRevisions ? 'none'  : 'flex';
+}
+
+// ── EPISODE COMPANION CHAT ────────────────────────────────────
+function epChatReset(uid) {
+  epChat.history = [];
+  epChat.loading = false;
+  epChat.uid = uid;
+  var h = document.getElementById('epChatHistory');
+  if (h) h.innerHTML = '<div class="ep-chat-empty" id="epChatEmpty">Ask about the episode — what was said, where, and why it matters.</div>';
+  var inp = document.getElementById('epChatInput');
+  if (inp) { inp.value = ''; inp.style.height = ''; }
+}
+
+function epChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    epChatSend();
+  }
+}
+
+function epChatSend() {
+  if (epChat.loading) return;
+  var input = document.getElementById('epChatInput');
+  var msg = input ? input.value.trim() : '';
+  if (!msg) return;
+
+  input.value = '';
+  input.style.height = '';
+
+  var empty = document.getElementById('epChatEmpty');
+  if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+  epChatAppend('user', msg);
+
+  var snBox = document.getElementById('stEpShowNotesBox');
+  var workspaceState = { showNotesText: snBox ? (snBox.innerText || '').trim() : '' };
+
+  var historySnapshot = epChat.history.slice();
+  epChat.history.push({ role: 'user', content: msg });
+  epChatSetLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      epChatSetLoading(false);
+      if (!response || typeof response !== 'string') {
+        epChatAppendError('No response received. Please try again.');
+        epChat.history.pop();
+        return;
+      }
+      epChatAppend('assistant', response);
+      epChat.history.push({ role: 'assistant', content: response });
+    })
+    .withFailureHandler(function() {
+      epChatSetLoading(false);
+      epChatAppendError('Something went wrong. Please try again.');
+      epChat.history.pop();
+    })
+    .companionChat('episode', epChat.uid, historySnapshot, msg, workspaceState);
+}
+
+function epChatAppend(role, text) {
+  var h = document.getElementById('epChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-msg ' + (role === 'user' ? 'ep-chat-msg-user' : 'ep-chat-msg-asst');
+  div.innerHTML = role === 'user' ? esc(text) : epChatMarkdown(text);
+  h.appendChild(div);
+  epChatScrollToBottom();
+}
+
+function epChatAppendError(msg) {
+  var h = document.getElementById('epChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-error';
+  div.textContent = msg;
+  h.appendChild(div);
+  epChatScrollToBottom();
+}
+
+function epChatSetLoading(on) {
+  epChat.loading = on;
+  var send = document.getElementById('epChatSend');
+  var inp  = document.getElementById('epChatInput');
+  if (send) send.disabled = on;
+  if (inp)  inp.disabled  = on;
+
+  var existing = document.getElementById('epChatLoading');
+  if (on && !existing) {
+    var h = document.getElementById('epChatHistory');
+    if (h) {
+      var div = document.createElement('div');
+      div.id = 'epChatLoading';
+      div.className = 'ep-chat-loading';
+      div.textContent = 'Thinking…';
+      h.appendChild(div);
+      epChatScrollToBottom();
+    }
+  } else if (!on && existing) {
+    existing.parentNode.removeChild(existing);
+  }
+}
+
+function epChatScrollToBottom() {
+  var h = document.getElementById('epChatHistory');
+  if (h) h.scrollTop = h.scrollHeight;
+}
+
+function epChatMarkdown(text) {
+  var s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  s = s.replace(/^###\s+(.+)$/gm, '<div class="ep-chat-h3">$1</div>');
+  s = s.replace(/^##\s+(.+)$/gm,  '<div class="ep-chat-h2">$1</div>');
+  s = s.replace(/^[-*•]\s+(.+)$/gm,   '<div class="ep-chat-li">$1</div>');
+  s = s.replace(/^\d+\.\s+(.+)$/gm,   '<div class="ep-chat-li">$1</div>');
+  s = s.replace(/\n\n/g, '<br><br>');
+  s = s.replace(/\n/g, '<br>');
+  return s;
 }
 
 function stEpComposerFocus() {
@@ -7785,10 +8675,10 @@ function getEpisodeBadges(ep) {
     return t.Episode_UID === ep.Episode_UID;
   });
 
+  var status = String(ep.Status || '');
   var b = {
     hasRevision: false,
-    hasReel:     false,
-    hasImage:    false,
+    hasReel:     (status === 'in_production' || status === 'review' || status === 'ready_to_release'),
     hasAudio:    false,
     hasBrief:    false,
     allApproved: false
@@ -7796,8 +8686,6 @@ function getEpisodeBadges(ep) {
 
   epTasks.forEach(function(t) {
     var ws = t.Workflow_Step;
-    if (ws === "Review_Reels")       b.hasReel  = true;
-    if (ws === "Review_Images")      b.hasImage = true;
     if (ws === "Review_Episode")     b.hasAudio = true;
     if (ws === "Review_Guest_Brief") b.hasBrief = true;
   });
@@ -7865,8 +8753,7 @@ function renderEpisodeList() {
     html += '      <div class="ep-icons">';
 
     if (b.hasRevision) html += '<div class="ep-icon alert"    title="Revision requested"><svg width="12" height="12" data-lucide="triangle-alert"></svg></div>';
-    if (b.hasReel)     html += '<div class="ep-icon review"   title="Reels to review"><svg width="12" height="12" data-lucide="film"></svg></div>';
-    if (b.hasImage)    html += '<div class="ep-icon review"   title="Images to review"><svg width="12" height="12" data-lucide="image"></svg></div>';
+    if (b.hasReel)     html += '<div class="ep-icon review"   title="Reels in progress"><svg width="12" height="12" data-lucide="film"></svg></div>';
     if (b.hasAudio)    html += '<div class="ep-icon review"   title="Episode to review"><svg width="12" height="12" data-lucide="headphones"></svg></div>';
     if (b.hasBrief)    html += '<div class="ep-icon review"   title="Guest brief to review"><svg width="12" height="12" data-lucide="file-text"></svg></div>';
     if (b.allApproved) html += '<div class="ep-icon approved" title="All approved"><svg width="12" height="12" data-lucide="party-popper"></svg></div>';
@@ -7945,13 +8832,13 @@ function renderDashboardEpCard(ep, allTasks) {
 }
 
 function getDashboardIconStates(ep, epTasks) {
+  var status = String(ep.Status || '');
+  var reelsActive = (status === 'in_production' || status === 'review' || status === 'ready_to_release');
   return {
-    audio:    epTasks.some(function(t) { return t.Workflow_Step === "Review_Episode"; })
-              ? 'amber' : (ep.Video_Status  === 'approved' ? 'green' : 'gray'),
-    images:   epTasks.some(function(t) { return t.Workflow_Step === "Review_Images"; })
-              ? 'amber' : (ep.Images_Status === 'approved' ? 'green' : 'gray'),
-    reels:    epTasks.some(function(t) { return t.Workflow_Step === "Review_Reels"; })
-              ? 'amber' : 'gray',
+    audio:  epTasks.some(function(t) { return t.Workflow_Step === "Review_Episode"; })
+            ? 'amber' : (ep.Video_Status === 'approved' ? 'green' : 'gray'),
+    images: 'gray',
+    reels:  reelsActive ? 'amber' : 'gray',
   };
 }
 
@@ -8055,16 +8942,19 @@ function renderLooseContainer(tasks, label, icon) {
 }
 
 function dbTapIcon(episodeUid, type) {
-
-  var stepMap = { episode: 'Review_Episode', images: 'Review_Images', reels: 'Review_Reels' };
-  var step    = stepMap[type];
-  var hasTask = step && state.tasks.some(function(t) {
-    return t.Episode_UID === episodeUid && t.Workflow_Step === step;
-  });
-  if (!hasTask) { showEpisodeDetail(episodeUid); return; }
-  if (type === 'episode') showEpisodeReview(episodeUid);
-  else if (type === 'images') showImagesReview(episodeUid);
-  else if (type === 'reels')  showReelsReview(episodeUid);
+  if (type === 'episode') {
+    var hasTask = state.tasks.some(function(t) {
+      return t.Episode_UID === episodeUid && t.Workflow_Step === 'Review_Episode';
+    });
+    if (hasTask) { showEpisodeReview(episodeUid); return; }
+  } else if (type === 'reels') {
+    var ep     = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+    var status = ep ? String(ep.Status || '') : '';
+    if (status === 'in_production' || status === 'review' || status === 'ready_to_release') {
+      showReelsReview(episodeUid); return;
+    }
+  }
+  showEpisodeDetail(episodeUid);
 }
 
 function dbToggleTask(taskId) {
@@ -8147,9 +9037,9 @@ function renderEpisodeDetail(ep) {
 
 // ── EPISODE TOOLS CARD ───────────────────────────────────────
 function renderEpisodeToolsCard(ep, epTasks) {
-  var audioTask  = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
-  var reelsTask  = epTasks.find(function(t) { return t.Workflow_Step === "Review_Reels"; });
-  var imagesTask = epTasks.find(function(t) { return t.Workflow_Step === "Review_Images"; });
+  var audioTask   = epTasks.find(function(t) { return t.Workflow_Step === "Review_Episode"; });
+  var epStatus    = String(ep.Status || '');
+  var reelsActive = (epStatus === 'in_production' || epStatus === 'review' || epStatus === 'ready_to_release');
 
   var driveUrl = ep.Production_Folder_ID
     ? "https://drive.google.com/drive/folders/" + ep.Production_Folder_ID
@@ -8170,9 +9060,9 @@ function renderEpisodeToolsCard(ep, epTasks) {
       '<div class="ep-tools-zone">' +
         '<div class="ep-tools-zone-label">Assets</div>' +
         '<div class="ep-tools-zone-icons">' +
-          zoneBtn("Episode",  "headphones", audioTask  ? "action" : "", audioTask  ? "showEpisodeReview('" + uid + "')" : "") +
-          zoneBtn("Images",   "image",      imagesTask ? "action" : "", "showImagesReview('"  + uid + "')") +
-          zoneBtn("Reels",    "film",       reelsTask  ? "action" : "", "showReelsReview('"   + uid + "')") +
+          zoneBtn("Episode",  "headphones", audioTask   ? "action" : "", audioTask   ? "showEpisodeReview('" + uid + "')" : "") +
+          zoneBtn("Images",   "image",      "",                          "") +
+          zoneBtn("Reels",    "film",       reelsActive ? "action" : "", reelsActive ? "showReelsReview('"   + uid + "')" : "") +
 
         '</div>' +
       '</div>' +
@@ -9301,19 +10191,11 @@ function renderTaskButtons(task) {
   var tid  = esc(task.Task_ID);
   var ridx = task._rowIndex;
 
-  // In-app review navigation — these steps open a review surface, not an approval flow
-  if (ws === "Review_Episode" || ws === "Review_Images" || ws === "Review_Reels") {
+  // In-app review navigation — opens review surface, not an approval flow
+  if (ws === "Review_Episode") {
     var reviewUid = esc(task.Episode_UID || "");
-    if (ws === "Review_Episode") {
-      html += '<button class="btn btn-approve" onclick="showEpisodeReview(\'' + reviewUid + '\')">';
-      html += '<svg width="12" height="12" data-lucide="play"></svg> Review Episode</button>';
-    } else if (ws === "Review_Images") {
-      html += '<button class="btn btn-approve" onclick="showImagesReview(\'' + reviewUid + '\')">';
-      html += '<svg width="12" height="12" data-lucide="image"></svg> Sort Images</button>';
-    } else {
-      html += '<button class="btn btn-approve" onclick="showReelsReview(\'' + reviewUid + '\')">';
-      html += '<svg width="12" height="12" data-lucide="film"></svg> Sort Reels</button>';
-    }
+    html += '<button class="btn btn-approve" onclick="showEpisodeReview(\'' + reviewUid + '\')">';
+    html += '<svg width="12" height="12" data-lucide="play"></svg> Review Episode</button>';
     return html;
   }
 
@@ -9623,6 +10505,8 @@ function _onEpUploadComplete(taskId, rowIndex, episodeUid) {
     .withSuccessHandler(function(result) {
       if (result.success) {
         removeTaskFromState(taskId);
+        var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+        if (ep) ep.Video_Status = 'review';
         fireConfetti();
         showToast("Uploaded — Review Episode task spawned");
         refreshCurrentView();

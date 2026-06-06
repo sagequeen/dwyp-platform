@@ -139,13 +139,10 @@ var ASSET_LIBRARY_COLS = {
   Notes:         12,
   Background_ID: 13,
   Canvas_State:  14,
-  Status:        15,  // candidate | scheduled | bank | rejected
+  Status:        15,  // candidate | schedule | bank | rejected
   Availability:  16,  // available | placed | paired
   Created_At:    17,
   Created_By:    18,
-  Quality_Score: 19,  // int 1–5; empty until midnight pass populates — read-only in wiring spoke
-  Slot_Tags:     20,  // comma-separated Posting_Schedule Slot_IDs; empty until midnight pass
-  Display_Text:  21   // JT-edited card text; source of truth for card stack render; null until first edit
 };
 
 // Posting_Schedule tab column map (6 columns)
@@ -777,7 +774,7 @@ function getSocialAssets(episodeUid, assetType) {
         Slide_Index:  String(row[ASSET_LIBRARY_COLS.Slide_Index   - 1]),
         Availability: String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
         Display_Name: String(row[ASSET_LIBRARY_COLS.Display_Name  - 1]),
-        Summary:      String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
+        Summary:      String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
         thumbnailUrl: fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w160' : ''
       });
     }
@@ -974,89 +971,6 @@ function getPublishSchedule(episodeUid) {
     return { days: days };
   } catch (err) {
     return { days: [], error: err.message };
-  }
-}
-
-/**
- * Places an asset into a Publish schedule slot.
- * Asset_Library: Availability → placed, siblings → paired.
- * Social_Assets: creates new row linking AL row to the slot.
- * @param {string} episodeUid
- * @param {string} slotId
- * @param {string} assetId    - Asset_Library Asset_ID (null for Drive-fallback)
- * @param {string} caption
- * @param {string} driveFileId
- * @param {string} assetType
- * @returns {{ success: boolean, error?: string }}
- */
-function placeAssetInSlot(episodeUid, slotId, assetId, caption, driveFileId, assetType) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet = ss.getSheetByName(alName);
-    var saSheet = ss.getSheetByName("Social_Assets");
-
-    var alData         = alSheet ? alSheet.getDataRange().getValues() : [];
-    var placedSlideIdx = null;
-    var resolvedAlId   = assetId;
-    var resolvedFileId = driveFileId;
-    var resolvedType   = assetType;
-
-    if (assetId && alSheet) {
-      // Update existing AL row
-      for (var i = 1; i < alData.length; i++) {
-        if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
-        alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status).setValue("scheduled");
-        placedSlideIdx = String(alData[i][ASSET_LIBRARY_COLS.Slide_Index - 1]);
-        resolvedFileId = resolvedFileId || String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
-        resolvedType   = resolvedType   || String(alData[i][ASSET_LIBRARY_COLS.Asset_Type   - 1]);
-        break;
-      }
-      // RETIRED Slide_Index pairing (May 2026) — one asset = one slot
-      // if (placedSlideIdx && placedSlideIdx !== "") {
-      //   for (var j = 1; j < alData.length; j++) {
-      //     if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID    - 1]) === String(assetId))     continue;
-      //     if (String(alData[j][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid))  continue;
-      //     if (String(alData[j][ASSET_LIBRARY_COLS.Slide_Index - 1]) !== placedSlideIdx)      continue;
-      //     alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("paired");
-      //   }
-      // }
-    } else if (driveFileId && assetType && alSheet) {
-      // Drive-fallback: create an AL stub row first
-      var newAlId = "AL-DRV-" + Date.now();
-      var alRow   = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill("");
-      alRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = newAlId;
-      alRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
-      alRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = assetType;
-      alRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = driveFileId;
-      alRow[ASSET_LIBRARY_COLS.Status       - 1] = "scheduled";
-      alRow[ASSET_LIBRARY_COLS.Availability - 1] = "placed";
-      alRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
-      alRow[ASSET_LIBRARY_COLS.Created_By   - 1] = "drive_fallback";
-      alSheet.appendRow(alRow);
-      resolvedAlId = newAlId;
-    }
-
-    // Create Social_Assets row
-    var postId  = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
-    var saRow   = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
-    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = resolvedAlId || "";
-    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
-    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = resolvedType  || assetType || "";
-    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
-    saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = resolvedFileId || "";
-    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = new Date();
-    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
-    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
-    saSheet.appendRow(saRow);
-    bumpVersion("asset_library", "placeAssetInSlot");
-    return { success: true, assetLibraryId: resolvedAlId || '', postId: postId };
-  } catch (err) {
-    return { success: false, error: err.message };
   }
 }
 
@@ -1331,7 +1245,6 @@ function getBackgroundLibrary() {
 
 /**
  * Returns up to 30 images from the PRECOMP_BG_IMAGES Drive folder.
- * Used as the fallback candidate pool in getRankedCandidates() before Vert Fairy Pass 2 ships.
  * @returns {{ fileId: string, name: string, thumbnailUrl: string }[]}
  * Publish no longer consumes — Design tab only (May 2026 pare-down).
  */
@@ -1386,10 +1299,6 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
         sheet.getRange(row, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
         written = true;
       }
-      if (displayText !== undefined && displayText !== null) {
-        sheet.getRange(row, ASSET_LIBRARY_COLS.Display_Text).setValue(displayText);
-        written = true;
-      }
       // Caption_Guest (col 11) reserved for Guest Package builder — not written here
       if (written) bumpVersion('asset_library', 'saveAssetDraft');
       return { ok: true };
@@ -1397,6 +1306,81 @@ function saveAssetDraft(assetId, canvasJson, captionText, displayText, captionFi
     return { ok: false, error: 'Asset not found: ' + assetId };
   } catch (err) {
     return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Derivative-edit save endpoint. Called when JT commits changes from the edit ↗ surface.
+ * action='save'      — overwrites the same AL row (Quote_Text, Canvas_State, Caption_Host).
+ * action='save_copy' — appends a new AL row, Status='schedule', Availability='available';
+ *                      shares Drive_File_ID with the source (reel use-case: same clip, new caption).
+ * Images:  canvasJson carries Canvas_State; quoteText extracted from non-attribution canvas text.
+ * Reels:   canvasJson is null; quoteText = title card text.
+ * No Social_Assets touch — AL-only.
+ */
+function saveDerivativeAsset(assetId, action, canvasJson, captionText, quoteText) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return { ok: false, error: 'Asset_Library tab not found' };
+
+    var data   = alSheet.getDataRange().getValues();
+    var rowNum = -1;
+    var src    = null;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(assetId)) {
+        rowNum = i + 1;
+        src    = data[i];
+        break;
+      }
+    }
+    if (rowNum === -1) return { ok: false, error: 'Asset not found: ' + assetId };
+
+    var quoteNorm = normalizeQuoteText(quoteText || '');
+    var caption   = captionText || '';
+    var now       = new Date();
+
+    if (action === 'save') {
+      alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Quote_Text  ).setValue(quoteNorm);
+      alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Caption_Host).setValue(caption);
+      if (canvasJson) alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
+      bumpVersion('asset_library', 'saveDerivativeAsset');
+      try {
+        var audit = ss.getSheetByName('Audit_Trail');
+        if (audit) audit.appendRow([now, 'DWYP_App', 'DERIVATIVE_SAVE', assetId]);
+      } catch (e) {}
+      return { ok: true, assetId: assetId };
+    }
+
+    if (action === 'save_copy') {
+      var newId  = 'AL-' + now.getTime() + '-' + Math.floor(Math.random() * 9000 + 1000);
+      var newRow = new Array(data[0].length).fill('');
+      newRow[ASSET_LIBRARY_COLS.Asset_ID      - 1] = newId;
+      newRow[ASSET_LIBRARY_COLS.Episode_UID   - 1] = String(src[ASSET_LIBRARY_COLS.Episode_UID   - 1] || '');
+      newRow[ASSET_LIBRARY_COLS.Asset_Type    - 1] = String(src[ASSET_LIBRARY_COLS.Asset_Type    - 1] || '');
+      newRow[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = String(src[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+      newRow[ASSET_LIBRARY_COLS.Display_Name  - 1] = String(src[ASSET_LIBRARY_COLS.Display_Name  - 1] || '');
+      newRow[ASSET_LIBRARY_COLS.Quote_Text    - 1] = quoteNorm;
+      newRow[ASSET_LIBRARY_COLS.Canvas_State  - 1] = canvasJson || '';
+      newRow[ASSET_LIBRARY_COLS.Caption_Host  - 1] = caption;
+      newRow[ASSET_LIBRARY_COLS.Status        - 1] = 'schedule';
+      newRow[ASSET_LIBRARY_COLS.Availability  - 1] = 'available';
+      newRow[ASSET_LIBRARY_COLS.Created_At    - 1] = now;
+      newRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'jt';
+      alSheet.appendRow(newRow);
+      bumpVersion('asset_library', 'saveDerivativeAsset');
+      try {
+        var audit2 = ss.getSheetByName('Audit_Trail');
+        if (audit2) audit2.appendRow([now, 'DWYP_App', 'DERIVATIVE_COPY', assetId + ' → ' + newId]);
+      } catch (e) {}
+      return { ok: true, assetId: newId };
+    }
+
+    return { ok: false, error: 'Unknown action: ' + action };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 }
 
@@ -1416,7 +1400,6 @@ function getAssetDisplayState(assetId) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
       return {
         ok:                  true,
-        display_text:        String(data[i][ASSET_LIBRARY_COLS.Display_Text  - 1] || '') || null,
         caption_guest:       String(data[i][ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         caption_host:        String(data[i][ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
         canvas_state:        String(data[i][ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
@@ -1458,44 +1441,22 @@ function sendReelToSchedule(reelAssetId) {
 
 /**
  * Upserts an image asset into the Schedule candidate pool.
- * - If assetId matches an existing row: updates Status, Canvas_State, Drive_File_ID, Caption_Host, Background_ID.
+ * - If assetId matches an existing row: updates Status, Canvas_State, Caption_Host, Background_ID.
  * - If assetId is null or not found: creates a new row at Status: schedule.
- * Saves the PNG thumbnail to Staging/Schedule_Renders/ and stores the Drive file ID.
+ * No Drive write — Drive_File_ID is export-owned. Card preview renders client-side from Canvas_State.
  * @param {string} episodeUid
  * @param {string|null} assetId  — null on first send; existing Asset_ID on re-send
  * @param {string} canvasJson    — Fabric JSON with background objects stripped (no base64 srcs)
- * @param {string} b64           — base64 PNG, no data: prefix
  * @param {string} captionHost
  * @param {string|null} backgroundId — Drive file ID of the background image, for round-trip restore
  * @returns {{ ok: boolean, assetId?: string, error?: string }}
  */
-function sendImageToSchedule(episodeUid, assetId, canvasJson, b64, captionHost, backgroundId) {
+function sendImageToSchedule(episodeUid, assetId, canvasJson, captionHost, backgroundId) {
   try {
     var ss     = SpreadsheetApp.openById(getMasterSheetId());
     var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
     var alSheet = ss.getSheetByName(alName);
     if (!alSheet) return { ok: false, error: 'Asset_Library tab not found' };
-
-    // Write thumbnail PNG to Staging/Schedule_Renders/
-    var driveFileId = '';
-    if (b64) {
-      try {
-        var stagingId = getStagingFolderIdByUid(episodeUid);
-        if (stagingId) {
-          var stagingFolder  = DriveApp.getFolderById(stagingId);
-          var renderFolderIt = stagingFolder.getFoldersByName('Schedule_Renders');
-          var renderFolder   = renderFolderIt.hasNext()
-            ? renderFolderIt.next()
-            : stagingFolder.createFolder('Schedule_Renders');
-          var cleanB64 = b64.replace(/^data:image\/[^;]+;base64,/, '');
-          var bytes    = Utilities.base64Decode(cleanB64);
-          var blob     = Utilities.newBlob(bytes, 'image/png', Utilities.getUuid() + '.png');
-          driveFileId  = renderFolder.createFile(blob).getId();
-        }
-      } catch (driveErr) {
-        // Non-fatal: card thumbnail will be blank until next send
-      }
-    }
 
     // Find existing row if assetId provided
     var data = alSheet.getDataRange().getValues();
@@ -1513,7 +1474,6 @@ function sendImageToSchedule(episodeUid, assetId, canvasJson, b64, captionHost, 
       // Update existing row
       alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Status).setValue('schedule');
       alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson || '');
-      if (driveFileId) alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(driveFileId);
       if (captionHost !== undefined && captionHost !== null) {
         alSheet.getRange(foundRow, ASSET_LIBRARY_COLS.Caption_Host).setValue(captionHost);
       }
@@ -1528,7 +1488,6 @@ function sendImageToSchedule(episodeUid, assetId, canvasJson, b64, captionHost, 
       row[ASSET_LIBRARY_COLS.Asset_ID      - 1] = newId;
       row[ASSET_LIBRARY_COLS.Episode_UID   - 1] = episodeUid;
       row[ASSET_LIBRARY_COLS.Asset_Type    - 1] = 'quote_graphic';
-      row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] = driveFileId;
       row[ASSET_LIBRARY_COLS.Canvas_State  - 1] = canvasJson || '';
       row[ASSET_LIBRARY_COLS.Caption_Host  - 1] = captionHost || '';
       row[ASSET_LIBRARY_COLS.Background_ID - 1] = backgroundId || '';
@@ -1546,137 +1505,71 @@ function sendImageToSchedule(episodeUid, assetId, canvasJson, b64, captionHost, 
 }
 
 /**
- * Returns the full image as a base64 data URL for canvas placement.
- * Used instead of a Drive URL to avoid CORS restrictions in the GAS web app.
- * @param {string} fileId
- * @returns {{ success: true, dataUrl: string } | { success: false, error: string }}
+ * Exports one Schedule-pool asset to Manual_Exports/Singles/ inside the episode staging folder.
+ * QG: writes the provided base64 PNG + matched .txt (Caption_Host).
+ * Reel: COPIES the Drive file at Drive_File_ID + matched .txt (Display_Name + Caption_Host).
+ * No Status or Availability changes — export is not a lifecycle move.
+ * @param {string}      episodeUid
+ * @param {string}      assetId     — Asset_Library Asset_ID
+ * @param {string|null} base64Png   — base64 PNG (no data: prefix) for QG; null for reel
+ * @returns {{ success: boolean, folderUrl?: string, error?: string }}
  */
-/**
- * Exports the current canvas render to a Manual_Exports subfolder inside the episode working folder.
- * Also writes canvasJson to the AL row (Export IS save + render — canonical state after manual export).
- * @param {string} episodeUid
- * @param {string} slotId
- * @param {string} assetId
- * @param {string} b64           - base64-encoded PNG, no data: prefix
- * @param {string} canvasJson    - Fabric.js canvas JSON, base64 srcs already stripped
- * @returns {{ success: boolean, filename?: string, url?: string, folderUrl?: string, error?: string }}
- */
-function exportAssetToDrive(episodeUid, slotId, assetId, b64, canvasJson, day, canvasText, caption) {
+function exportSingleScheduleAsset(episodeUid, assetId, base64Png) {
   try {
     var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
-    var stagingFolder  = DriveApp.getFolderById(stagingId);
-    var exportFolderIt = stagingFolder.getFoldersByName('Manual_Exports');
-    var exportFolder   = exportFolderIt.hasNext() ? exportFolderIt.next() : stagingFolder.createFolder('Manual_Exports');
+    if (!stagingId) return { success: false, error: 'Staging folder not found: ' + episodeUid };
+    var stagingFolder = DriveApp.getFolderById(stagingId);
 
-    var timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
-    var dayPrefix = day ? (String(day).toUpperCase() + '_') : '';
-    var baseName  = dayPrefix + (slotId || 'noslot') + '_' + (assetId || 'noasset') + '_' + timestamp;
-    var filename  = baseName + '.png';
-    var blob      = Utilities.newBlob(Utilities.base64Decode(b64), 'image/png', filename);
-    var file      = exportFolder.createFile(blob);
-    var fileId    = file.getId();
+    // Resolve Manual_Exports/Singles/ (create lazily)
+    var exportIt  = stagingFolder.getFoldersByName('Manual_Exports');
+    var exportRoot = exportIt.hasNext() ? exportIt.next() : stagingFolder.createFolder('Manual_Exports');
+    var singlesIt  = exportRoot.getFoldersByName('Singles');
+    var singlesFolder = singlesIt.hasNext() ? singlesIt.next() : exportRoot.createFolder('Singles');
 
-    // Write paired .txt companion (canvas text + caption)
-    var txtParts = [];
-    if (canvasText) txtParts.push(String(canvasText).trim());
-    if (caption)    txtParts.push(String(caption).trim());
-    if (txtParts.length) {
-      var txtBlob = Utilities.newBlob(txtParts.join('\n\n'), 'text/plain', baseName + '.txt');
-      exportFolder.createFile(txtBlob);
-    }
-
-    var ss = SpreadsheetApp.openById(getMasterSheetId());
-
-    if (assetId && canvasJson) {
-      var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
-      var alSheet = ss.getSheetByName(alName);
-      if (alSheet) {
-        var alData = alSheet.getDataRange().getValues();
-        for (var i = 1; i < alData.length; i++) {
-          if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
-          break;
-        }
-      }
-      bumpVersion('asset_library', 'exportAssetToDrive');
-    }
-
-    try {
-      var audit = ss.getSheetByName('Audit_Trail');
-      if (audit) audit.appendRow([new Date(), 'DWYP_App', 'exportAssetToDrive', assetId + ' → ' + filename]);
-    } catch(logErr) {}
-
-    return {
-      success:   true,
-      filename:  filename,
-      url:       'https://drive.google.com/file/d/' + fileId + '/view',
-      folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
-    };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
- * Copies a reel's Drive file into Manual_Exports with a day prefix, then writes a
- * paired .txt companion (title card text + caption). Used by Design tab Reels export.
- */
-function exportReelToDrive(episodeUid, day, reelAssetId, titleText, caption) {
-  try {
-    var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
-    var stagingFolder  = DriveApp.getFolderById(stagingId);
-    var exportFolderIt = stagingFolder.getFoldersByName('Manual_Exports');
-    var exportFolder   = exportFolderIt.hasNext() ? exportFolderIt.next() : stagingFolder.createFolder('Manual_Exports');
-
-    // Resolve reel's Drive file ID from Asset_Library
-    var ss     = SpreadsheetApp.openById(getMasterSheetId());
-    var alName = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
+    // Resolve AL row
+    var ss      = SpreadsheetApp.openById(getMasterSheetId());
+    var alName  = getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library';
     var alSheet = ss.getSheetByName(alName);
-    if (!alSheet) return { success: false, error: 'Asset_Library sheet not found' };
+    if (!alSheet) return { success: false, error: 'Asset_Library tab not found' };
 
-    var alData  = alSheet.getDataRange().getValues();
-    var driveFileId = null;
+    var alData = alSheet.getDataRange().getValues();
+    var al = null;
     for (var i = 1; i < alData.length; i++) {
-      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(reelAssetId)) {
-        driveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
+      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) === String(assetId)) {
+        al = {
+          assetType:   String(alData[i][ASSET_LIBRARY_COLS.Asset_Type    - 1]),
+          driveFileId: String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || ''),
+          displayName: String(alData[i][ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
+          captionHost: String(alData[i][ASSET_LIBRARY_COLS.Caption_Host  - 1] || '')
+        };
         break;
       }
     }
-    if (!driveFileId) return { success: false, error: 'No Drive file ID found for reel: ' + reelAssetId };
+    if (!al) return { success: false, error: 'Asset not found: ' + assetId };
 
-    var timestamp  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyMMdd-HHmm');
-    var reelFile   = DriveApp.getFileById(driveFileId);
-    var ext        = reelFile.getName().split('.').pop() || 'mp4';
-    var titleSlug  = titleText ? String(titleText).trim().replace(/[\\/:*?"<>|#%&{}]/g, '').replace(/\s+/g, ' ').trim().substring(0, 120) : '';
-    var baseName   = titleSlug || ('reel_' + reelAssetId + '_' + timestamp);
+    var baseName = _safeFilename(al.displayName) || assetId;
+    var isReel   = al.assetType.toLowerCase() === 'reel';
 
-    // Move the reel file into Manual_Exports — evacuates Reels/ root, silencing Loop C
-    reelFile.setName(baseName + '.' + ext);
-    reelFile.moveTo(exportFolder);
-    var movedFile = reelFile;
-
-    // Write paired .txt companion
-    var txtParts = [];
-    if (titleText) txtParts.push(String(titleText).trim());
-    if (caption)   txtParts.push(String(caption).trim());
-    if (txtParts.length) {
-      var txtBlob = Utilities.newBlob(txtParts.join('\n\n'), 'text/plain', baseName + '.txt');
-      exportFolder.createFile(txtBlob);
+    var noExtSingle = '';
+    if (isReel) {
+      if (!al.driveFileId) return { success: false, error: 'No Drive file ID for reel: ' + assetId };
+      var reelFile = DriveApp.getFileById(al.driveFileId);
+      var ext      = reelFile.getName().split('.').pop() || 'mp4';
+      var reelName = _uniqueFilename(singlesFolder, baseName, ext);
+      noExtSingle  = reelName.substring(0, reelName.length - ext.length - 1);
+      reelFile.makeCopy(reelName, singlesFolder);
+      var txtBody = [al.displayName, al.captionHost].filter(Boolean).join('\n\n');
+      singlesFolder.createFile(Utilities.newBlob(txtBody, 'text/plain', _uniqueFilename(singlesFolder, noExtSingle, 'txt')));
+    } else {
+      if (!base64Png) return { success: false, error: 'No PNG bytes provided for QG: ' + assetId };
+      var imgName = _uniqueFilename(singlesFolder, baseName, 'png');
+      noExtSingle  = imgName.substring(0, imgName.length - 4);
+      var blob = Utilities.newBlob(Utilities.base64Decode(base64Png), 'image/png', imgName);
+      singlesFolder.createFile(blob);
+      singlesFolder.createFile(Utilities.newBlob(al.captionHost, 'text/plain', _uniqueFilename(singlesFolder, noExtSingle, 'txt')));
     }
 
-    try {
-      var audit = ss.getSheetByName('Audit_Trail');
-      if (audit) audit.appendRow([new Date(), 'DWYP_App', 'exportReelToDrive', reelAssetId + ' → ' + baseName]);
-    } catch(logErr) {}
-
-    return {
-      success:   true,
-      filename:  baseName,
-      url:       'https://drive.google.com/file/d/' + movedFile.getId() + '/view',
-      folderUrl: 'https://drive.google.com/drive/folders/' + exportFolder.getId()
-    };
+    return { success: true, folderUrl: 'https://drive.google.com/drive/folders/' + singlesFolder.getId() };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -2942,7 +2835,7 @@ function stLoadEpisodeIndex(episodeUid) {
  * workspaceState: Per-surface live state object:
  *   Episode:  { showNotesText: string }
  *   Images:   { activeAssetText: string }  — Pass 2 stub
- *   Reels:    { captionText: string }       — Pass 3 stub
+ *   Reels:    { titleCardText: string, captionText: string }
  *   Schedule: { placedAssets: Array }       — Pass 4 stub
  */
 function companionChat(surface, episodeUid, history, userMessage, workspaceState) {
@@ -2981,10 +2874,74 @@ function _companionBuildSystem(surface, episodeUid, companionVoice, showPhilosop
                 'with — do not treat them as factual source. The transcript is the only source of truth. ' +
                 'Never ground new copy on previously-generated copy.';
       break;
-    case 'images':   // Pass 2
-    case 'reels':    // Pass 3
-    case 'schedule': // Pass 4
+    case 'images': {
+      var transcriptImg = stLoadEpisodeIndex(episodeUid);
+      if (transcriptImg) {
+        system += '## EPISODE TRANSCRIPT\n' +
+                  'Source of truth for all copy. Verbatim quotes must come word-for-word from this text — ' +
+                  'never paraphrased or reconstructed.\n\n' +
+                  transcriptImg + '\n\n';
+      }
+      try {
+        var hq = getEpisodeHooksAndQuotes(episodeUid);
+        var poolLines = [];
+        (hq.hooks  || []).forEach(function(h) { var t = (typeof h === 'string') ? h : (h.text || ''); if (t) poolLines.push('HOOK: ' + t); });
+        (hq.quotes || []).forEach(function(q) { var t = (typeof q === 'string') ? q : (q.text || ''); if (t) poolLines.push('QUOTE: ' + t); });
+        if (poolLines.length) {
+          system += '## DO NOT REPEAT — ALREADY SURFACED TO JT\n' +
+                    'These hooks and quotes have already been shown to JT. Offer fresh angles and different lines — do not re-serve these.\n\n' +
+                    poolLines.join('\n') + '\n\n';
+        }
+      } catch (e) { /* non-fatal — pool exclusion omitted if unavailable */ }
+      system += 'You are helping JT source and sharpen hook/quote/caption copy for a canvas graphic. ' +
+                'When JT asks for a line to use, produce it in the correct production voice. ' +
+                'Iterate on genuine variation — when JT pushes back, offer different angles, not the same idea reworded. ' +
+                'Stay on copy for the current canvas asset. Do not draft copy that belongs to other surfaces.';
       break;
+    }
+    case 'reels': {
+      var transcriptReel = stLoadEpisodeIndex(episodeUid);
+      if (transcriptReel) {
+        system += '## EPISODE TRANSCRIPT\n' +
+                  'Source of truth for all copy. Verbatim quotes must come word-for-word from this text — ' +
+                  'never paraphrased or reconstructed.\n\n' +
+                  transcriptReel + '\n\n';
+      }
+      system += 'You are helping JT refine the title card and caption for a reel. ' +
+                'REFINE-FIRST: default to improving what JT already has — sharpen the hook, tighten the language, improve the rhythm. ' +
+                'Do not volunteer net-new title card or caption options unless JT explicitly asks you to generate alternatives. ' +
+                'When JT does ask for new options, produce them in the correct production voice from the transcript. ' +
+                'Verbatim quotes must come word-for-word from the transcript — never reconstruct or paraphrase. ' +
+                'Do not draft copy for other surfaces (canvas graphics, show notes, schedule). Stay on the current reel.';
+      break;
+    }
+    case 'schedule': {
+      // THE FIREWALL: do NOT call stLoadEpisodeIndex here.
+      // The companion must judge assets without episode context — same as the audience.
+      system += 'You are a social-media strategist helping JT arrange her week of posts. ' +
+                'You advise on the *arrangement* — coverage, pacing, format/platform mix, swipe-package balance, ' +
+                'and whether the week works for an audience that has never heard the episode.\n\n' +
+                'FIREWALL: You do not have the episode transcript. This is intentional. ' +
+                'Judge every asset by whether it stands alone to someone who has never heard this episode. ' +
+                'You cannot fall back on episode context the audience lacks — and neither can the audience.\n\n' +
+                'ADVISE-FIRST: Default to assessing and improving the week JT has already arranged. ' +
+                'Flag coverage gaps, pacing problems, format/platform mix issues, and assets that will not land ' +
+                'without episode context. Produce net-new arrangement proposals only when JT explicitly asks. ' +
+                'Do not invent posting strategy unprompted.\n\n' +
+                'STAY ON ARRANGEMENT: This is scheduling work. If JT needs to rewrite a caption or re-cut a reel, ' +
+                'point her to the Images or Reels surface — do not do copy work here. ' +
+                'The firewall makes copy work structurally difficult anyway: you lack the transcript to pull from.\n\n' +
+                'SLOT INTENT: Read the slot intent ("why" field per slot) as the goal for that slot — ' +
+                'what that placement is trying to accomplish for the audience. ' +
+                'For ad-hoc slots (flagged as such in the workspace), respect JT\'s placement choice ' +
+                'and reason from craft; do not treat an ad-hoc slot as a plan gap to flag.\n\n' +
+                'SOURCE AWARENESS: When making a resonance judgment, name what you are grounding it in. ' +
+                'If trends data appears in the workspace, cite it. ' +
+                'Otherwise, flag your response as general social-craft reasoning.\n\n' +
+                'The central question governing every judgment: does this asset stand alone? ' +
+                'Without the episode for context, will it resonate with a cold, short-attention-span scroll?';
+      break;
+    }
   }
 
   return system;
@@ -3003,9 +2960,55 @@ function _companionBuildUserPrompt(surface, workspaceState, userMessage) {
         return '[SHOW NOTES — JT\'s current working draft]\n' + showNotes + '\n\n---\n\n' + userMessage;
       }
       return userMessage;
-    case 'images':   // Pass 2 stub
-    case 'reels':    // Pass 3 stub
-    case 'schedule': // Pass 4 stub
+    case 'images': {
+      var canvasText = workspaceState && workspaceState.activeAssetText
+        ? workspaceState.activeAssetText.trim() : '';
+      if (canvasText) {
+        return '[CANVAS — current text on the canvas]\n' + canvasText + '\n\n---\n\n' + userMessage;
+      }
+      return userMessage;
+    }
+    case 'reels': {
+      var titleCardText = workspaceState && workspaceState.titleCardText ? workspaceState.titleCardText.trim() : '';
+      var reelCaption   = workspaceState && workspaceState.captionText   ? workspaceState.captionText.trim()   : '';
+      if (titleCardText || reelCaption) {
+        var preamble = '[CURRENT REEL DRAFT]';
+        if (titleCardText) preamble += '\nTitle card: ' + titleCardText;
+        if (reelCaption)   preamble += '\nCaption: '    + reelCaption;
+        return preamble + '\n\n---\n\n' + userMessage;
+      }
+      return userMessage;
+    }
+    case 'schedule': {
+      var placed   = workspaceState && workspaceState.placedAssets  ? workspaceState.placedAssets  : [];
+      var unplaced = workspaceState && workspaceState.unplacedPool  ? workspaceState.unplacedPool  : [];
+      if (!placed.length && !unplaced.length) return userMessage;
+      var lines = ['[CURRENT WEEK STATE]'];
+      if (placed.length) {
+        lines.push('\nPlaced:');
+        placed.forEach(function(item) {
+          var loc = item.placement === 'swipe'
+            ? 'Swipe Package'
+            : (item.day || '') + (item.platform ? ' — ' + item.platform : '');
+          var intent = item.adHoc
+            ? '(ad-hoc slot)'
+            : (item.slotIntent ? 'Slot intent: ' + item.slotIntent : '');
+          var line = '  ' + loc + ' | ' + (item.assetType || '') + ' | ' + (item.displayName || item.assetId || '');
+          if (intent) line += ' | ' + intent;
+          if (item.surfaceText) line += '\n    "' + String(item.surfaceText).substring(0, 200) + '"';
+          lines.push(line);
+        });
+      }
+      if (unplaced.length) {
+        lines.push('\nPool (unplaced):');
+        unplaced.forEach(function(item) {
+          var line = '  ' + (item.assetType || '') + ' | ' + (item.displayName || item.assetId || '');
+          if (item.surfaceText) line += ' | "' + String(item.surfaceText).substring(0, 150) + '"';
+          lines.push(line);
+        });
+      }
+      return lines.join('\n') + '\n\n---\n\n' + userMessage;
+    }
     default:
       return userMessage;
   }
@@ -3376,285 +3379,6 @@ function normalizeQuoteText(str) {
     .replace(/”/g, '"');
 }
 
-// ── APPROVED/ FOLDER HELPERS (Spoke A) ───────────────────────────────────────
-
-/**
- * Returns the Approved/ subfolder at the episode production folder root,
- * creating it if it does not exist.
- * Distinct from Images/Approved/ and Reels/Approved/, which belong to the
- * pre-pipeline staging review flow.
- * @param {string} episodeUid
- * @returns {GoogleAppsScript.Drive.Folder}
- */
-function getOrCreateApprovedFolder(episodeUid) {
-  var stagingId = getStagingFolderIdByUid(episodeUid);
-  if (!stagingId) throw new Error('Production folder not found for episode: ' + episodeUid);
-  var root = DriveApp.getFolderById(stagingId);
-  var it   = root.getFoldersByName('Approved');
-  return it.hasNext() ? it.next() : root.createFolder('Approved');
-}
-
-/**
- * Returns the slot-stable filename for an Approved/ asset.
- * Format: {slotId}_{MMM-DD-YY}.{ext}
- * Examples: SLOT-MON-01_MAY-18-26.png  |  CUSTOM-MON-1748291234567_MAY-18-26.mp4
- * JT_TIMEZONE from Governance_Config; falls back to script timezone if unset.
- * @param {string} slotId
- * @param {Date}   scheduledAt
- * @param {string} extension  - 'png' | 'mp4' | 'txt'
- * @returns {string}
- */
-function buildApprovedFilename(slotId, scheduledAt, extension) {
-  var tz = getGovernance('JT_TIMEZONE') || Session.getScriptTimeZone();
-  var dt = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
-  var ds = Utilities.formatDate(dt, tz, 'MMM-dd-yy').toUpperCase();
-  return slotId + '_' + ds + '.' + extension;
-}
-
-/**
- * Writes an asset blob + caption sidecar (.txt) to Approved/ with slot-stable names.
- * Overwrites any existing file with the same name (find-trash-create — Drive does
- * not replace by name automatically).
- * Logs APPROVED_WRITE to Audit_Trail.
- * @param {string} episodeUid
- * @param {string} slotId
- * @param {Date}   scheduledAt
- * @param {GoogleAppsScript.Base.Blob} assetBlob
- * @param {string} captionText
- * @param {string} extension  - 'png' | 'mp4'
- * @returns {{ assetUrl: string, txtUrl: string, filename: string }}
- */
-function writeApprovedAsset(episodeUid, slotId, scheduledAt, assetBlob, captionText, extension) {
-  var folder      = getOrCreateApprovedFolder(episodeUid);
-  var filename    = buildApprovedFilename(slotId, scheduledAt, extension);
-  var txtFilename = buildApprovedFilename(slotId, scheduledAt, 'txt');
-
-  var existing = folder.getFilesByName(filename);
-  while (existing.hasNext()) existing.next().setTrashed(true);
-  var existingTxt = folder.getFilesByName(txtFilename);
-  while (existingTxt.hasNext()) existingTxt.next().setTrashed(true);
-
-  var assetFile = folder.createFile(assetBlob.setName(filename));
-  var txtFile   = folder.createFile(Utilities.newBlob(captionText || '', 'text/plain', txtFilename));
-
-  try {
-    var ss    = SpreadsheetApp.openById(getMasterSheetId());
-    var audit = ss.getSheetByName('Audit_Trail');
-    if (audit) audit.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE', episodeUid + ' · ' + filename]);
-  } catch (logErr) {}
-
-  return {
-    assetUrl: 'https://drive.google.com/file/d/' + assetFile.getId() + '/view',
-    txtUrl:   'https://drive.google.com/file/d/' + txtFile.getId()   + '/view',
-    filename: filename
-  };
-}
-
-/**
- * Saves a canvas-exported PNG to Staging/Images/, updates Asset_Library row (if assetId provided),
- * and creates a Social_Assets row linking the AL asset to the slot.
- * @param {string} episodeUid
- * @param {string} slotId
- * @param {string|null} assetId     - Asset_Library Asset_ID; null for drive-fallback
- * @param {string} imageDataB64     - base64-encoded PNG (no data: prefix)
- * @param {string} mimeType         - 'image/png'
- * @param {string} caption
- * @param {string} quoteText        - text placed on the graphic (written back to AL Quote_Text)
- * @param {string} canvasJson       - Fabric.js canvas JSON (written back to AL Canvas_State)
- * @returns {{ success: true, postId: string, fileId: string } | { success: false, error: string }}
- */
-function addToWeekAsImage(episodeUid, slotId, assetId, imageDataB64, mimeType, caption, quoteText, canvasJson) {
-  try {
-    var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { success: false, error: "Staging folder not found for: " + episodeUid };
-    var stagingFolder = DriveApp.getFolderById(stagingId);
-    var imgFolderIt   = stagingFolder.getFoldersByName("Images");
-    var imgFolder     = imgFolderIt.hasNext() ? imgFolderIt.next() : stagingFolder.createFolder("Images");
-
-    var filename = "quote_graphic_" + slotId + "_" + Date.now() + ".png";
-    var blob     = Utilities.newBlob(Utilities.base64Decode(imageDataB64), mimeType || "image/png", filename);
-    var file     = imgFolder.createFile(blob);
-    var fileId   = file.getId();
-
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-
-    // Update Asset_Library row with the rendered PNG and canvas state
-    var resolvedAlId = assetId;
-    if (assetId) {
-      var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-      var alSheet = ss.getSheetByName(alName);
-      if (alSheet) {
-        var alData = alSheet.getDataRange().getValues();
-        for (var i = 1; i < alData.length; i++) {
-          if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
-          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability ).setValue("placed");
-          alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status       ).setValue("scheduled");
-          if (quoteText)  alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Quote_Text   ).setValue(normalizeQuoteText(quoteText));
-          if (canvasJson) alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Canvas_State ).setValue(canvasJson);
-          break;
-        }
-      }
-    } else {
-      // Drive-fallback: create a minimal AL row so the SA FK is not null
-      var alName2  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-      var alSheet2 = ss.getSheetByName(alName2);
-      if (alSheet2) {
-        resolvedAlId = "AL-PB-" + Date.now();
-        var alRow    = new Array(Object.keys(ASSET_LIBRARY_COLS).length).fill("");
-        alRow[ASSET_LIBRARY_COLS.Asset_ID     - 1] = resolvedAlId;
-        alRow[ASSET_LIBRARY_COLS.Episode_UID  - 1] = episodeUid;
-        alRow[ASSET_LIBRARY_COLS.Asset_Type   - 1] = "quote_graphic";
-        alRow[ASSET_LIBRARY_COLS.Drive_File_ID- 1] = fileId;
-        alRow[ASSET_LIBRARY_COLS.Status       - 1] = "scheduled";
-        alRow[ASSET_LIBRARY_COLS.Availability - 1] = "placed";
-        if (quoteText)  alRow[ASSET_LIBRARY_COLS.Quote_Text   - 1] = normalizeQuoteText(quoteText);
-        if (canvasJson) alRow[ASSET_LIBRARY_COLS.Canvas_State - 1] = canvasJson;
-        alRow[ASSET_LIBRARY_COLS.Created_At   - 1] = new Date();
-        alRow[ASSET_LIBRARY_COLS.Created_By   - 1] = "publish_canvas";
-        alSheet2.appendRow(alRow);
-      }
-    }
-
-    // Snapshot Caption_Host from AL row at schedule time — authoritative source for Approved/ sidecar
-    var captionForApproved = caption || '';
-    if (assetId && alData) {
-      for (var ci = 1; ci < alData.length; ci++) {
-        if (String(alData[ci][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-        captionForApproved = String(alData[ci][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
-        break;
-      }
-    }
-
-    // Create Social_Assets row
-    var scheduledAt = new Date();
-    var postId  = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
-    var saSheet = ss.getSheetByName("Social_Assets");
-    var saRow   = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
-    saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = resolvedAlId || "";
-    saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
-    saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
-    saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "quote_graphic";
-    saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption || "";
-    saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = fileId;
-    saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = scheduledAt;
-    saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
-    saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = "publish_canvas";
-    saSheet.appendRow(saRow);
-    bumpVersion("asset_library", "addToWeekAsImage");
-
-    // Fan-out: write PNG + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
-    try {
-      writeApprovedAsset(episodeUid, slotId, scheduledAt, blob, captionForApproved, 'png');
-    } catch (approvedErr) {
-      try {
-        var auditLog = ss.getSheetByName('Audit_Trail');
-        if (auditLog) auditLog.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
-          'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + (resolvedAlId || 'drive-fallback') + ' | err=' + approvedErr.message]);
-      } catch (e2) {}
-    }
-
-    return { success: true, postId: postId, fileId: fileId, assetLibraryId: resolvedAlId };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
- * Updates an already-scheduled asset with a new canvas render.
- * Overwrites the Drive file, updates Asset_Library (Drive_File_ID, Canvas_State, Quote_Text),
- * and updates the Social_Assets row (Drive_File_ID, Caption, Scheduled_At).
- * @param {string} assetId      - Asset_Library Asset_ID
- * @param {string} postId       - Social_Assets Post_ID
- * @param {string} imageDataB64 - base64-encoded PNG (no data: prefix)
- * @param {string} mimeType     - 'image/png'
- * @param {string} caption
- * @param {string} quoteText
- * @param {string} canvasJson   - Fabric.js canvas JSON
- * @returns {{ success: boolean, fileId?: string, error?: string }}
- */
-function rescheduleAsset(assetId, postId, imageDataB64, mimeType, caption, quoteText, canvasJson) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-
-    // Read the existing AL row to get the episode folder
-    var alName   = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet  = ss.getSheetByName(alName);
-    if (!alSheet) return { success: false, error: "Asset_Library tab not found" };
-    var alData   = alSheet.getDataRange().getValues();
-
-    var episodeUid = null;
-    var alRowNum   = -1;
-    for (var i = 1; i < alData.length; i++) {
-      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      alRowNum   = i + 1;
-      episodeUid = String(alData[i][ASSET_LIBRARY_COLS.Episode_UID - 1]);
-      break;
-    }
-    if (alRowNum === -1) return { success: false, error: "Asset not found: " + assetId };
-
-    var fileId = null;
-    if (imageDataB64) {
-      // Save new PNG to Staging/Images/
-      var stagingId = getStagingFolderIdByUid(episodeUid);
-      if (!stagingId) return { success: false, error: "Staging folder not found for: " + episodeUid };
-      var stagingFolder = DriveApp.getFolderById(stagingId);
-      var imgFolderIt   = stagingFolder.getFoldersByName("Images");
-      var imgFolder     = imgFolderIt.hasNext() ? imgFolderIt.next() : stagingFolder.createFolder("Images");
-      var filename = "quote_graphic_reschedule_" + assetId + "_" + Date.now() + ".png";
-      var blob     = Utilities.newBlob(Utilities.base64Decode(imageDataB64), mimeType || "image/png", filename);
-      fileId = imgFolder.createFile(blob).getId();
-      alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Drive_File_ID).setValue(fileId);
-    }
-    if (quoteText)  alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Quote_Text  ).setValue(normalizeQuoteText(quoteText));
-    if (canvasJson) alSheet.getRange(alRowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
-
-    // Update Social_Assets row (caption always; Drive_File_ID only when image changed)
-    var saSheet     = ss.getSheetByName("Social_Assets");
-    var slotId      = '';
-    var scheduledAt = new Date();
-    if (saSheet && postId) {
-      var saData = saSheet.getDataRange().getValues();
-      for (var j = 1; j < saData.length; j++) {
-        if (String(saData[j][SOCIAL_ASSETS_COLS.Post_ID - 1]) !== String(postId)) continue;
-        slotId = String(saData[j][SOCIAL_ASSETS_COLS.Slot - 1] || '');
-        if (fileId) saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Drive_File_ID).setValue(fileId);
-        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Caption      ).setValue(caption || "");
-        saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Scheduled_At ).setValue(scheduledAt);
-        break;
-      }
-    }
-
-    bumpVersion("asset_library", "rescheduleAsset");
-
-    // Fan-out: write PNG + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
-    if (imageDataB64 && slotId) {
-      try {
-        var captionForApproved = caption || '';
-        for (var ri = 1; ri < alData.length; ri++) {
-          if (String(alData[ri][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-          captionForApproved = String(alData[ri][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
-          break;
-        }
-        writeApprovedAsset(episodeUid, slotId, scheduledAt, blob, captionForApproved, 'png');
-      } catch (approvedErr) {
-        try {
-          var auditRe = ss.getSheetByName('Audit_Trail');
-          if (auditRe) auditRe.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
-            'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + assetId + ' | err=' + approvedErr.message]);
-        } catch (e2) {}
-      }
-    }
-
-    return { success: true, fileId: fileId };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
 /**
  * Appends a new slot to Posting_Schedule and returns the slot object.
  * Called when JT adds a custom slot via the platform picker popup.
@@ -3812,6 +3536,14 @@ function callGeminiVideoAnalysis_(driveFileId, prompt, apiKey) {
 }
 
 
+function normalizeSummary(s) {
+  return String(s || '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+
 /**
  * Scans Staging/Reels/ (and Approved/ subfolder) for MP4 files, creates
  * Asset_Library rows for any not yet registered, then runs Gemini video
@@ -3821,7 +3553,7 @@ function callGeminiVideoAnalysis_(driveFileId, prompt, apiKey) {
  * force:true. Has a 4.5-minute timeout guard — re-run if timedOut:true.
  *
  * After this runs: call runReelEditorialPass(epUid) to have Claude clean the
- * summaries and assign Slot_Tags + Quality_Score.
+ * summaries.
  *
  * @param {string} epUid
  * @param {Object} [opts]
@@ -3935,7 +3667,8 @@ function syncReelAssets(epUid, opts) {
     '2. The emotional tone and energy of the speaker\n' +
     '3. The main point or takeaway\n' +
     '4. Any compelling story beats or turning points\n\n' +
-    'Be verbose and thorough — this summary will be used by Claude to write social media captions.';
+    'Be verbose and thorough — this summary will be used by Claude to write social media captions. ' +
+    'Use single line breaks only between items. Do not emit blank lines or consecutive newlines (no \\n\\n).';
 
   var summarized = 0;
   var skipped    = 0;
@@ -3956,7 +3689,7 @@ function syncReelAssets(epUid, opts) {
     }
 
     // raw summary — companion-only context feed; not orphan, do not clear
-    alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(summary);
+    alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(normalizeSummary(summary));
     summarized++;
     Utilities.sleep(2000);
   }
@@ -4009,9 +3742,10 @@ function getReelsForEpisode(episodeUid) {
         Asset_Type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
         Drive_File_ID: fileId,
         Display_Name:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
-        Quote_Text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
-        Reel_Summary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary  - 1] || ''),
-        Caption_Host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
+        Quote_Text:         String(row[ASSET_LIBRARY_COLS.Quote_Text         - 1] || ''),
+        Reel_Summary:       String(row[ASSET_LIBRARY_COLS.Reel_Summary       - 1] || ''),
+        Reel_Summary_Clean: String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
+        Caption_Host:       String(row[ASSET_LIBRARY_COLS.Caption_Host       - 1] || ''),
         Caption_Guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
         Availability:  String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
@@ -4026,114 +3760,13 @@ function getReelsForEpisode(episodeUid) {
       var key = r.Drive_File_ID || r.Asset_ID;
       if (!bestByKey[key]) { bestByKey[key] = r; keyOrder.push(key); return; }
       var prev      = bestByKey[key];
-      var prevScore = (prev.Caption_Host ? 2 : 0) + (prev.Reel_Summary ? 1 : 0);
-      var currScore = (r.Caption_Host    ? 2 : 0) + (r.Reel_Summary    ? 1 : 0);
+      var prevScore = (prev.Caption_Host ? 2 : 0) + ((prev.Reel_Summary_Clean || prev.Reel_Summary) ? 1 : 0);
+      var currScore = (r.Caption_Host    ? 2 : 0) + ((r.Reel_Summary_Clean    || r.Reel_Summary)    ? 1 : 0);
       if (currScore > prevScore || (currScore === prevScore && r.createdAt > prev.createdAt)) {
         bestByKey[key] = r;
       }
     });
     return keyOrder.map(function(k) { return bestByKey[k]; });
-  } catch (e) {
-    return [];
-  }
-}
-
-/**
- * Returns the top-6 ranked Asset_Library candidates for a given episode + asset type.
- * Server-side ranking — frontend never sees the full pool.
- * For Reels, delegates to getReelsForEpisode() and maps to candidate shape.
- * Sorts by Quality_Score DESC, Created_At ASC (stable secondary). Empty Quality_Score = 0.
- *
- * future midnight pass populates Quality_Score / Slot_Tags; ranking gains tag-match
- * tiebreaker against slot Why when those fields are populated.
- */
-function getRankedAssetLibraryCandidates(episodeUid, assetType) {
-  try {
-    var normType = String(assetType || '').toLowerCase().replace(/[_ ]/g, '');
-    var isReel   = (normType === 'reel' || normType === 'bankclip');
-
-    if (isReel) {
-      var reels  = getReelsForEpisode(episodeUid);
-      var sorted = reels.slice().sort(function(a, b) {
-        var qa = Number(a.Quality_Score) || 0;
-        var qb = Number(b.Quality_Score) || 0;
-        if (qb !== qa) return qb - qa;
-        return String(a.createdAt).localeCompare(String(b.createdAt));
-      });
-      return sorted.slice(0, 6).map(function(r) {
-        return {
-          asset_id:      r.Asset_ID,
-          asset_type:    r.Asset_Type || 'Reel',
-          quality_score: Number(r.Quality_Score) || 0,
-          slot_tags:     r.Slot_Tags ? String(r.Slot_Tags).split(',').map(function(t) { return t.trim(); }) : [],
-          thumb_url:     r.thumbnailUrl || '',
-          preview_text:  r.Reel_Summary || r.Quote_Text || r.Display_Name || '',
-          display_text:  null,
-          title_card:    r.Quote_Text || r.Display_Name || '',
-          caption_host:  String(r.Caption_Host  || ''),
-          caption_guest: r.Caption_Guest || '',
-          background_id: null,
-          canvas_state:  null,
-          drive_file_id: r.Drive_File_ID || '',
-          quote_text:    ''
-        };
-      });
-    }
-
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var sheet   = ss.getSheetByName(alName);
-    if (!sheet) return [];
-    var data = sheet.getDataRange().getValues();
-
-    var candidates = [];
-    for (var i = 1; i < data.length; i++) {
-      var row = data[i];
-      if (String(row[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      var rowType  = String(row[ASSET_LIBRARY_COLS.Asset_Type - 1]).toLowerCase().replace(/[_ ]/g, '');
-      if (rowType !== normType) continue;
-      var status = String(row[ASSET_LIBRARY_COLS.Status - 1]).toLowerCase();
-      if (status === 'rejected') continue;
-      var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
-      if (avail !== 'available') continue;
-
-      var qs      = Number(row[ASSET_LIBRARY_COLS.Quality_Score - 1]) || 0;
-      var fileId  = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || '');
-      var rawTags = String(row[ASSET_LIBRARY_COLS.Slot_Tags    - 1] || '');
-      if (fileId) {
-        try { DriveApp.getFileById(fileId).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
-      }
-      var _displayText = String(row[ASSET_LIBRARY_COLS.Display_Text - 1] || '') || null;
-      var _displayName = String(row[ASSET_LIBRARY_COLS.Display_Name - 1] || '');
-      var _isQuote     = _displayName.toLowerCase().indexOf('quote') === 0;
-      candidates.push({
-        asset_id:      String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]),
-        asset_type:    String(row[ASSET_LIBRARY_COLS.Asset_Type     - 1]),
-        quality_score: qs,
-        is_quote:      _isQuote,
-        slot_tags:     rawTags ? rawTags.split(',').map(function(t) { return t.trim(); }) : [],
-        thumb_url:     fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200' : '',
-        preview_text:  _displayText || String(row[ASSET_LIBRARY_COLS.Quote_Text - 1] || row[ASSET_LIBRARY_COLS.Display_Name - 1] || ''),
-        display_text:  _displayText,
-        quote_text:    String(row[ASSET_LIBRARY_COLS.Quote_Text    - 1] || ''),
-        caption_host:  String(row[ASSET_LIBRARY_COLS.Caption_Host  - 1] || ''),
-        caption_guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
-        background_id: String(row[ASSET_LIBRARY_COLS.Background_ID - 1] || '') || null,
-        canvas_state:  String(row[ASSET_LIBRARY_COLS.Canvas_State  - 1] || '') || null,
-        drive_file_id: fileId,
-        created_at:    String(row[ASSET_LIBRARY_COLS.Created_At    - 1] || '')
-      });
-    }
-
-    var quoteBonus = parseFloat(getGovernance("STUDIO_QUOTE_RANK_BONUS")) || 0;
-    candidates.sort(function(a, b) {
-      var aScore = a.quality_score + (a.is_quote ? quoteBonus : 0);
-      var bScore = b.quality_score + (b.is_quote ? quoteBonus : 0);
-      if (bScore !== aScore) return bScore - aScore;
-      return String(a.created_at).localeCompare(String(b.created_at));
-    });
-    return candidates;
   } catch (e) {
     return [];
   }
@@ -4210,7 +3843,7 @@ function generateReelCaption(assetId) {
       break;
     }
     if (rowNum === -1) return { ok: false, error: 'Reel not found: ' + assetId };
-    if (!summary)     return { ok: false, error: 'No Reel_Summary — run Sync Reels first' };
+    if (!summary)     return { ok: false, error: 'Summary pending — try again later' };
 
     var captionMechanics  = extractPrompt('# Caption Mechanics')   || '';
     var voiceProhibitions = extractPrompt('# Voice Prohibitions')  || '';
@@ -4333,8 +3966,8 @@ function requestReelRevision(episodeUid, assetId, revisionNotes) {
 /**
  * Phase 6 — Step 3: Atomic close after Audra uploads revised reel.
  * Swaps new Drive_File_ID onto the AL row, moves old file to Reels/Superseded/,
- * completes the Revise_Reels task. New file should already be in Reels/ root —
- * Loop C will detect it on next Pulse and spawn a fresh Review_Reels for JT.
+ * completes the Revise_Reels task. New file should already be in Reels/ root.
+ * Reel card visibility is driven by Episode.Status (AD #93) — no task spawn needed.
  */
 function closeReelRevision(episodeUid, assetId, newDriveFileId) {
   try {
@@ -4354,7 +3987,7 @@ function closeReelRevision(episodeUid, assetId, newDriveFileId) {
     }
     if (rowNum === -1) return { ok: false, error: 'AL row not found for asset: ' + assetId };
 
-    // Move old file to Reels/Superseded/ to evacuate root and silence Loop C
+    // Move old file to Reels/Superseded/ to keep root clean
     if (oldDriveFileId && oldDriveFileId !== newDriveFileId) {
       try {
         var stagingId     = getStagingFolderIdByUid(episodeUid);
@@ -4454,113 +4087,6 @@ function completeReelRevision(episodeUid, assetId) {
     return closeReelRevision(episodeUid, assetId, newFiles[0].getId());
   } catch (err) {
     return { ok: false, error: err.message };
-  }
-}
-
-/**
- * Schedules a reel into a slot (new) or reschedules it (existing SA row for same slot).
- * Reschedule path: updates SA row in place, resets old asset to candidate/available if
- * a different asset is being placed.
- * Fan-out: copies reel mp4 + caption sidecar to Approved/ after SA write (non-fatal).
- * schedulePayload: { episodeUid, slotId, assetId, caption, driveFileId, platform, scheduledAt }
- */
-function scheduleReel(schedulePayload) {
-  try {
-    var episodeUid  = schedulePayload.episodeUid  || '';
-    var slotId      = schedulePayload.slotId      || '';
-    var assetId     = schedulePayload.assetId     || '';
-    var caption     = schedulePayload.caption     || '';
-    var driveFileId = schedulePayload.driveFileId || '';
-    var platform    = schedulePayload.platform    || '';
-    var scheduledAt = schedulePayload.scheduledAt ? new Date(schedulePayload.scheduledAt) : new Date();
-
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
-    var alSheet = ss.getSheetByName(alName);
-    var saSheet = ss.getSheetByName("Social_Assets");
-    if (!saSheet) return { success: false, error: "Social_Assets tab not found" };
-
-    // Read AL once — used for new-asset update, old-asset reset, caption snapshot, and fan-out
-    var alData             = alSheet ? alSheet.getDataRange().getValues() : [];
-    var captionForApproved = caption || '';
-    for (var i = 1; i < alData.length; i++) {
-      if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Status      ).setValue("scheduled");
-      alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
-      if (!driveFileId) driveFileId = String(alData[i][ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
-      captionForApproved = String(alData[i][ASSET_LIBRARY_COLS.Caption_Host - 1] || '') || caption || '';
-      break;
-    }
-
-    // Check for existing SA row by (episodeUid, slotId) — reschedule vs. new schedule
-    var saData       = saSheet.getDataRange().getValues();
-    var existingSaRow = -1;
-    var oldAlId       = '';
-    for (var j = 1; j < saData.length; j++) {
-      if (String(saData[j][SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      if (String(saData[j][SOCIAL_ASSETS_COLS.Slot        - 1]) !== String(slotId))     continue;
-      existingSaRow = j + 1;  // 1-based sheet row
-      oldAlId       = String(saData[j][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]);
-      break;
-    }
-
-    var postId;
-    if (existingSaRow !== -1) {
-      // Reschedule: update existing SA row in place
-      postId = String(saData[existingSaRow - 1][SOCIAL_ASSETS_COLS.Post_ID - 1]);
-      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Asset_Library_ID).setValue(assetId);
-      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Caption          ).setValue(caption);
-      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Drive_File_ID    ).setValue(driveFileId);
-      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Scheduled_At     ).setValue(scheduledAt);
-      saSheet.getRange(existingSaRow, SOCIAL_ASSETS_COLS.Scheduler_Status ).setValue("pending");
-      // Reset displaced asset to candidate/available
-      if (oldAlId && oldAlId !== assetId && alSheet) {
-        for (var k = 1; k < alData.length; k++) {
-          if (String(alData[k][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(oldAlId)) continue;
-          alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Status      ).setValue("candidate");
-          alSheet.getRange(k + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
-          break;
-        }
-      }
-    } else {
-      // New schedule: append SA row
-      postId    = "PB-" + episodeUid + "-" + slotId + "-" + Date.now();
-      var saRow = new Array(Object.keys(SOCIAL_ASSETS_COLS).length).fill("");
-      saRow[SOCIAL_ASSETS_COLS.Post_ID          - 1] = postId;
-      saRow[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] = assetId;
-      saRow[SOCIAL_ASSETS_COLS.Episode_UID      - 1] = episodeUid;
-      saRow[SOCIAL_ASSETS_COLS.Slot             - 1] = slotId;
-      saRow[SOCIAL_ASSETS_COLS.Asset_Type       - 1] = "Reel";
-      saRow[SOCIAL_ASSETS_COLS.Platform         - 1] = platform;
-      saRow[SOCIAL_ASSETS_COLS.Caption          - 1] = caption;
-      saRow[SOCIAL_ASSETS_COLS.Drive_File_ID    - 1] = driveFileId;
-      saRow[SOCIAL_ASSETS_COLS.Scheduled_At     - 1] = scheduledAt;
-      saRow[SOCIAL_ASSETS_COLS.Scheduler_Status - 1] = "pending";
-      saRow[SOCIAL_ASSETS_COLS.Created_At       - 1] = new Date();
-      saRow[SOCIAL_ASSETS_COLS.Created_By       - 1] = Session.getEffectiveUser().getEmail();
-      saSheet.appendRow(saRow);
-    }
-
-    bumpVersion("asset_library", "scheduleReel");
-
-    // Fan-out: copy reel mp4 + caption sidecar to Approved/ — non-fatal; slot fill is authoritative
-    if (driveFileId && slotId) {
-      try {
-        var reelBlob = DriveApp.getFileById(driveFileId).getBlob();
-        writeApprovedAsset(episodeUid, slotId, scheduledAt, reelBlob, captionForApproved, 'mp4');
-      } catch (approvedErr) {
-        try {
-          var auditRl = ss.getSheetByName('Audit_Trail');
-          if (auditRl) auditRl.appendRow([new Date(), 'DWYP_App', 'APPROVED_WRITE_FAILED',
-            'episodeUid=' + episodeUid + ' | slotId=' + slotId + ' | assetId=' + assetId + ' | err=' + approvedErr.message]);
-        } catch (e2) {}
-      }
-    }
-
-    return { success: true, postId: postId };
-  } catch (e) {
-    return { success: false, error: e.message };
   }
 }
 
@@ -4668,10 +4194,11 @@ function getScheduleData(episodeUid) {
           driveFileId:  fileId,
           displayName:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
           quoteText:    String(row[ASSET_LIBRARY_COLS.Quote_Text     - 1] || ''),
-          reelSummary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary   - 1] || ''),
+          reelSummary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
           captionHost:  String(row[ASSET_LIBRARY_COLS.Caption_Host   - 1] || ''),
           captionGuest: String(row[ASSET_LIBRARY_COLS.Caption_Guest  - 1] || ''),
           canvasState:  String(row[ASSET_LIBRARY_COLS.Canvas_State   - 1] || ''),
+          backgroundId: String(row[ASSET_LIBRARY_COLS.Background_ID  - 1] || ''),
           availability: String(row[ASSET_LIBRARY_COLS.Availability   - 1]),
           thumbnailUrl: fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200' : ''
         });
@@ -4823,51 +4350,46 @@ function removeAssetFromSchedule(episodeUid, assetId, slotId) {
 }
 
 /**
- * Assembles a hand-off package in Staging/[GuestName]/ for the episode's scheduled assets.
- * Re-run strategy: clear-and-rebuild (guest folder is trashed and recreated each run).
- * Day folders created only for days that have placements; SWIPE folder only if swipe placements exist.
- * Images: existing PNG copied from Schedule_Renders/ + matching-filename .txt (Caption_Host).
- * Reels: .txt containing title + caption (Caption_Host for week, Caption_Guest for SWIPE) + Drive link.
- * Reel reference form: Drive URL written into the .txt (link-in-text, not a Drive shortcut).
+ * Assembles the Export All package in Manual_Exports/[Day]/ + /SWIPE/ inside the episode staging folder.
+ * Gate: Availability = placed on the Asset_Library row.
+ * Re-run: day/SWIPE folders cleared and rebuilt each run; Manual_Exports/Singles/ left untouched.
+ * QG images: written from client-rendered base64 (imageRenders map).
+ * Reels: Drive file COPIED into day/SWIPE folder (archive copy stays in Reels/).
+ * Structure: Manual_Exports/[Day]/ + /SWIPE/ — episode-scoped by staging location; no guest wrapper.
  * @param {string} episodeUid
+ * @param {Object} imageRenders  — { [assetId]: base64Png } for placed QG assets (no data: prefix)
  * @returns {{ success: boolean, folderUrl?: string, summary?: object, error?: string }}
  */
-function exportAllSchedule(episodeUid) {
+function exportAllSchedule(episodeUid, imageRenders) {
+  imageRenders = imageRenders || {};
   try {
     var ss = SpreadsheetApp.openById(getMasterSheetId());
 
-    // Resolve guest name from Episodes
-    var guestName = episodeUid;
-    var epSheet   = ss.getSheetByName("Episodes");
-    if (epSheet) {
-      var epData = epSheet.getDataRange().getValues();
-      for (var i = 1; i < epData.length; i++) {
-        if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
-          guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
-          break;
-        }
-      }
-    }
-
-    // Staging folder
+    // Staging → Manual_Exports root (create lazily)
     var stagingId = getStagingFolderIdByUid(episodeUid);
     if (!stagingId) return { success: false, error: 'Staging folder not found for: ' + episodeUid };
-    var stagingFolder   = DriveApp.getFolderById(stagingId);
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var exportIt      = stagingFolder.getFoldersByName('Manual_Exports');
+    var exportRoot    = exportIt.hasNext() ? exportIt.next() : stagingFolder.createFolder('Manual_Exports');
 
-    // Clear-and-rebuild: trash any existing guest folder by this name
-    var folderSlug = _safeFilename(guestName) || episodeUid;
-    var existingIt = stagingFolder.getFoldersByName(folderSlug);
-    if (existingIt.hasNext()) existingIt.next().setTrashed(true);
-    var guestFolder = stagingFolder.createFolder(folderSlug);
+    // Clear-and-rebuild: trash existing day/SWIPE folders (Singles/ left intact)
+    var DAY_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    DAY_ORDER.forEach(function(d) {
+      var it = exportRoot.getFoldersByName(d);
+      if (it.hasNext()) it.next().setTrashed(true);
+    });
+    var swipeIt = exportRoot.getFoldersByName('SWIPE');
+    if (swipeIt.hasNext()) swipeIt.next().setTrashed(true);
 
-    // Build AL map for this episode: assetId → asset record
-    var alSheet = ss.getSheetByName("Asset_Library");
+    // Build AL map: placed assets for this episode only
+    var alSheet = ss.getSheetByName('Asset_Library');
     var alMap   = {};
     if (alSheet) {
       var alRows = alSheet.getDataRange().getValues();
       for (var a = 1; a < alRows.length; a++) {
         var alRow = alRows[a];
-        if (String(alRow[ASSET_LIBRARY_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        if (String(alRow[ASSET_LIBRARY_COLS.Episode_UID  - 1]) !== String(episodeUid)) continue;
+        if (String(alRow[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase() !== 'placed') continue;
         var aid = String(alRow[ASSET_LIBRARY_COLS.Asset_ID - 1]);
         alMap[aid] = {
           assetType:    String(alRow[ASSET_LIBRARY_COLS.Asset_Type    - 1]),
@@ -4879,19 +4401,19 @@ function exportAllSchedule(episodeUid) {
       }
     }
 
-    // Partition Social_Assets placements: day-slots vs. SWIPE
-    var saSheet = ss.getSheetByName("Social_Assets");
+    // Partition Social_Assets placements into day-slots vs. SWIPE (skip if AL row not placed)
+    var saSheet = ss.getSheetByName('Social_Assets');
     if (!saSheet) return { success: false, error: 'Social_Assets tab not found' };
     var saRows        = saSheet.getDataRange().getValues();
-    var dayPlacements = {}; // "MON" → [alId, ...]
+    var dayPlacements = {};
     var swipePlacements = [];
 
     for (var s = 1; s < saRows.length; s++) {
-      var sr    = saRows[s];
+      var sr   = saRows[s];
       if (String(sr[SOCIAL_ASSETS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      var slot  = String(sr[SOCIAL_ASSETS_COLS.Slot             - 1] || '');
-      var alId  = String(sr[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] || '');
-      if (!slot || !alId) continue;
+      var slot = String(sr[SOCIAL_ASSETS_COLS.Slot             - 1] || '');
+      var alId = String(sr[SOCIAL_ASSETS_COLS.Asset_Library_ID - 1] || '');
+      if (!slot || !alId || !alMap[alId]) continue;
 
       if (slot === 'SWIPE') {
         swipePlacements.push(alId);
@@ -4902,8 +4424,6 @@ function exportAllSchedule(episodeUid) {
       }
     }
 
-    // Populate day folders (only days with placements, in schedule order)
-    var DAY_ORDER    = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
     var imageCount   = 0;
     var reelCount    = 0;
     var missingCount = 0;
@@ -4911,31 +4431,28 @@ function exportAllSchedule(episodeUid) {
     DAY_ORDER.forEach(function(day) {
       var ids = dayPlacements[day];
       if (!ids || ids.length === 0) return;
-      var dayFolder = guestFolder.createFolder(day);
+      var dayFolder = exportRoot.createFolder(day);
       ids.forEach(function(alId) {
         var al = alMap[alId];
         if (!al) { missingCount++; return; }
-        var isReel = al.assetType.toLowerCase() === 'reel';
-        _writeAssetToExportFolder(al, dayFolder, false);
-        if (isReel) reelCount++; else imageCount++;
+        _writeAssetToExportFolder(al, dayFolder, false, imageRenders[alId] || null);
+        if (al.assetType.toLowerCase() === 'reel') reelCount++; else imageCount++;
       });
     });
 
-    // Populate SWIPE folder (only if swipe placements exist)
     if (swipePlacements.length > 0) {
-      var swipeFolder = guestFolder.createFolder('SWIPE');
+      var swipeFolder = exportRoot.createFolder('SWIPE');
       swipePlacements.forEach(function(alId) {
         var al = alMap[alId];
         if (!al) { missingCount++; return; }
-        var isReel = al.assetType.toLowerCase() === 'reel';
-        _writeAssetToExportFolder(al, swipeFolder, true);
-        if (isReel) reelCount++; else imageCount++;
+        _writeAssetToExportFolder(al, swipeFolder, true, imageRenders[alId] || null);
+        if (al.assetType.toLowerCase() === 'reel') reelCount++; else imageCount++;
       });
     }
 
     return {
       success:   true,
-      folderUrl: 'https://drive.google.com/drive/folders/' + guestFolder.getId(),
+      folderUrl: 'https://drive.google.com/drive/folders/' + exportRoot.getId(),
       summary:   {
         days:    Object.keys(dayPlacements).filter(function(d) { return dayPlacements[d].length > 0; }).length,
         swipe:   swipePlacements.length,
@@ -4951,48 +4468,73 @@ function exportAllSchedule(episodeUid) {
 
 /**
  * Writes one asset into an export folder.
- * Image: copies the existing PNG from Schedule_Renders + writes a matching-filename .txt (Caption_Host).
- * Reel: writes a .txt with title + caption (host in week, guest in SWIPE) + Drive link.
- * @param {object} al       — AL record { assetType, driveFileId, displayName, captionHost, captionGuest }
- * @param {Folder} folder   — target Drive folder
- * @param {boolean} isSwipe — true when writing into the SWIPE folder (affects reel caption variant)
+ * QG: writes PNG from base64Png + matching .txt (Caption_Host).
+ * Reel: COPIES the Drive file (archive stays in Reels/) + matching .txt.
+ * Caption variant: captionHost for day folders, captionGuest (fallback: host) for SWIPE.
+ * @param {object}      al       — AL record { assetType, driveFileId, displayName, captionHost, captionGuest }
+ * @param {Folder}      folder   — target Drive folder
+ * @param {boolean}     isSwipe  — true for SWIPE folder (selects guest caption)
+ * @param {string|null} base64Png — client-rendered PNG bytes (QG only); null for reels
  */
-function _writeAssetToExportFolder(al, folder, isSwipe) {
-  var baseName = _safeFilename(al.displayName) || al.driveFileId || 'asset';
+function _writeAssetToExportFolder(al, folder, isSwipe, base64Png) {
+  var baseName = _safeFilename(al.displayName) || 'asset';
   var isReel   = al.assetType.toLowerCase() === 'reel';
+  var caption  = isSwipe
+    ? (al.captionGuest || al.captionHost || '')
+    : (al.captionHost || '');
 
   if (isReel) {
-    var caption = isSwipe
-      ? (al.captionGuest || al.captionHost || '')
-      : (al.captionHost || '');
-    var parts = [];
-    if (al.displayName) parts.push(al.displayName.trim());
-    if (caption)        parts.push(caption.trim());
-    if (al.driveFileId) parts.push('Drive: https://drive.google.com/file/d/' + al.driveFileId + '/view');
-    var body    = parts.join('\n\n');
-    var txtBlob = Utilities.newBlob(body, 'text/plain', baseName + '.txt');
-    folder.createFile(txtBlob);
-  } else {
-    // Image: copy existing PNG, write caption .txt
     if (al.driveFileId) {
       try {
-        var srcFile = DriveApp.getFileById(al.driveFileId);
-        srcFile.makeCopy(baseName + '.png', folder);
+        var reelFile  = DriveApp.getFileById(al.driveFileId);
+        var ext       = reelFile.getName().split('.').pop() || 'mp4';
+        var reelName  = _uniqueFilename(folder, baseName, ext);
+        var noExt     = reelName.substring(0, reelName.length - ext.length - 1);
+        reelFile.makeCopy(reelName, folder);
+        var txtBody = [al.displayName, caption].filter(Boolean).join('\n\n');
+        folder.createFile(Utilities.newBlob(txtBody, 'text/plain', _uniqueFilename(folder, noExt, 'txt')));
+        return;
       } catch (copyErr) {
-        // Non-fatal: write error note into a .txt so the slot is visible
-        var errBlob = Utilities.newBlob('[Image render not found: ' + al.driveFileId + ']', 'text/plain', baseName + '.png.missing.txt');
-        folder.createFile(errBlob);
+        folder.createFile(Utilities.newBlob('[Reel file not found: ' + al.driveFileId + ']', 'text/plain', baseName + '.copy-error.txt'));
       }
     }
-    var caption   = al.captionHost || '';
-    var txtBlob2  = Utilities.newBlob(caption, 'text/plain', baseName + '.txt');
-    folder.createFile(txtBlob2);
+    var txtBody = [al.displayName, caption].filter(Boolean).join('\n\n');
+    folder.createFile(Utilities.newBlob(txtBody, 'text/plain', _uniqueFilename(folder, baseName, 'txt')));
+  } else {
+    var imgName = _uniqueFilename(folder, baseName, 'png');
+    var noExt   = imgName.substring(0, imgName.length - 4);
+    if (base64Png) {
+      folder.createFile(Utilities.newBlob(Utilities.base64Decode(base64Png), 'image/png', imgName));
+    } else {
+      folder.createFile(Utilities.newBlob('[Image render missing for: ' + baseName + ']', 'text/plain', baseName + '.png.missing.txt'));
+    }
+    folder.createFile(Utilities.newBlob(caption, 'text/plain', _uniqueFilename(folder, noExt, 'txt')));
+  }
+}
+
+/**
+ * Returns a filename that does not collide with existing files in folder.
+ * If baseName.ext is taken, tries baseName-2.ext, baseName-3.ext, etc.
+ * Used at export time so reel Save-a-Copy (same Drive_File_ID, different caption) never
+ * overwrites a sibling export that shares the same title slug.
+ * @param {GoogleAppsScript.Drive.Folder} folder
+ * @param {string} baseName  - no extension
+ * @param {string} ext       - without leading dot
+ * @returns {string}         - collision-free full filename (baseName[suffix].ext)
+ */
+function _uniqueFilename(folder, baseName, ext) {
+  var candidate = baseName + '.' + ext;
+  if (!folder.getFilesByName(candidate).hasNext()) return candidate;
+  var n = 2;
+  while (true) {
+    candidate = baseName + '-' + n + '.' + ext;
+    if (!folder.getFilesByName(candidate).hasNext()) return candidate;
+    n++;
   }
 }
 
 /**
  * Strips filesystem-invalid characters from a name and trims to 120 chars.
- * Reuses the same pattern as exportReelToDrive.
  */
 function _safeFilename(name) {
   if (!name) return '';

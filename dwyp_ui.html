@@ -4247,29 +4247,18 @@ body.studio-open .app-header { display: none; }
       <!-- Canvas view (Images mode) -->
       <div class="st-canvas-view" id="stCanvasView">
 
-        <!-- Toolbar row 1: Export (left/red) | Clear Undo Redo Add Text | Format (right/gold) -->
+        <!-- Toolbar row 1: Clear Undo Redo Add Text | Format (right/gold) -->
         <div class="st-toolbar" style="justify-content:space-between">
-          <!-- Export wrap — far left, with day picker popover -->
-          <div class="st-export-wrap" id="stExportWrap">
-            <button class="st-export-btn-red" id="stExportBtn" onclick="stToggleDayPicker()">Export</button>
-            <div class="st-day-picker" id="stDayPicker" style="display:none">
-              <button class="st-day-pill" onclick="stPickDay(this,'MON')">Mon</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'TUE')">Tue</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'WED')">Wed</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'THU')">Thu</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'FRI')">Fri</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'SAT')">Sat</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'SUN')">Sun</button>
-              <button class="st-day-pill" onclick="stPickDay(this,'ANY')">Any</button>
-            </div>
-          </div>
           <!-- Middle controls -->
           <div style="display:flex;align-items:center;gap:8px">
             <a class="iw-view-btn" id="stDriveBtn" href="#" onclick="stOpenDrive();return false;">View Images</a>
             <button class="iw-export-btn" id="stSendToScheduleBtn" onclick="stSendToScheduleImage()" style="background:var(--gold);color:#0D0A0A;">Schedule</button>
             <button class="iw-export-btn" id="stSaveReturnBtn" onclick="stSaveAndReturn()" style="display:none;background:var(--gold);color:#0D0A0A;">Save &amp; Return</button>
+            <button class="iw-export-btn" id="stDerivSaveBtn" onclick="derivativeSave()" style="display:none;background:var(--gold);color:#0D0A0A;">Save</button>
+            <button class="iw-export-btn" id="stDerivCopyBtn" onclick="derivativeSaveACopy()" style="display:none">Save a Copy</button>
+            <button class="iw-tool-btn"   id="stDerivDiscardBtn" onclick="derivativeDiscard()" style="display:none">Discard</button>
             <span class="st-toolbar-sep"></span>
-            <button class="iw-tool-btn" onclick="stClearCanvas()">Clear</button>
+            <button class="iw-tool-btn" id="stClearCanvasBtn" onclick="stClearCanvas()">Clear</button>
             <button class="iw-tool-btn" onclick="stUndo()" title="Undo" style="display:flex;align-items:center;justify-content:center;">
               <svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5 1L1 5l4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -4366,9 +4355,11 @@ body.studio-open .app-header { display: none; }
         </div>
         <!-- Reel action bar — shown when a reel is selected -->
         <div class="st-reel-actions" id="stReelActions" style="display:none">
-          <button class="st-export-btn-red" id="stReelExportBtn" onclick="stExportReel(st.episodeUid)">Export</button>
           <button class="st-reel-action-btn" id="stReelSendToScheduleBtn" onclick="stSendToScheduleReel()">Send to Schedule</button>
           <button class="st-reel-action-btn" id="stRequestRevisionBtn" onclick="stRequestRevision()">Request Revision</button>
+          <button class="st-reel-action-btn" id="stReelDerivSaveBtn" onclick="derivativeReelSave()" style="display:none;background:var(--gold);color:#0D0A0A;">Save</button>
+          <button class="st-reel-action-btn" id="stReelDerivCopyBtn" onclick="derivativeReelSaveACopy()" style="display:none">Save a Copy</button>
+          <button class="st-reel-action-btn" id="stReelDerivDiscardBtn" onclick="derivativeReelDiscard()" style="display:none">Discard</button>
         </div>
       </div>
 
@@ -4468,7 +4459,7 @@ body.studio-open .app-header { display: none; }
         <div class="st-tab-bar" id="stRailTabBar">
           <button class="st-tab-btn active" id="stRailTabHq"  onclick="stSetRailTab('hq')">Hooks &amp; Quotes</button>
           <button class="st-tab-btn"        id="stRailTabBg"  onclick="stSetRailTab('bg')">Backgrounds</button>
-          <button class="st-tab-btn"        id="stRailTabChatImg">AI Chat</button>
+          <button class="st-tab-btn"        id="stRailTabChatImg" onclick="stSetRailTab('chat')">AI Chat</button>
         </div>
         <!-- H&Q panel (populated by stRenderHqPanel) -->
         <div class="st-tab-pane st-hq-rail-pane" id="stHqRailPane">
@@ -4492,6 +4483,16 @@ body.studio-open .app-header { display: none; }
             <div id="stBgGrid"></div>
           </div>
         </div>
+        <!-- Images companion chat pane -->
+        <div id="stImgChatPane" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+          <div class="ep-chat-history" id="imgChatHistory">
+            <div class="ep-chat-empty" id="imgChatEmpty">Ask for a quote, angle, or reaction to what&rsquo;s on the canvas.</div>
+          </div>
+          <div class="ep-chat-input-wrap">
+            <textarea class="ep-chat-input" id="imgChatInput" placeholder="Source a quote or find a hook angle…" rows="1" onkeydown="imgChatKeydown(event)"></textarea>
+            <button class="ep-chat-send" id="imgChatSend" onclick="imgChatSend()">Send</button>
+          </div>
+        </div>
       </div><!-- /stImgAssets -->
 
       <!-- Episode browser (Design > Episode mode) -->
@@ -4499,22 +4500,50 @@ body.studio-open .app-header { display: none; }
 
       <!-- Reel browser (Design > Reels mode) -->
       <div id="stReelBrowser" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
-        <div class="st-assets-section" style="flex-shrink:0;display:flex;align-items:center;justify-content:space-between">
-          <div class="st-assets-lbl">Reels</div>
-          <button class="st-tab-btn" style="flex-shrink:0;font-size:10px;padding:3px 8px;margin-right:8px" id="stRailTabChatReel">AI Chat</button>
+        <div class="st-tab-bar" id="stReelRailTabBar">
+          <button class="st-tab-btn active" id="stReelRailTabBrowse" onclick="stSetReelRailTab('browse')">Reels</button>
+          <button class="st-tab-btn"        id="stRailTabChatReel"   onclick="stSetReelRailTab('chat')">AI Chat</button>
         </div>
-        <div class="st-reel-list" id="stRailReelList">
-          <div class="st-reel-empty">Select a guest to browse reels.</div>
+        <!-- Reel list pane -->
+        <div id="stReelBrowsePane" style="flex:1;overflow-y:auto;min-height:0">
+          <div class="st-reel-list" id="stRailReelList">
+            <div class="st-reel-empty">Select a guest to browse reels.</div>
+          </div>
+        </div>
+        <!-- Reels companion chat pane -->
+        <div id="stReelChatPane" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+          <div class="ep-chat-history" id="reelChatHistory">
+            <div class="ep-chat-empty" id="reelChatEmpty">Ask about this reel &mdash; refine the title card, tighten the caption, or source a quote.</div>
+          </div>
+          <div class="ep-chat-input-wrap">
+            <textarea class="ep-chat-input" id="reelChatInput" placeholder="Refine the title card or caption&hellip;" rows="1" onkeydown="reelChatKeydown(event)"></textarea>
+            <button class="ep-chat-send" id="reelChatSend" onclick="reelChatSend()">Send</button>
+          </div>
         </div>
       </div>
 
       <!-- Schedule pool (right rail — Schedule mode) -->
       <div id="stSchedulePool" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
-        <div class="st-assets-section" style="flex-shrink:0;display:flex;align-items:center;padding:10px 12px 6px">
-          <div class="st-assets-lbl">Candidates</div>
+        <!-- Tab bar: Candidates | AI Chat -->
+        <div class="st-tab-bar" id="schRailTabBar">
+          <button class="st-tab-btn active" id="schRailTabPool" onclick="schSetRailTab('pool')">Candidates</button>
+          <button class="st-tab-btn"        id="schRailTabChat" onclick="schSetRailTab('chat')">AI Chat</button>
         </div>
-        <div class="sch-pool-list" id="schPoolList">
-          <div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 8px">Loading…</div>
+        <!-- Pool pane -->
+        <div id="schPoolPane" style="flex:1;overflow-y:auto;min-height:0">
+          <div class="sch-pool-list" id="schPoolList">
+            <div style="font-size:12px;color:var(--text-3);text-align:center;padding:24px 8px">Loading…</div>
+          </div>
+        </div>
+        <!-- Schedule companion chat pane -->
+        <div id="schedChatPane" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+          <div class="ep-chat-history" id="schedChatHistory">
+            <div class="ep-chat-empty" id="schedChatEmpty">Ask about the week &mdash; coverage, pacing, or whether an asset stands alone.</div>
+          </div>
+          <div class="ep-chat-input-wrap">
+            <textarea class="ep-chat-input" id="schedChatInput" placeholder="Assess the week or flag a coverage gap&hellip;" rows="1" onkeydown="schedChatKeydown(event)"></textarea>
+            <button class="ep-chat-send" id="schedChatSend" onclick="schedChatSend()">Send</button>
+          </div>
         </div>
       </div>
 
@@ -4836,7 +4865,10 @@ var epReviewState = {
   composerLocked:  false
 };
 
-var epChat = { history: [], loading: false, uid: null };
+var epChat    = { history: [], loading: false, uid: null };
+var imgChat   = { history: [], loading: false, uid: null };
+var reelChat  = { history: [], loading: false, uid: null };
+var schedChat = { history: [], loading: false, uid: null };
 
 // ── REVIEW STEP CONSTANTS ────────────────────────────────────
 var REVIEW_STEPS_ALL = [
@@ -5059,7 +5091,8 @@ var st = {
   hqContent:      null,
   exportDay:       'MON',
   selectedReelId:  null,
-  editingAssetId:  null   // Asset_ID of the AL row currently open in the canvas (set on edit ↗ round-trip or after first Send to Schedule)
+  editingAssetId:  null,  // Asset_ID of the AL row currently open in the canvas (set on edit ↗ round-trip or after first Send to Schedule)
+  derivativeMode:  false  // true when navigated via edit ↗ from Schedule — swaps action bar to exit triad
 };
 
 // ── PUBLISH STATE ─────────────────────────────────────────────
@@ -5105,6 +5138,7 @@ function closeStudio() {
   st.history = []; st.redoStack = [];
   st.publishOrigin  = null;
   st.editingAssetId = null;
+  st.derivativeMode = false;
 }
 
 // ── NAV COLLAPSE ──────────────────────────────────────────────
@@ -5230,6 +5264,10 @@ function stSelectEpisode(uid, name) {
   st.guestName   = name || null;
   st.hqContent   = null;
   st_reels       = [];
+
+  imgChatReset(uid);
+  reelChatReset(uid);
+  schedChatReset(uid);
 
   // If in QG sub-tab, reload H&Q for new episode
   if (st.designTab === 'qg') {
@@ -5994,15 +6032,23 @@ function stSetBgTab(btn, paneId) {
 
 // ── RIGHT-RAIL TAB: Hooks & Quotes | Backgrounds ──────────────
 function stSetRailTab(tab) {
-  var isHq = (tab === 'hq');
-  var tabHq  = document.getElementById('stRailTabHq');
-  var tabBg  = document.getElementById('stRailTabBg');
-  var paneHq = document.getElementById('stHqRailPane');
-  var paneBg = document.getElementById('stBgPane');
-  if (tabHq)  tabHq.classList.toggle('active', isHq);
-  if (tabBg)  tabBg.classList.toggle('active', !isHq);
-  if (paneHq) paneHq.style.display = isHq ? 'flex' : 'none';
-  if (paneBg) paneBg.style.display = isHq ? 'none' : 'flex';
+  // In derivative mode the H&Q tab is unavailable — redirect to Backgrounds
+  if (st.derivativeMode && tab === 'hq') tab = 'bg';
+  var isHq   = (tab === 'hq');
+  var isBg   = (tab === 'bg');
+  var isChat = (tab === 'chat');
+  var tabHq   = document.getElementById('stRailTabHq');
+  var tabBg   = document.getElementById('stRailTabBg');
+  var tabChat = document.getElementById('stRailTabChatImg');
+  var paneHq   = document.getElementById('stHqRailPane');
+  var paneBg   = document.getElementById('stBgPane');
+  var paneChat = document.getElementById('stImgChatPane');
+  if (tabHq)   tabHq.classList.toggle('active', isHq);
+  if (tabBg)   tabBg.classList.toggle('active', isBg);
+  if (tabChat) tabChat.classList.toggle('active', isChat);
+  if (paneHq)   paneHq.style.display  = isHq   ? 'flex'  : 'none';
+  if (paneBg)   paneBg.style.display  = isBg   ? 'flex'  : 'none';
+  if (paneChat) paneChat.style.display = isChat ? 'flex'  : 'none';
 }
 
 function stToggleGenInput() {
@@ -6325,9 +6371,14 @@ function stRenderSchedulePool() {
     card.setAttribute('data-asset-id', c.assetId);
     card.setAttribute('data-asset-type', c.assetType);
 
-    var thumbHtml = c.thumbnailUrl
-      ? '<img class="sch-pool-card-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
-      : '<div class="sch-pool-card-thumb"></div>';
+    var thumbHtml;
+    if (c.thumbnailUrl) {
+      thumbHtml = '<img class="sch-pool-card-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    } else if (schNormType(c.assetType) !== 'reel' && c.canvasState) {
+      thumbHtml = '<img class="sch-pool-card-thumb" data-qg-asset-id="' + esc(c.assetId) + '">';
+    } else {
+      thumbHtml = '<div class="sch-pool-card-thumb"></div>';
+    }
 
     var badgeHtml = isPlaced ? '<div class="sch-pool-card-badge">✓ placed</div>' : '';
 
@@ -6337,7 +6388,10 @@ function stRenderSchedulePool() {
         '<div class="sch-pool-card-cap">' + esc(caption.substring(0, 60)) + '</div>' +
         badgeHtml +
       '</div>' +
-      '<button class="sch-pool-card-edit" onclick="schEditCard(\'' + esc(c.assetId) + '\',\'' + esc(c.assetType) + '\');event.stopPropagation()">edit ↗</button>';
+      '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
+        '<button class="sch-pool-card-edit" onclick="schEditCard(\'' + esc(c.assetId) + '\',\'' + esc(c.assetType) + '\');event.stopPropagation()">edit ↗</button>' +
+        '<button class="sch-pool-card-edit" onclick="schExportSingle(\'' + esc(c.assetId) + '\');event.stopPropagation()">export</button>' +
+      '</div>';
 
     card.addEventListener('dragstart', function(e) {
       sch.draggingAssetId   = c.assetId;
@@ -6356,6 +6410,7 @@ function stRenderSchedulePool() {
 
     poolEl.appendChild(card);
   });
+  schRenderQgThumbs();
 }
 
 // Glow: highlight compatible slots while dragging
@@ -6401,6 +6456,7 @@ function stRenderScheduleWeek() {
     html += '</div></div>';
   });
   weekEl.innerHTML = html;
+  schRenderQgThumbs();
 }
 
 function schRenderSlot(slot, placed) {
@@ -6418,15 +6474,17 @@ function schRenderSlot(slot, placed) {
     var c = schCandidateById(placed.assetLibraryId);
     var isReel = c && schNormType(c.assetType) === 'reel';
     var label  = c ? (c.displayName || (isReel ? c.reelSummary : c.quoteText) || c.assetId).substring(0, 40) : placed.assetLibraryId;
-    var thumbUrl = c && c.thumbnailUrl ? c.thumbnailUrl : '';
     var aType    = c ? c.assetType : '';
+    var isQgSlot = c && schNormType(c.assetType) !== 'reel';
     html += '<div class="sch-slot-card"'
       + ' draggable="true"'
       + ' ondragstart="schSlotDragStart(event,\'' + esc(placed.assetLibraryId) + '\',\'' + esc(aType) + '\',\'' + esc(slot.slotId) + '\')"'
       + ' ondragend="schSlotDragEnd(event)"'
       + '>';
-    if (thumbUrl) {
-      html += '<img class="sch-slot-thumb" src="' + esc(thumbUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    if (c && c.thumbnailUrl) {
+      html += '<img class="sch-slot-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    } else if (c && isQgSlot && c.canvasState) {
+      html += '<img class="sch-slot-thumb" data-qg-asset-id="' + esc(c.assetId) + '">';
     } else {
       html += '<div class="sch-slot-thumb"></div>';
     }
@@ -6468,6 +6526,8 @@ function stRenderScheduleSwipe() {
       + '>';
     if (c && c.thumbnailUrl) {
       html += '<img class="sch-slot-thumb" src="' + esc(c.thumbnailUrl) + '" loading="lazy" onerror="this.style.visibility=\'hidden\'">';
+    } else if (c && schNormType(c.assetType) !== 'reel' && c.canvasState) {
+      html += '<img class="sch-slot-thumb" data-qg-asset-id="' + esc(c.assetId) + '">';
     } else {
       html += '<div class="sch-slot-thumb"></div>';
     }
@@ -6490,6 +6550,160 @@ function stRenderScheduleSwipe() {
     + '</div></div>';
 
   swipeEl.innerHTML = html;
+  schRenderQgThumbs();
+}
+
+// ── SCHEDULE QG THUMBNAIL RENDERER ────────────────────────────
+// Renders QG card previews from Canvas_State client-side via Fabric.
+// No Drive fetch for QG — backgrounds use bgCache, deduped to one GAS call per unique bg.
+
+var _qgBgPending = {}; // fileId → [pending callbacks] — prevents duplicate GAS fetches
+
+function schRenderQgThumbs() {
+  document.querySelectorAll('[data-qg-asset-id]:not([src])').forEach(function(imgEl) {
+    var assetId = imgEl.getAttribute('data-qg-asset-id');
+    var c = schCandidateById(assetId);
+    if (!c || !c.canvasState) return;
+    _schRenderOneQgThumb(imgEl, c.canvasState, c.backgroundId || '');
+  });
+}
+
+function _schRenderOneQgThumb(imgEl, canvasStateJson, backgroundId) {
+  var json;
+  try { json = JSON.parse(canvasStateJson); } catch(e) { return; }
+
+  var origW  = json.width  || 1080;
+  var origH  = json.height || 1350;
+  var thumbW = 120;
+  var thumbH = Math.round(origH / origW * thumbW);
+  var zoom   = thumbW / origW;
+
+  var offEl = document.createElement('canvas');
+  var fc    = new fabric.StaticCanvas(offEl, { width: thumbW, height: thumbH, renderOnAddRemove: false });
+
+  fc.loadFromJSON(json, function() {
+    fc.setZoom(zoom);
+    fc.setWidth(thumbW);
+    fc.setHeight(thumbH);
+
+    function finalize() {
+      fc.renderAll();
+      try { imgEl.src = fc.toDataURL({ format: 'png', multiplier: 1 }); } catch(e) {}
+      fc.dispose();
+    }
+
+    if (!backgroundId) { finalize(); return; }
+
+    _schLoadBgForThumb(backgroundId, function(dataUrl) {
+      if (!dataUrl) { finalize(); return; }
+      fabric.Image.fromURL(dataUrl, function(img) {
+        var bgScale = Math.max(origW / img.width, origH / img.height);
+        img.set({ scaleX: bgScale, scaleY: bgScale, left: origW / 2, top: origH / 2,
+                  originX: 'center', originY: 'center', selectable: false });
+        fc.add(img);
+        fc.sendToBack(img);
+        finalize();
+      }, { crossOrigin: 'anonymous' });
+    });
+  });
+}
+
+function _schLoadBgForThumb(fileId, callback) {
+  if (!fileId) { callback(null); return; }
+  if (bgCache[fileId]) { callback(bgCache[fileId]); return; }
+  if (_qgBgPending[fileId]) { _qgBgPending[fileId].push(callback); return; }
+  _qgBgPending[fileId] = [callback];
+  google.script.run
+    .withSuccessHandler(function(r) {
+      var cbs = _qgBgPending[fileId] || [];
+      delete _qgBgPending[fileId];
+      if (r && r.success) {
+        bgCache[fileId] = r.dataUrl;
+        cbs.forEach(function(cb) { cb(r.dataUrl); });
+      } else {
+        cbs.forEach(function(cb) { cb(null); });
+      }
+    })
+    .withFailureHandler(function() {
+      var cbs = _qgBgPending[fileId] || [];
+      delete _qgBgPending[fileId];
+      cbs.forEach(function(cb) { cb(null); });
+    })
+    .getBackgroundImageData(fileId);
+}
+
+// Full-res offscreen render from Canvas_State (multiplier:3 → 1080×1350 from 360×450 native)
+// Uses same bg-load dedup path as thumbnail renderer (_schLoadBgForThumb / bgCache).
+function _schRenderQgFullRes(canvasStateJson, backgroundId, callback) {
+  var json;
+  try { json = JSON.parse(canvasStateJson); } catch(e) { callback(null); return; }
+  var origW = json.width  || 360;
+  var origH = json.height || 450;
+  var offEl = document.createElement('canvas');
+  var fc    = new fabric.StaticCanvas(offEl, { width: origW, height: origH, renderOnAddRemove: false });
+  fc.loadFromJSON(json, function() {
+    function finalize() {
+      fc.renderAll();
+      try {
+        var dataUrl = fc.toDataURL({ format: 'png', multiplier: 3 });
+        callback(dataUrl.replace(/^data:image\/\w+;base64,/, ''));
+      } catch(e) { callback(null); }
+      fc.dispose();
+    }
+    if (!backgroundId) { finalize(); return; }
+    _schLoadBgForThumb(backgroundId, function(dataUrl) {
+      if (!dataUrl) { finalize(); return; }
+      fabric.Image.fromURL(dataUrl, function(img) {
+        var bgScale = Math.max(origW / img.width, origH / img.height);
+        img.set({ scaleX: bgScale, scaleY: bgScale, left: origW / 2, top: origH / 2,
+                  originX: 'center', originY: 'center', selectable: false });
+        fc.add(img);
+        fc.sendToBack(img);
+        finalize();
+      }, { crossOrigin: 'anonymous' });
+    });
+  });
+}
+
+// Single Export: exports one pool asset to Manual_Exports/Singles/ in Drive.
+// QG: renders full-res PNG client-side, posts bytes to GAS.
+// Reel: GAS copies the Drive file directly.
+function schExportSingle(assetId) {
+  var c = schCandidateById(assetId);
+  if (!c) { showToast('Asset not found.'); return; }
+  var uid = sch.episodeUid;
+  if (!uid) { showToast('No episode selected.'); return; }
+
+  var isReel = schNormType(c.assetType) === 'reel';
+
+  function callGas(b64) {
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.success) {
+          showToast('Exported to Singles/ ✓');
+          if (res.folderUrl) window.open(res.folderUrl, '_blank');
+        } else {
+          showToast('Export failed: ' + ((res && res.error) || 'unknown'), true);
+        }
+      })
+      .withFailureHandler(function(err) {
+        showToast('Export failed: ' + ((err && err.message) || err), true);
+      })
+      .exportSingleScheduleAsset(uid, assetId, b64);
+  }
+
+  if (isReel) {
+    showToast('Exporting reel…');
+    callGas(null);
+  } else {
+    if (!c.canvasState) { showToast('No canvas state for this asset.'); return; }
+    showToast('Rendering…');
+    _schRenderQgFullRes(c.canvasState, c.backgroundId || '', function(b64) {
+      if (!b64) { showToast('Render failed.', true); return; }
+      showToast('Exporting…');
+      callGas(b64);
+    });
+  }
 }
 
 // Toggle workspace mode
@@ -6648,34 +6862,67 @@ function schRemoveFromSlot(assetId, slotId, callback) {
     .removeAssetFromSchedule(sch.episodeUid, assetId, slotId);
 }
 
-// Assembles the Export All package in Drive (Staging/[GuestName]/).
-// Clear-and-rebuild: prior run's folder is trashed before the new one is created.
+// Assembles the Export All package in Manual_Exports/[Day]/ + /SWIPE/.
+// QG images rendered client-side from Canvas_State; reel files copied server-side.
+// Clear-and-rebuild: day/SWIPE folders recreated each run; Singles/ untouched.
 function schExportAll() {
   if (!sch.episodeUid) { showToast('No episode in context.'); return; }
   var btn = document.getElementById('schExportAllBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
-      if (!result || !result.success) {
-        showToast('Export failed: ' + (result && result.error ? result.error : 'unknown error'));
-        return;
-      }
-      var s = result.summary || {};
-      var msg = 'Exported — ' +
-        (s.images || 0) + ' image' + (s.images === 1 ? '' : 's') + ', ' +
-        (s.reels  || 0) + ' reel'  + (s.reels  === 1 ? '' : 's') +
-        (s.missing > 0 ? ' (' + s.missing + ' missing)' : '') + '.';
-      showToast(msg);
-      if (result.folderUrl) {
-        window.open(result.folderUrl, '_blank');
-      }
-    })
-    .withFailureHandler(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
-      showToast('Export failed: ' + (err.message || err));
-    })
-    .exportAllSchedule(sch.episodeUid);
+  if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
+
+  // Collect unique placed QG assetIds that need client-side render
+  var placedQgIds = [];
+  var seen = {};
+  sch.placements.forEach(function(p) {
+    if (seen[p.assetLibraryId]) return;
+    seen[p.assetLibraryId] = true;
+    var c = schCandidateById(p.assetLibraryId);
+    if (c && schNormType(c.assetType) !== 'reel' && c.canvasState) {
+      placedQgIds.push(p.assetLibraryId);
+    }
+  });
+
+  var imageRenders = {};
+  var idx = 0;
+
+  function renderNext() {
+    if (idx >= placedQgIds.length) {
+      if (btn) btn.textContent = 'Exporting…';
+      doExport();
+      return;
+    }
+    var assetId = placedQgIds[idx++];
+    var c = schCandidateById(assetId);
+    _schRenderQgFullRes(c.canvasState, c.backgroundId || '', function(b64) {
+      if (b64) imageRenders[assetId] = b64;
+      renderNext();
+    });
+  }
+
+  function doExport() {
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
+        if (!result || !result.success) {
+          showToast('Export failed: ' + (result && result.error ? result.error : 'unknown error'));
+          return;
+        }
+        var s = result.summary || {};
+        var msg = 'Exported — ' +
+          (s.images || 0) + ' image' + (s.images === 1 ? '' : 's') + ', ' +
+          (s.reels  || 0) + ' reel'  + (s.reels  === 1 ? '' : 's') +
+          (s.missing > 0 ? ' (' + s.missing + ' missing)' : '') + '.';
+        showToast(msg);
+        if (result.folderUrl) window.open(result.folderUrl, '_blank');
+      })
+      .withFailureHandler(function(err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Export All ⬇'; }
+        showToast('Export failed: ' + (err.message || err));
+      })
+      .exportAllSchedule(sch.episodeUid, imageRenders);
+  }
+
+  renderNext();
 }
 
 // Re-fetches from server to correct any optimistic drift
@@ -6694,12 +6941,56 @@ function schRefreshFromServer() {
     .getScheduleData(sch.episodeUid);
 }
 
+// ── DERIVATIVE MODE UI ────────────────────────────────────────
+// Reads st.derivativeMode and st.designTab, shows/hides the correct buttons.
+// Called at the end of stSelectDesignTab and after derivative actions complete.
+function stSyncDerivativeUI() {
+  var d     = !!st.derivativeMode;
+  var isQg  = (st.designTab === 'qg');
+  var isRl  = (st.designTab === 'reels');
+
+  // Images toolbar: Schedule / Save&Return hidden in derivative; derivative triad shown
+  var sendBtn     = document.getElementById('stSendToScheduleBtn');
+  var srBtn       = document.getElementById('stSaveReturnBtn');
+  var clearBtn    = document.getElementById('stClearCanvasBtn');
+  var derivSave   = document.getElementById('stDerivSaveBtn');
+  var derivCopy   = document.getElementById('stDerivCopyBtn');
+  var derivDis    = document.getElementById('stDerivDiscardBtn');
+  if (sendBtn)   sendBtn.style.display   = (!d && isQg) ? '' : 'none';
+  if (srBtn)     srBtn.style.display     = 'none';  // always hidden — derivative triad owns this role
+  if (clearBtn)  clearBtn.style.display  = (d && isQg) ? 'none' : '';
+  if (derivSave) derivSave.style.display = (d && isQg) ? '' : 'none';
+  if (derivCopy) derivCopy.style.display = (d && isQg) ? '' : 'none';
+  if (derivDis)  derivDis.style.display  = (d && isQg) ? '' : 'none';
+
+  // Images rail: hide Hooks & Quotes tab button in derivative mode
+  var tabHq = document.getElementById('stRailTabHq');
+  if (tabHq) tabHq.style.display = (d && isQg) ? 'none' : '';
+  if (d && isQg) {
+    // Switch away from H&Q pane if it is currently visible
+    var paneHq = document.getElementById('stHqRailPane');
+    if (paneHq && paneHq.style.display !== 'none') stSetRailTab('bg');
+  }
+
+  // Reels action bar: standard buttons hidden in derivative; derivative triad shown
+  var rlSend   = document.getElementById('stReelSendToScheduleBtn');
+  var rlRev    = document.getElementById('stRequestRevisionBtn');
+  var rlDSave  = document.getElementById('stReelDerivSaveBtn');
+  var rlDCopy  = document.getElementById('stReelDerivCopyBtn');
+  var rlDDis   = document.getElementById('stReelDerivDiscardBtn');
+  if (rlSend)  rlSend.style.display  = (!d) ? '' : 'none';
+  if (rlRev)   rlRev.style.display   = (!d) ? '' : 'none';
+  if (rlDSave) rlDSave.style.display = (d && isRl) ? '' : 'none';
+  if (rlDCopy) rlDCopy.style.display = (d && isRl) ? '' : 'none';
+  if (rlDDis)  rlDDis.style.display  = (d && isRl) ? '' : 'none';
+}
+
 // Edit round-trip: navigate to Images or Reels surface with target asset
 function schEditCard(assetId, assetType) {
   var isReel = schNormType(assetType) === 'reel';
   var view   = isReel ? 'reels' : 'qg';
   st.scheduleEditTarget = assetId;
-  st.publishOrigin      = 'schedule';  // shows Save & Return on canvas toolbar
+  st.derivativeMode     = true;
   stSelectGuestView(sch.episodeUid, sch.guestName, view);
 }
 
@@ -6715,7 +7006,7 @@ function stCanvasJsonStripped() {
   return json;
 }
 
-// Renders the canvas, upserts the AL row, stores thumbnail in Drive.
+// Upserts the AL row for this canvas — no Drive render. Card preview renders client-side.
 // On success: stores returned assetId in st.editingAssetId and calls callback (if provided).
 function stSendToScheduleImage(callback) {
   var canvas = st.fabricCanvas;
@@ -6725,12 +7016,6 @@ function stSendToScheduleImage(callback) {
 
   var sendBtn = document.getElementById('stSendToScheduleBtn');
   if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
-
-  var origVpt = canvas.viewportTransform.slice();
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-  var dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
-  canvas.setViewportTransform(origVpt);
-  var b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
 
   var canvasJson = JSON.stringify(stCanvasJsonStripped());
   var captionEl  = document.getElementById('stCaptionField');
@@ -6753,7 +7038,7 @@ function stSendToScheduleImage(callback) {
       if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Schedule'; }
       showToast('Send failed: ' + (err.message || err), true);
     })
-    .sendImageToSchedule(uid, assetId, canvasJson, b64, caption, bgId);
+    .sendImageToSchedule(uid, assetId, canvasJson, caption, bgId);
 }
 
 // Save & Return: used in the edit ↗ round-trip. Sends to Schedule then navigates back.
@@ -6769,6 +7054,129 @@ function stSaveAndReturn() {
     if (btn) { btn.style.display = 'none'; btn.disabled = false; btn.textContent = 'Save & Return'; }
     stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
   });
+}
+
+// ── DERIVATIVE EDIT — IMAGES ──────────────────────────────────
+// Shared extractor: canvas non-attribution text → Quote_Text source of truth.
+function _derivImgExtract() {
+  var canvasJson = JSON.stringify(stCanvasJsonStripped());
+  var quoteText  = imgChatGetCanvasText();
+  var captionEl  = document.getElementById('stCaptionField');
+  var caption    = captionEl ? captionEl.textContent.trim() : '';
+  return { canvasJson: canvasJson, quoteText: quoteText, caption: caption };
+}
+
+function derivativeSave() {
+  var assetId = st.editingAssetId;
+  if (!assetId) { showToast('No asset loaded.'); return; }
+  var btn = document.getElementById('stDerivSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  var ex = _derivImgExtract();
+  var returnTo = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      if (!res || !res.ok) { showToast('Save failed: ' + (res && res.error || 'unknown'), true); return; }
+      showToast('Saved ✓');
+      st.derivativeMode = false;
+      stSyncDerivativeUI();
+      stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      showToast('Save failed: ' + (err.message || err), true);
+    })
+    .saveDerivativeAsset(assetId, 'save', ex.canvasJson, ex.caption, ex.quoteText);
+}
+
+function derivativeSaveACopy() {
+  var assetId = st.editingAssetId;
+  if (!assetId) { showToast('No asset loaded.'); return; }
+  var btn = document.getElementById('stDerivCopyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  var ex = _derivImgExtract();
+  var returnTo = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
+      if (!res || !res.ok) { showToast('Copy failed: ' + (res && res.error || 'unknown'), true); return; }
+      showToast('Saved as new asset ✓');
+      st.derivativeMode = false;
+      stSyncDerivativeUI();
+      stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
+      showToast('Copy failed: ' + (err.message || err), true);
+    })
+    .saveDerivativeAsset(assetId, 'save_copy', ex.canvasJson, ex.caption, ex.quoteText);
+}
+
+function derivativeDiscard() {
+  var returnTo = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  st.derivativeMode = false;
+  stSyncDerivativeUI();
+  stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+}
+
+// ── DERIVATIVE EDIT — REELS ───────────────────────────────────
+function derivativeReelSave() {
+  var assetId = st.selectedReelId;
+  if (!assetId) { showToast('No reel selected.'); return; }
+  var btn = document.getElementById('stReelDerivSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  var titleCardEl = document.getElementById('stTitleCardField');
+  var quoteText   = titleCardEl ? titleCardEl.textContent.trim() : '';
+  var captionEl   = document.getElementById('stCaptionField');
+  var caption     = captionEl ? captionEl.textContent.trim() : '';
+  var returnTo    = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      if (!res || !res.ok) { showToast('Save failed: ' + (res && res.error || 'unknown'), true); return; }
+      showToast('Saved ✓');
+      st.derivativeMode = false;
+      stSyncDerivativeUI();
+      stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      showToast('Save failed: ' + (err.message || err), true);
+    })
+    .saveDerivativeAsset(assetId, 'save', null, caption, quoteText);
+}
+
+function derivativeReelSaveACopy() {
+  var assetId = st.selectedReelId;
+  if (!assetId) { showToast('No reel selected.'); return; }
+  var btn = document.getElementById('stReelDerivCopyBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  var titleCardEl = document.getElementById('stTitleCardField');
+  var quoteText   = titleCardEl ? titleCardEl.textContent.trim() : '';
+  var captionEl   = document.getElementById('stCaptionField');
+  var caption     = captionEl ? captionEl.textContent.trim() : '';
+  var returnTo    = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
+      if (!res || !res.ok) { showToast('Copy failed: ' + (res && res.error || 'unknown'), true); return; }
+      showToast('Saved as new reel entry ✓');
+      st.derivativeMode = false;
+      stSyncDerivativeUI();
+      stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
+      showToast('Copy failed: ' + (err.message || err), true);
+    })
+    .saveDerivativeAsset(assetId, 'save_copy', null, caption, quoteText);
+}
+
+function derivativeReelDiscard() {
+  var returnTo = { episodeUid: sch.episodeUid, guestName: sch.guestName };
+  st.derivativeMode = false;
+  stSyncDerivativeUI();
+  stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
 }
 
 // Flips the selected reel's Status to schedule (no render — reel is already a native AL row).
@@ -7574,7 +7982,11 @@ function stRenderRailReelList() {
     return;
   }
   list.innerHTML = '';
-  st_reels.forEach(function(r) {
+  // In derivative mode, show only the reel under edit (locked rail)
+  var renderList = (st.derivativeMode && st.selectedReelId)
+    ? st_reels.filter(function(r) { return r.Asset_ID === st.selectedReelId; })
+    : st_reels;
+  renderList.forEach(function(r) {
     var id      = r.Asset_ID;
     var name    = (r.Quote_Text && r.Quote_Text !== 'undefined' && r.Quote_Text !== '')
                     ? r.Quote_Text : (r.Display_Name || r.Asset_Type || 'Reel');
@@ -7582,7 +7994,7 @@ function stRenderRailReelList() {
     var card    = document.createElement('div');
     card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
     card.setAttribute('data-reel-id', id);
-    var summary  = String(r.Reel_Summary || '');
+    var summary  = String(r.Reel_Summary_Clean || '');
     var thumbSrc = r.Drive_File_ID
       ? 'https://drive.google.com/thumbnail?id=' + r.Drive_File_ID + '&sz=w200'
       : '';
@@ -7595,7 +8007,7 @@ function stRenderRailReelList() {
         '</div>' +
         '<div class="st-reel-body-col">' +
           '<div class="st-reel-card-name">' + esc(name) + '</div>' +
-          (summary ? '<div class="st-reel-card-summary">' + esc(summary) + '</div>' : '') +
+          '<div class="st-reel-card-summary">' + esc(summary || '—') + '</div>' +
         '</div>' +
       '</div>';
     card.addEventListener('click', function() { stSelectRailReel(id); });
@@ -7837,7 +8249,9 @@ function stSetDesignTab(tab) {
     if (st.scheduleEditTarget) {
       var _schReelTarget = st.scheduleEditTarget;
       st.scheduleEditTarget = null;
-      // stLoadRailReels is async; defer selection until list renders
+      // Pre-set selectedReelId so stRenderRailReelList derivative filter activates immediately
+      st.selectedReelId = _schReelTarget;
+      // stLoadRailReels is async; defer full selection (player + action bar) until list renders
       setTimeout(function() { stSelectRailReel(_schReelTarget); }, 800);
     }
   } else if (isEp) {
@@ -7846,6 +8260,9 @@ function stSetDesignTab(tab) {
 
   // Sync sub-item active state in left rail
   stSyncSubItemActive(st.episodeUid, tab);
+
+  // Apply derivative mode UI (shows/hides action bar based on st.derivativeMode)
+  stSyncDerivativeUI();
 }
 
 // ── DESIGN TAB — Episode mode ─────────────────────────────────
@@ -8077,6 +8494,421 @@ function epChatMarkdown(text) {
   s = s.replace(/\n\n/g, '<br><br>');
   s = s.replace(/\n/g, '<br>');
   return s;
+}
+
+// ── IMAGES COMPANION CHAT ─────────────────────────────────────
+function imgChatGetCanvasText() {
+  if (!st.fabricCanvas) return '';
+  var parts = [];
+  st.fabricCanvas.getObjects().forEach(function(obj) {
+    if (obj._isText && obj._textType !== 'attribution' && obj.text) {
+      parts.push(obj.text.trim());
+    }
+  });
+  return parts.join(' ');
+}
+
+function imgChatReset(uid) {
+  imgChat.history = [];
+  imgChat.loading = false;
+  imgChat.uid = uid;
+  var h = document.getElementById('imgChatHistory');
+  if (h) h.innerHTML = "<div class='ep-chat-empty' id='imgChatEmpty'>Ask for a quote, angle, or reaction to what's on the canvas.</div>";
+  var inp = document.getElementById('imgChatInput');
+  if (inp) { inp.value = ''; inp.style.height = ''; }
+}
+
+function imgChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    imgChatSend();
+  }
+}
+
+function imgChatSend() {
+  if (imgChat.loading) return;
+  var input = document.getElementById('imgChatInput');
+  var msg = input ? input.value.trim() : '';
+  if (!msg) return;
+
+  input.value = '';
+  input.style.height = '';
+
+  var empty = document.getElementById('imgChatEmpty');
+  if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+  imgChatAppend('user', msg);
+
+  var workspaceState = { activeAssetText: imgChatGetCanvasText() };
+
+  var historySnapshot = imgChat.history.slice();
+  imgChat.history.push({ role: 'user', content: msg });
+  imgChatSetLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      imgChatSetLoading(false);
+      if (!response || typeof response !== 'string') {
+        imgChatAppendError('No response received. Please try again.');
+        imgChat.history.pop();
+        return;
+      }
+      imgChatAppend('assistant', response);
+      imgChat.history.push({ role: 'assistant', content: response });
+    })
+    .withFailureHandler(function() {
+      imgChatSetLoading(false);
+      imgChatAppendError('Something went wrong. Please try again.');
+      imgChat.history.pop();
+    })
+    .companionChat('images', imgChat.uid, historySnapshot, msg, workspaceState);
+}
+
+function imgChatAppend(role, text) {
+  var h = document.getElementById('imgChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-msg ' + (role === 'user' ? 'ep-chat-msg-user' : 'ep-chat-msg-asst');
+  div.innerHTML = role === 'user' ? esc(text) : epChatMarkdown(text);
+  h.appendChild(div);
+  imgChatScrollToBottom();
+}
+
+function imgChatAppendError(msg) {
+  var h = document.getElementById('imgChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-error';
+  div.textContent = msg;
+  h.appendChild(div);
+  imgChatScrollToBottom();
+}
+
+function imgChatSetLoading(on) {
+  imgChat.loading = on;
+  var send = document.getElementById('imgChatSend');
+  var inp  = document.getElementById('imgChatInput');
+  if (send) send.disabled = on;
+  if (inp)  inp.disabled  = on;
+
+  var existing = document.getElementById('imgChatLoading');
+  if (on && !existing) {
+    var h = document.getElementById('imgChatHistory');
+    if (h) {
+      var div = document.createElement('div');
+      div.id = 'imgChatLoading';
+      div.className = 'ep-chat-loading';
+      div.textContent = 'Thinking…';
+      h.appendChild(div);
+      imgChatScrollToBottom();
+    }
+  } else if (!on && existing) {
+    existing.parentNode.removeChild(existing);
+  }
+}
+
+function imgChatScrollToBottom() {
+  var h = document.getElementById('imgChatHistory');
+  if (h) h.scrollTop = h.scrollHeight;
+}
+
+// ── REELS RAIL TAB ────────────────────────────────────────────
+function stSetReelRailTab(tab) {
+  var isBrowse = (tab === 'browse');
+  var tabBrowse = document.getElementById('stReelRailTabBrowse');
+  var tabChat   = document.getElementById('stRailTabChatReel');
+  var paneBrowse = document.getElementById('stReelBrowsePane');
+  var paneChat   = document.getElementById('stReelChatPane');
+  if (tabBrowse)  tabBrowse.classList.toggle('active', isBrowse);
+  if (tabChat)    tabChat.classList.toggle('active', !isBrowse);
+  if (paneBrowse) paneBrowse.style.display = isBrowse ? 'block' : 'none';
+  if (paneChat)   paneChat.style.display   = isBrowse ? 'none'  : 'flex';
+}
+
+// ── REELS COMPANION CHAT ──────────────────────────────────────
+function reelChatReset(uid) {
+  reelChat.history = [];
+  reelChat.loading = false;
+  reelChat.uid = uid;
+  var h = document.getElementById('reelChatHistory');
+  if (h) h.innerHTML = "<div class='ep-chat-empty' id='reelChatEmpty'>Ask about this reel — refine the title card, tighten the caption, or source a quote.</div>";
+  var inp = document.getElementById('reelChatInput');
+  if (inp) { inp.value = ''; inp.style.height = ''; }
+}
+
+function reelChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    reelChatSend();
+  }
+}
+
+function reelChatSend() {
+  if (reelChat.loading) return;
+  var input = document.getElementById('reelChatInput');
+  var msg = input ? input.value.trim() : '';
+  if (!msg) return;
+
+  input.value = '';
+  input.style.height = '';
+
+  var empty = document.getElementById('reelChatEmpty');
+  if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+  reelChatAppend('user', msg);
+
+  var titleCardEl = document.getElementById('stTitleCardField');
+  var captionEl   = document.getElementById('stCaptionField');
+  var workspaceState = {
+    titleCardText: titleCardEl ? titleCardEl.textContent.trim() : '',
+    captionText:   captionEl   ? captionEl.textContent.trim()   : ''
+  };
+
+  var historySnapshot = reelChat.history.slice();
+  reelChat.history.push({ role: 'user', content: msg });
+  reelChatSetLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      reelChatSetLoading(false);
+      if (!response || typeof response !== 'string') {
+        reelChatAppendError('No response received. Please try again.');
+        reelChat.history.pop();
+        return;
+      }
+      reelChatAppend('assistant', response);
+      reelChat.history.push({ role: 'assistant', content: response });
+    })
+    .withFailureHandler(function() {
+      reelChatSetLoading(false);
+      reelChatAppendError('Something went wrong. Please try again.');
+      reelChat.history.pop();
+    })
+    .companionChat('reels', reelChat.uid, historySnapshot, msg, workspaceState);
+}
+
+function reelChatAppend(role, text) {
+  var h = document.getElementById('reelChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-msg ' + (role === 'user' ? 'ep-chat-msg-user' : 'ep-chat-msg-asst');
+  div.innerHTML = role === 'user' ? esc(text) : epChatMarkdown(text);
+  h.appendChild(div);
+  reelChatScrollToBottom();
+}
+
+function reelChatAppendError(msg) {
+  var h = document.getElementById('reelChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-error';
+  div.textContent = msg;
+  h.appendChild(div);
+  reelChatScrollToBottom();
+}
+
+function reelChatSetLoading(on) {
+  reelChat.loading = on;
+  var send = document.getElementById('reelChatSend');
+  var inp  = document.getElementById('reelChatInput');
+  if (send) send.disabled = on;
+  if (inp)  inp.disabled  = on;
+
+  var existing = document.getElementById('reelChatLoading');
+  if (on && !existing) {
+    var h = document.getElementById('reelChatHistory');
+    if (h) {
+      var div = document.createElement('div');
+      div.id = 'reelChatLoading';
+      div.className = 'ep-chat-loading';
+      div.textContent = 'Thinking…';
+      h.appendChild(div);
+      reelChatScrollToBottom();
+    }
+  } else if (!on && existing) {
+    existing.parentNode.removeChild(existing);
+  }
+}
+
+function reelChatScrollToBottom() {
+  var h = document.getElementById('reelChatHistory');
+  if (h) h.scrollTop = h.scrollHeight;
+}
+
+// ── SCHEDULE RAIL TAB ─────────────────────────────────────────
+function schSetRailTab(tab) {
+  var isPool  = (tab === 'pool');
+  var tabPool = document.getElementById('schRailTabPool');
+  var tabChat = document.getElementById('schRailTabChat');
+  var panePool = document.getElementById('schPoolPane');
+  var paneChat = document.getElementById('schedChatPane');
+  if (tabPool)  tabPool.classList.toggle('active', isPool);
+  if (tabChat)  tabChat.classList.toggle('active', !isPool);
+  if (panePool) panePool.style.display = isPool ? 'block' : 'none';
+  if (paneChat) paneChat.style.display = isPool ? 'none'  : 'flex';
+}
+
+// ── SCHEDULE COMPANION CHAT ───────────────────────────────────
+function schedChatReset(uid) {
+  schedChat.history = [];
+  schedChat.loading = false;
+  schedChat.uid = uid;
+  var h = document.getElementById('schedChatHistory');
+  if (h) h.innerHTML = "<div class='ep-chat-empty' id='schedChatEmpty'>Ask about the week — coverage, pacing, or whether an asset stands alone.</div>";
+  var inp = document.getElementById('schedChatInput');
+  if (inp) { inp.value = ''; inp.style.height = ''; }
+}
+
+function schedChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    schedChatSend();
+  }
+}
+
+function schedChatBuildWorkspace() {
+  var slotLookup = {};
+  (sch.days || []).forEach(function(dayObj) {
+    (dayObj.slots || []).forEach(function(slot) {
+      slotLookup[slot.slotId] = { day: dayObj.day, platform: slot.platform, why: slot.why, assetType: slot.assetType };
+    });
+  });
+
+  var candidateMap = {};
+  (sch.candidates || []).forEach(function(c) { candidateMap[c.assetId] = c; });
+
+  function assetSurfaceText(c) {
+    var t = String(c.assetType || '').toLowerCase();
+    if (t === 'reel') return c.captionHost || c.reelSummary || c.displayName || '';
+    return c.quoteText || c.captionHost || c.displayName || '';
+  }
+
+  var weekPlaced = schWeekPlacedSet();
+  var swipePlaced = {};
+  (sch.placements || []).forEach(function(p) { if (p.slot === 'SWIPE') swipePlaced[p.assetLibraryId] = true; });
+
+  var placedAssets = [];
+  (sch.placements || []).forEach(function(p) {
+    var c = candidateMap[p.assetLibraryId];
+    if (!c) return;
+    var isSwipe  = (p.slot === 'SWIPE');
+    var slotInfo = isSwipe ? null : slotLookup[p.slot];
+    var item = {
+      assetId:     c.assetId,
+      assetType:   c.assetType,
+      displayName: c.displayName,
+      surfaceText: assetSurfaceText(c),
+      placement:   isSwipe ? 'swipe' : 'week',
+      slotId:      p.slot
+    };
+    if (!isSwipe) {
+      if (slotInfo) {
+        item.day        = slotInfo.day;
+        item.platform   = slotInfo.platform;
+        item.slotIntent = slotInfo.why || '';
+        item.adHoc      = false;
+      } else {
+        item.adHoc = true;
+      }
+    }
+    placedAssets.push(item);
+  });
+
+  var unplacedPool = [];
+  (sch.candidates || []).forEach(function(c) {
+    if (!weekPlaced[c.assetId] && !swipePlaced[c.assetId]) {
+      unplacedPool.push({ assetId: c.assetId, assetType: c.assetType, displayName: c.displayName, surfaceText: assetSurfaceText(c) });
+    }
+  });
+
+  return { placedAssets: placedAssets, unplacedPool: unplacedPool };
+}
+
+function schedChatSend() {
+  if (schedChat.loading) return;
+  var input = document.getElementById('schedChatInput');
+  var msg = input ? input.value.trim() : '';
+  if (!msg) return;
+
+  input.value = '';
+  input.style.height = '';
+
+  var empty = document.getElementById('schedChatEmpty');
+  if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+
+  schedChatAppend('user', msg);
+
+  var workspaceState = schedChatBuildWorkspace();
+
+  var historySnapshot = schedChat.history.slice();
+  schedChat.history.push({ role: 'user', content: msg });
+  schedChatSetLoading(true);
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      schedChatSetLoading(false);
+      if (!response || typeof response !== 'string') {
+        schedChatAppendError('No response received. Please try again.');
+        schedChat.history.pop();
+        return;
+      }
+      schedChatAppend('assistant', response);
+      schedChat.history.push({ role: 'assistant', content: response });
+    })
+    .withFailureHandler(function() {
+      schedChatSetLoading(false);
+      schedChatAppendError('Something went wrong. Please try again.');
+      schedChat.history.pop();
+    })
+    .companionChat('schedule', schedChat.uid, historySnapshot, msg, workspaceState);
+}
+
+function schedChatAppend(role, text) {
+  var h = document.getElementById('schedChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-msg ' + (role === 'user' ? 'ep-chat-msg-user' : 'ep-chat-msg-asst');
+  div.innerHTML = role === 'user' ? esc(text) : epChatMarkdown(text);
+  h.appendChild(div);
+  schedChatScrollToBottom();
+}
+
+function schedChatAppendError(msg) {
+  var h = document.getElementById('schedChatHistory');
+  if (!h) return;
+  var div = document.createElement('div');
+  div.className = 'ep-chat-error';
+  div.textContent = msg;
+  h.appendChild(div);
+  schedChatScrollToBottom();
+}
+
+function schedChatSetLoading(on) {
+  schedChat.loading = on;
+  var send = document.getElementById('schedChatSend');
+  var inp  = document.getElementById('schedChatInput');
+  if (send) send.disabled = on;
+  if (inp)  inp.disabled  = on;
+
+  var existing = document.getElementById('schedChatLoading');
+  if (on && !existing) {
+    var h = document.getElementById('schedChatHistory');
+    if (h) {
+      var div = document.createElement('div');
+      div.id = 'schedChatLoading';
+      div.className = 'ep-chat-loading';
+      div.textContent = 'Thinking…';
+      h.appendChild(div);
+      schedChatScrollToBottom();
+    }
+  } else if (!on && existing) {
+    existing.parentNode.removeChild(existing);
+  }
+}
+
+function schedChatScrollToBottom() {
+  var h = document.getElementById('schedChatHistory');
+  if (h) h.scrollTop = h.scrollHeight;
 }
 
 function stEpComposerFocus() {
@@ -8465,104 +9297,6 @@ function stJustifyCycle() {
 function stUpdateJustifyBtn(align) {
   var btn = document.getElementById('stJustifyBtn');
   if (btn) btn.innerHTML = ST_JUSTIFY_ICONS[align] || ST_JUSTIFY_ICONS.left;
-}
-
-// ── DAY PICKER ───────────────────────────────────────────────
-function stToggleDayPicker() {
-  var picker = document.getElementById('stDayPicker');
-  if (!picker) return;
-  picker.style.display = picker.style.display === 'none' ? 'flex' : 'none';
-}
-
-function stPickDay(btn, day) {
-  st.exportDay = day;
-  document.querySelectorAll('#stDayPicker .st-day-pill').forEach(function(b) { b.classList.remove('active'); });
-  btn.classList.add('active');
-  document.getElementById('stDayPicker').style.display = 'none';
-  stExportDesign();
-}
-
-// ── EXPORT ───────────────────────────────────────────────────
-function stExport() {
-  var canvas = st.fabricCanvas;
-  if (!canvas) return;
-  var origVpt = canvas.viewportTransform.slice();
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-  var dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 });
-  canvas.setViewportTransform(origVpt);
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (result.success) { showToast('Saved: ' + result.filename); }
-      else { showToast('Save failed: ' + (result.error || ''), true); }
-    })
-    .withFailureHandler(function(err) {
-      showToast('Save failed: ' + ((err && err.message) || err), true);
-    })
-    .saveImageToStaging(st.episodeUid, dataUrl);
-}
-
-function stExportDesign() {
-  var uid = st.episodeUid;
-  var day = st.exportDay || 'MON';
-  if (!uid) { showToast('Select an episode first.'); return; }
-  if (st.designTab === 'reels') {
-    stExportReel(uid);
-  } else {
-    stExportQg(uid, day);
-  }
-}
-
-function stExportQg(uid, day) {
-  var canvas = st.fabricCanvas;
-  if (!canvas) return;
-  var exportBtn = document.getElementById('stExportBtn');
-  if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Exporting…'; }
-
-  var canvasText = '';
-  canvas.getObjects().forEach(function(o) { if (o._isText && o.text) canvasText = o.text; });
-  var captionEl  = document.getElementById('stCaptionField');
-  var caption    = captionEl ? captionEl.textContent.trim() : '';
-
-  canvas.discardActiveObject();
-  canvas.renderAll();
-  var dataUrl = canvas.toDataURL({ format: 'png' });
-  var b64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
-      if (res && res.success) showToast('Exported → ' + res.filename);
-      else showToast('Export failed: ' + ((res && res.error) || 'unknown'), true);
-    })
-    .withFailureHandler(function(err) {
-      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
-      showToast('Export failed: ' + ((err && err.message) || err), true);
-    })
-    .exportAssetToDrive(uid, null, null, b64, null, day, canvasText, caption);
-}
-
-function stExportReel(uid) {
-  if (!st.selectedReelId) { showToast('Select a reel first.'); return; }
-  if (!uid) { showToast('Select an episode first.'); return; }
-  var exportBtn = document.getElementById('stReelExportBtn');
-  if (exportBtn) { exportBtn.disabled = true; exportBtn.textContent = 'Exporting…'; }
-
-  var captionEl   = document.getElementById('stCaptionField');
-  var titleCardEl = document.getElementById('stTitleCardField');
-  var caption   = captionEl   ? captionEl.textContent.trim()   : '';
-  var titleText = titleCardEl ? titleCardEl.textContent.trim() : '';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
-      if (res && res.success) showToast('Exported → ' + res.filename);
-      else showToast('Export failed: ' + ((res && res.error) || 'unknown'), true);
-    })
-    .withFailureHandler(function(err) {
-      if (exportBtn) { exportBtn.disabled = false; exportBtn.textContent = 'Export'; }
-      showToast('Export failed: ' + ((err && err.message) || err), true);
-    })
-    .exportReelToDrive(uid, null, st.selectedReelId, titleText, caption);
 }
 
 // ── DOC VIEW ─────────────────────────────────────────────────

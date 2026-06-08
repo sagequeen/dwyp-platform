@@ -3859,14 +3859,18 @@ body.studio-open .app-header { display: none; }
 .st-ep-view { display: flex; flex-direction: column; flex: 1; overflow: hidden; min-height: 0; background: #111; }
 .st-ep-player-notice { font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; padding: 24px; }
 .st-ep-view .rv-player-wrap { width: 100%; align-self: stretch; }
-#stEpVideoWrap { display: flex; flex: 1; min-height: 120px; overflow: hidden; align-items: center; justify-content: center; }
+#stEpVideoWrap { display: flex; flex: 1; min-height: 240px; overflow: hidden; align-items: center; justify-content: center; }
+#stEpVideoWrap .rv-player-wrap { padding-top: 0; height: 100%; }
+#stEpVideoWrap .rv-player-wrap video { object-fit: contain; }
 .st-ep-drag { height: 4px; flex-shrink: 0; background: var(--border); cursor: row-resize; transition: background 0.15s; z-index: 5; }
 .st-ep-drag:hover, .st-ep-drag.dragging { background: var(--gold); }
 #stEpShowNotesWrap { flex: 0 0 220px; min-height: 80px; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); border-top: 1px solid var(--border); }
 
 /* ── SHOW NOTES CARDS ──────────────────────────────────────── */
 .sn-cards-area { flex: 1; overflow-y: auto; padding: 10px 10px 4px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.sn-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.sn-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; position: relative; max-height: 120px; cursor: pointer; transition: max-height 0.15s; }
+.sn-card.sn-expanded { max-height: 1600px; cursor: auto; }
+.sn-card:not(.sn-expanded)::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 32px; background: linear-gradient(to bottom, transparent, var(--surface)); pointer-events: none; }
 .sn-card-label { font-family: var(--font-display); font-size: 9px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--red); padding: 8px 12px 4px; }
 .sn-card-body { font-family: var(--font-body); font-size: 12px; line-height: 1.6; color: var(--text); padding: 0 12px 10px; outline: none; min-height: 28px; white-space: pre-wrap; }
 .sn-card-body:empty::before { content: attr(data-ph); color: var(--text-3); font-style: italic; pointer-events: none; }
@@ -9370,10 +9374,19 @@ function epNotesRender(sections) {
   var area = document.getElementById('stEpNotesCards');
   if (!area) return;
 
+  // Preserve which cards were expanded before re-render
+  var expandedSi = {};
+  area.querySelectorAll('.sn-card.sn-expanded[data-si]').forEach(function(c) {
+    expandedSi[c.getAttribute('data-si')] = true;
+  });
+
   var html = '';
   sections.forEach(function(s, si) {
+    // Item 3: hide Chapters and Footer — display only, doc unchanged
+    if (/CHAPTER/i.test(s.header) || s.header === 'FOOTER:') return;
+
     if (s.type === 'hooks') {
-      html += '<div class="sn-card sn-card-special" data-si="' + si + '">';
+      html += '<div class="sn-card sn-card-special" data-si="' + si + '" onclick="epNotesToggleCard(event,' + si + ')">';
       html += '<div class="sn-card-label">Hooks (' + s.items.length + ')</div>';
       html += '<div class="sn-hook-list" id="snHookList' + si + '">';
       s.items.forEach(function(text, ii) {
@@ -9387,7 +9400,7 @@ function epNotesRender(sections) {
       html += '</div>';
 
     } else if (s.type === 'quotes') {
-      html += '<div class="sn-card sn-card-special" data-si="' + si + '">';
+      html += '<div class="sn-card sn-card-special" data-si="' + si + '" onclick="epNotesToggleCard(event,' + si + ')">';
       html += '<div class="sn-card-label">Guest Quotes (' + s.items.length + ')</div>';
       html += '<div class="sn-quote-list" id="snQuoteList' + si + '">';
       s.items.forEach(function(item, ii) {
@@ -9404,13 +9417,18 @@ function epNotesRender(sections) {
       html += '</div>';
 
     } else {
-      html += '<div class="sn-card" data-si="' + si + '">';
+      html += '<div class="sn-card" data-si="' + si + '" onclick="epNotesToggleCard(event,' + si + ')">';
       html += '<div class="sn-card-label">' + esc(s.header.replace(/:$/, '').toLowerCase().replace(/\b\w/g, function(c) { return c.toUpperCase(); })) + '</div>';
       html += '<div class="sn-card-body" contenteditable="true" data-si="' + si + '" data-ph="(empty section)">' + esc(s.content) + '</div>';
       html += '</div>';
     }
   });
   area.innerHTML = html;
+
+  // Restore expanded state after re-render
+  area.querySelectorAll('.sn-card[data-si]').forEach(function(c) {
+    if (expandedSi[c.getAttribute('data-si')]) c.classList.add('sn-expanded');
+  });
 
   // Wire input listeners after render
   area.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
@@ -9431,6 +9449,18 @@ function epNotesRender(sections) {
       epNotesDirtySet(true);
     });
   });
+}
+
+function epNotesToggleCard(event, si) {
+  if (event.target.closest('button')) return;
+  var card = event.currentTarget;
+  if (!card.classList.contains('sn-expanded')) {
+    card.classList.add('sn-expanded');
+  } else {
+    if (event.target.closest('.sn-card-label')) {
+      card.classList.remove('sn-expanded');
+    }
+  }
 }
 
 function epNotesDirtySet(val) {
@@ -10515,7 +10545,7 @@ function stDocClear() {
     var notesWrap = document.getElementById('stEpShowNotesWrap');
     if (!epView || !notesWrap) return;
     var oRect = epView.getBoundingClientRect();
-    var newH  = Math.max(60, Math.min(oRect.bottom - e.clientY - 4, oRect.height - 120 - 4));
+    var newH  = Math.max(80, Math.min(oRect.bottom - e.clientY - 4, oRect.height - 240 - 4));
     notesWrap.style.flex = '0 0 ' + newH + 'px';
   });
   document.addEventListener('mouseup', function() { if (active) { active = false; handle.classList.remove('dragging'); document.body.style.cursor = ''; } });

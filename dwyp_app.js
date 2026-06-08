@@ -3593,9 +3593,18 @@ function getShowNotesForEdit(episodeUid) {
     // Type each section
     var sections = rawSections.map(function(s) {
       if (s.header === 'HOOKS:') {
-        var hRe      = new RegExp('^HOOK\\s+\\d+:\\s*(.*)$', 'gm');
+        var hRe      = new RegExp('^HOOK\\s+\\d+:\\s*(.+)$', 'gm');
         var hMatches = Array.from(s.content.matchAll(hRe));
-        return { type: 'hooks', header: s.header, items: hMatches.map(function(hm) { return hm[1].trim(); }) };
+        var hItems;
+        if (hMatches.length > 0) {
+          hItems = hMatches.map(function(hm) { return hm[1].trim(); });
+        } else {
+          // Fallback: plain paragraphs — one per hook, strip list prefixes if any
+          hItems = s.content.split('\n')
+            .map(function(l) { return l.replace(/^\d+[.)]\s*|^[-•]\s*/g, '').trim(); })
+            .filter(function(l) { return l.length > 0; });
+        }
+        return { type: 'hooks', header: s.header, items: hItems };
       }
       if (s.header === 'GUEST QUOTES:') {
         var qRe      = new RegExp('^QUOTE\\s+(\\d+):\\s*(.*)$', 'gm');

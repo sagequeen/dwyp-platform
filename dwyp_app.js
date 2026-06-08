@@ -2467,6 +2467,183 @@ function completeFinalEpisodeUpload(episodeUid, rowIndex) {
 }
 
 /**
+ * Isolated deliberate scrub of the full-res final episode file.
+ * Governing invariant: removal is never a side effect of anything else.
+ * Trashes the file in Episode/, clears Final_Episode_ID, reverts Status to review,
+ * reopens Upload_Final_Episode task. Video_Status is never touched.
+ *
+ * @param {string} episodeUid
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function removeFinalEpisodeUpload(episodeUid) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { ok: false, error: "Staging folder not found." };
+
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var epFolderIt    = stagingFolder.getFoldersByName("Episode");
+    if (!epFolderIt.hasNext()) return { ok: false, error: "Episode/ subfolder not found." };
+    var epFolder = epFolderIt.next();
+
+    var allFiles = epFolder.getFiles();
+    var files    = [];
+    while (allFiles.hasNext()) files.push(allFiles.next());
+    if (files.length === 0) return { ok: false, error: "Episode/ folder is already empty." };
+
+    files[0].setTrashed(true);
+
+    patchEpisodes(episodeUid, { Status: "review", Final_Episode_ID: "" });
+
+    var sheetId   = getMasterSheetId();
+    var ss        = SpreadsheetApp.openById(sheetId);
+    var taskSheet = ss.getSheetByName("Tasks");
+    var tData     = taskSheet.getDataRange().getValues();
+    var tHeaders  = tData[0];
+    var tEpCol    = tHeaders.indexOf("Episode_UID");
+    var tWfCol    = tHeaders.indexOf("Workflow_Step");
+    var tStCol    = tHeaders.indexOf("Status");
+
+    for (var t = 1; t < tData.length; t++) {
+      if (String(tData[t][tEpCol]) !== String(episodeUid))     continue;
+      if (String(tData[t][tWfCol]) !== "Upload_Final_Episode") continue;
+      var ts = String(tData[t][tStCol]);
+      if (ts === "open" || ts === "in_progress") {
+        bumpVersion("tasks", "removeFinalEpisodeUpload");
+        logToAuditTrail("removeFinalEpisodeUpload", "human_action", episodeUid, "",
+          "[INFO] Final episode removed. Status reverted to review. Video_Status preserved.", "INFO");
+        return { ok: true };
+      }
+    }
+
+    var epSheet   = ss.getSheetByName("Episodes");
+    var epData    = epSheet.getDataRange().getValues();
+    var guestName = episodeUid, contactId = "";
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || "");
+      break;
+    }
+
+    spawnTask({
+      episodeUid:   episodeUid,
+      contactId:    contactId,
+      workflowStep: "Upload_Final_Episode",
+      actionTitle:  "Upload final episode -- " + guestName,
+      assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:   "The Fairy Team",
+      status:       "open",
+      priority:     "normal"
+    });
+
+    bumpVersion("episodes", "removeFinalEpisodeUpload");
+    bumpVersion("tasks",    "removeFinalEpisodeUpload");
+    logToAuditTrail("removeFinalEpisodeUpload", "human_action", episodeUid, contactId,
+      "[INFO] Final episode removed. Status reverted to review. Upload_Final_Episode task reopened. Video_Status preserved.", "INFO");
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Reconciles Final_Episode_ID in the Episodes tab against actual Episode/ slot contents.
+ * Corrects stale IDs (Drive delete not caught) and completes forward (file present, ID blank).
+ * Called by the Sync button and passively when the episode detail is loaded after a suspected
+ * out-of-band change.
+ *
+ * @param {string} episodeUid
+ * @returns {{ ok: boolean, action: string, message?: string, error?: string }}
+ */
+function reconcileFinalEpisodeSlot(episodeUid) {
+  try {
+    var stagingId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingId) return { ok: false, action: "none", error: "Staging folder not found." };
+
+    var stagingFolder = DriveApp.getFolderById(stagingId);
+    var epFolderIt    = stagingFolder.getFoldersByName("Episode");
+    if (!epFolderIt.hasNext()) return { ok: false, action: "none", error: "Episode/ subfolder not found." };
+    var epFolder = epFolderIt.next();
+
+    var allFiles = epFolder.getFiles();
+    var files    = [];
+    while (allFiles.hasNext()) files.push(allFiles.next());
+
+    var sheetId  = getMasterSheetId();
+    var ss       = SpreadsheetApp.openById(sheetId);
+    var epSheet  = ss.getSheetByName("Episodes");
+    var epData   = epSheet.getDataRange().getValues();
+    var currentFinalId = "", guestName = episodeUid, contactId = "";
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      currentFinalId = String(epData[i][EPISODES_COLS.Final_Episode_ID - 1] || "");
+      guestName      = String(epData[i][EPISODES_COLS.Guest_Name      - 1] || episodeUid);
+      contactId      = String(epData[i][EPISODES_COLS.Contact_ID      - 1] || "");
+      break;
+    }
+
+    var slotHasFile = files.length > 0;
+    var sheetHasId  = currentFinalId !== "";
+
+    if (slotHasFile === sheetHasId) {
+      return { ok: true, action: "none", message: "Slot and sheet are consistent." };
+    }
+
+    if (!slotHasFile && sheetHasId) {
+      patchEpisodes(episodeUid, { Status: "review", Final_Episode_ID: "" });
+
+      var taskSheet = ss.getSheetByName("Tasks");
+      var tData     = taskSheet.getDataRange().getValues();
+      var tHeaders  = tData[0];
+      var tEpCol    = tHeaders.indexOf("Episode_UID");
+      var tWfCol    = tHeaders.indexOf("Workflow_Step");
+      var tStCol    = tHeaders.indexOf("Status");
+      var hasOpen   = false;
+      for (var t = 1; t < tData.length; t++) {
+        if (String(tData[t][tEpCol]) !== String(episodeUid))     continue;
+        if (String(tData[t][tWfCol]) !== "Upload_Final_Episode") continue;
+        var tst = String(tData[t][tStCol]);
+        if (tst === "open" || tst === "in_progress") { hasOpen = true; break; }
+      }
+      if (!hasOpen) {
+        spawnTask({
+          episodeUid:   episodeUid,
+          contactId:    contactId,
+          workflowStep: "Upload_Final_Episode",
+          actionTitle:  "Upload final episode -- " + guestName,
+          assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+          assignedBy:   "The Fairy Team",
+          status:       "open",
+          priority:     "normal"
+        });
+      }
+      bumpVersion("episodes", "reconcileFinalEpisodeSlot");
+      bumpVersion("tasks",    "reconcileFinalEpisodeSlot");
+      logToAuditTrail("reconcileFinalEpisodeSlot", "state_change", episodeUid, contactId,
+        "[INFO] Reconciled: Final_Episode_ID was set but Episode/ is empty. Status reverted to review.", "INFO");
+      return { ok: true, action: "reconciled_missing",
+               message: "Final file was missing -- slot cleared, status reverted to review." };
+    }
+
+    // slotHasFile && !sheetHasId: file present but not recorded, forward-complete.
+    if (files.length === 1) {
+      var r = completeFinalEpisodeUpload(episodeUid);
+      if (r && r.ok) {
+        return { ok: true, action: "reconciled_complete",
+                 message: "File found in Episode/ but not recorded -- upload completed." };
+      }
+      return { ok: false, action: "none", error: r ? r.error : "completeFinalEpisodeUpload failed." };
+    }
+    return { ok: false, action: "none",
+             error: "Multiple files in Episode/ and Final_Episode_ID is blank -- remove extra files first." };
+
+  } catch (err) {
+    return { ok: false, action: "none", error: err.message };
+  }
+}
+
+/**
  * Returns the Episode_Log revision history for the episode review rail, plus
  * the current video state and staging folder URL for the deep-link payload.
  * @param {string} episodeUid
@@ -3355,6 +3532,147 @@ function getEpisodeHooksAndQuotes(episodeUid) {
     return { hooks: [], quotes: [], imagePrompts: [] };
   } catch (e) {
     return { hooks: [], quotes: [], imagePrompts: [], error: e.message };
+  }
+}
+
+
+/**
+ * Returns the show-notes doc parsed into structured sections for the card editor.
+ * Standard sections return { type:'standard', header, content }.
+ * Hooks returns { type:'hooks', header, items:[text,...] }.
+ * Quotes returns { type:'quotes', header, items:[{quoteText,attribution},...] }.
+ * Returns { status:'no_doc' } when manifest.show_notes is absent.
+ */
+function getShowNotesForEdit(episodeUid) {
+  try {
+    var manifest = getEpisodeManifest(episodeUid);
+    if (!manifest || !manifest.show_notes) return { status: 'no_doc' };
+
+    var docId = manifest.show_notes;
+    var doc;
+    try { doc = DocumentApp.openById(docId); } catch(e) { return { status: 'no_doc' }; }
+
+    var body    = doc.getBody();
+    var allText = body.getText();
+    var lines   = allText.split('\n');
+
+    function isSectionHeader(line) {
+      return /^[A-Z][A-Z\s]{2,}:\s*$/.test(line.trim());
+    }
+
+    // Locate first section header — everything before it is preamble
+    var firstHeaderIdx = -1;
+    for (var fi = 0; fi < lines.length; fi++) {
+      if (isSectionHeader(lines[fi])) { firstHeaderIdx = fi; break; }
+    }
+    var preamble = firstHeaderIdx > 0
+      ? lines.slice(0, firstHeaderIdx).join('\n').replace(/\n+$/, '')
+      : '';
+
+    // Walk remaining lines, grouping by section header
+    var rawSections = [];
+    var curHeader   = null;
+    var curLines    = [];
+    var startIdx    = firstHeaderIdx >= 0 ? firstHeaderIdx : 0;
+    for (var i = startIdx; i < lines.length; i++) {
+      var line = lines[i];
+      if (isSectionHeader(line)) {
+        if (curHeader !== null) {
+          rawSections.push({ header: curHeader, content: curLines.join('\n').replace(/^\n+|\n+$/g, '') });
+        }
+        curHeader = line.trim();
+        curLines  = [];
+      } else {
+        curLines.push(line);
+      }
+    }
+    if (curHeader !== null) {
+      rawSections.push({ header: curHeader, content: curLines.join('\n').replace(/^\n+|\n+$/g, '') });
+    }
+
+    // Type each section
+    var sections = rawSections.map(function(s) {
+      if (s.header === 'HOOKS:') {
+        var hRe      = new RegExp('^HOOK\\s+\\d+:\\s*(.*)$', 'gm');
+        var hMatches = Array.from(s.content.matchAll(hRe));
+        return { type: 'hooks', header: s.header, items: hMatches.map(function(hm) { return hm[1].trim(); }) };
+      }
+      if (s.header === 'GUEST QUOTES:') {
+        var qRe      = new RegExp('^QUOTE\\s+(\\d+):\\s*(.*)$', 'gm');
+        var qMatches = Array.from(s.content.matchAll(qRe));
+        var items = [];
+        for (var qi = 0; qi < qMatches.length; qi++) {
+          var qm         = qMatches[qi];
+          var qText      = qm[2].trim();
+          var blockStart = qm.index + qm[0].length;
+          var blockEnd   = (qi + 1 < qMatches.length) ? qMatches[qi + 1].index : s.content.length;
+          var block      = s.content.slice(blockStart, blockEnd);
+          var attrM      = block.match(/^ATTRIBUTION:\s*(.+)$/m);
+          items.push({ quoteText: qText, attribution: attrM ? attrM[1].trim() : '' });
+        }
+        return { type: 'quotes', header: s.header, items: items };
+      }
+      return { type: 'standard', header: s.header, content: s.content };
+    });
+
+    return { status: 'ok', docId: docId, preamble: preamble, sections: sections };
+  } catch(e) {
+    return { status: 'error', error: e.message };
+  }
+}
+
+
+/**
+ * Writes the card editor's structured sections back to the show-notes doc.
+ * Full-body rewrite (matches runEditorialPass write pattern).
+ * Standard sections: header + content lines.
+ * Hooks: HOOK N: [text] per item.
+ * Quotes: QUOTE N: [text]\nATTRIBUTION: [attribution] per item.
+ */
+function saveShowNotes(episodeUid, sections, preamble) {
+  try {
+    var manifest = getEpisodeManifest(episodeUid);
+    if (!manifest || !manifest.show_notes) {
+      return { ok: false, error: 'No show notes doc found for ' + episodeUid };
+    }
+    var docId = manifest.show_notes;
+    var doc   = DocumentApp.openById(docId);
+    var body  = doc.getBody();
+    body.clear();
+
+    // Preamble — first line gets H1 heading
+    var preambleLines = (preamble || '').split('\n');
+    if (preambleLines.length > 0 && preambleLines[0].trim()) {
+      body.appendParagraph(preambleLines[0]).setHeading(DocumentApp.ParagraphHeading.HEADING1);
+      for (var pi = 1; pi < preambleLines.length; pi++) {
+        body.appendParagraph(preambleLines[pi]);
+      }
+    }
+    body.appendParagraph('');
+
+    (sections || []).forEach(function(s) {
+      body.appendParagraph(s.header);
+      if (s.type === 'hooks') {
+        (s.items || []).forEach(function(text, idx) {
+          body.appendParagraph('HOOK ' + (idx + 1) + ': ' + text);
+        });
+      } else if (s.type === 'quotes') {
+        (s.items || []).forEach(function(item, idx) {
+          body.appendParagraph('QUOTE ' + (idx + 1) + ': ' + item.quoteText);
+          body.appendParagraph('ATTRIBUTION: ' + (item.attribution || ''));
+        });
+      } else {
+        (s.content || '').split('\n').forEach(function(line) { body.appendParagraph(line); });
+      }
+      body.appendParagraph('');
+    });
+
+    doc.saveAndClose();
+    logToAuditTrail('Show_Notes_Editor', 'state_change', episodeUid, null,
+      'SHOW_NOTES_SAVED_BY_JT: docId=' + docId, 'info');
+    return { ok: true };
+  } catch(e) {
+    return { ok: false, error: e.message };
   }
 }
 

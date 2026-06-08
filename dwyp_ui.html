@@ -3862,10 +3862,34 @@ body.studio-open .app-header { display: none; }
 #stEpVideoWrap { display: flex; flex: 1; min-height: 120px; overflow: hidden; align-items: center; justify-content: center; }
 .st-ep-drag { height: 4px; flex-shrink: 0; background: var(--border); cursor: row-resize; transition: background 0.15s; z-index: 5; }
 .st-ep-drag:hover, .st-ep-drag.dragging { background: var(--gold); }
-#stEpShowNotesWrap { flex: 0 0 140px; min-height: 60px; display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border-top: 1px solid var(--border); }
-.st-ep-show-notes-label { padding: 7px 12px 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.35); flex-shrink: 0; }
-.st-ep-show-notes-box { flex: 1; padding: 4px 12px 8px; font-size: 12px; color: rgba(255,255,255,0.65); line-height: 1.5; overflow-y: auto; outline: none; min-height: 0; }
-.st-ep-show-notes-box:empty::before { content: attr(data-ph); color: rgba(255,255,255,0.22); font-style: italic; pointer-events: none; }
+#stEpShowNotesWrap { flex: 0 0 220px; min-height: 80px; display: flex; flex-direction: column; overflow: hidden; background: var(--bg); border-top: 1px solid var(--border); }
+
+/* ── SHOW NOTES CARDS ──────────────────────────────────────── */
+.sn-cards-area { flex: 1; overflow-y: auto; padding: 10px 10px 4px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.sn-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.sn-card-label { font-family: var(--font-display); font-size: 9px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--red); padding: 8px 12px 4px; }
+.sn-card-body { font-family: var(--font-body); font-size: 12px; line-height: 1.6; color: var(--text); padding: 0 12px 10px; outline: none; min-height: 28px; white-space: pre-wrap; }
+.sn-card-body:empty::before { content: attr(data-ph); color: var(--text-3); font-style: italic; pointer-events: none; }
+.sn-hook-list, .sn-quote-list { display: flex; flex-direction: column; gap: 3px; padding: 0 8px 6px; }
+.sn-hook-item, .sn-quote-item { display: flex; align-items: flex-start; gap: 6px; padding: 5px 6px 5px 8px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.sn-hook-item:hover, .sn-quote-item:hover { background: #E4E8F2; }
+.sn-hook-text { flex: 1; font-size: 12px; line-height: 1.5; color: var(--text); outline: none; padding: 1px 0; white-space: pre-wrap; }
+.sn-quote-fields { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.sn-quote-text { font-size: 12px; font-style: italic; line-height: 1.5; color: var(--text); outline: none; padding: 1px 0; white-space: pre-wrap; }
+.sn-quote-attr { font-size: 11px; color: var(--text-2); outline: none; padding: 1px 0; }
+.sn-quote-attr-prefix { color: var(--text-3); pointer-events: none; }
+.sn-delete-btn { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; color: var(--text-3); font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; margin-top: 1px; transition: color 0.15s, background 0.15s; }
+.sn-delete-btn:hover { color: var(--red); background: var(--red-light); }
+.sn-add-btn { margin: 0 8px 8px; font-size: 11px; color: var(--text-3); padding: 5px 10px; border: 1px dashed var(--border); border-radius: var(--radius-sm); width: calc(100% - 16px); text-align: left; transition: color 0.15s, border-color 0.15s; }
+.sn-add-btn:hover { color: var(--gold-deep); border-color: var(--gold); }
+.sn-action-bar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-top: 1px solid var(--border); background: var(--surface); }
+.sn-spacer { flex: 1; }
+.sn-dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gold); display: none; flex-shrink: 0; }
+.sn-dirty-dot.visible { display: block; }
+.sn-undo-btn { font-size: 11px; font-weight: 600; color: var(--text-2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; }
+.sn-save-btn { font-size: 11px; font-weight: 700; color: #fff; background: var(--gold-deep); border-color: var(--gold-deep); border-radius: 20px; padding: 3px 12px; }
+.sn-save-btn:disabled { opacity: 0.5; cursor: default; }
+.sn-notes-notice { font-size: 12px; color: var(--text-3); text-align: center; padding: 20px 16px; font-style: italic; }
 
 /* ── STUDIO — snap guides ──────────────────────────────────── */
 .st-snap-guide { position: absolute; pointer-events: none; z-index: 10; background: rgba(52,152,219,0.7); }
@@ -4471,8 +4495,13 @@ body.studio-open .app-header { display: none; }
         </div>
         <div class="st-ep-drag" id="stEpDrag"></div>
         <div id="stEpShowNotesWrap">
-          <div class="st-ep-show-notes-label">Show Notes</div>
-          <div class="st-ep-show-notes-box" id="stEpShowNotesBox" contenteditable="true" data-ph="Show notes — coming soon"></div>
+          <div id="stEpNotesCards" class="sn-cards-area"></div>
+          <div class="sn-action-bar" id="epNotesActionBar" style="display:none">
+            <span class="sn-dirty-dot" id="epNotesDirtyDot"></span>
+            <span class="sn-spacer"></span>
+            <button class="sn-undo-btn" onclick="epNotesUndoChanges()">Undo Changes</button>
+            <button class="sn-save-btn" id="epNotesSaveBtn" onclick="epNotesSave()">Save</button>
+          </div>
         </div>
       </div>
 
@@ -5242,6 +5271,7 @@ function hideAllViews() {
 // ── ROUTING / TAB SWITCHING ──────────────────────────────────
 function switchTab(tab) {
   if (!stArrangeLeaveCheck()) return;
+  if (!epNotesLeaveCheck()) return;
   state.currentTab     = tab;
   state.currentEpisode = null;
   state.currentContact = null;
@@ -6427,6 +6457,7 @@ function stRenderAccordionTasks() {
 
 function stSelectGuest(uid, name) {
   if (!stArrangeLeaveCheck()) return;
+  if (!epNotesLeaveCheck()) return;
   stExpandGuest(uid);
   stSelectEpisode(uid, name);
   if (st.currentTab !== 'design') stSwitchTab('design');
@@ -6435,6 +6466,7 @@ function stSelectGuest(uid, name) {
 
 function stSelectGuestView(uid, name, view) {
   if (!stArrangeLeaveCheck()) return;
+  if (!epNotesLeaveCheck()) return;
   stExpandGuest(uid);
   stSelectEpisode(uid, name);
   if (view === 'schedule') {
@@ -7555,6 +7587,7 @@ function stAccSelectMode(mode) {
 
 function stAccSelectTaskView(view) {
   if (!stArrangeLeaveCheck()) return;
+  if (!epNotesLeaveCheck()) return;
   st.currentMode = view;
   stHideAllPanels();
   if (view === 'episodes') {
@@ -7840,6 +7873,8 @@ function stRenderEpCardTaskList(ep, epTasks) {
     html += '</div>';
   });
 
+  var epVs = String(ep.Video_Status || '');
+
   filtered.forEach(function(task) {
     var tid  = esc(task.Task_ID);
     var ridx = task._rowIndex;
@@ -7916,6 +7951,39 @@ function stRenderEpCardTaskList(ep, epTasks) {
     html += '</div>'; // .st-ep-task
   });
 
+  // Final-file slot affordance — shown when Final_Episode_ID is populated.
+  // Remove is the isolated deliberate scrub (platform invariant).
+  // Sync checks slot truth on demand (covers direct-Drive deletes).
+  if (ep.Final_Episode_ID) {
+    html += '<div class="st-ep-task">';
+    html += '<div class="st-ep-task-title">Final file uploaded</div>';
+    html += '<div class="st-ep-task-actions">';
+    html += '<button class="btn btn-complete" id="sync-btn-' + uid + '"' +
+            ' onclick="stSyncFinalSlot(\'' + uid + '\')">Sync</button>';
+    html += '<button class="btn btn-delete" id="remove-btn-' + uid + '"' +
+            ' onclick="stRemoveFinalEpisode(\'' + uid + '\')">Remove final</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // Proxy slot affordance — shown when a review proxy exists (Video_Status non-empty).
+  // Replace overwrites the GCS object in place; no state changes.
+  if (epVs && epVs !== 'pending') {
+    html += '<div class="st-ep-task">';
+    html += '<div class="st-ep-task-title">Review proxy</div>';
+    html += '<div class="st-ep-task-actions">';
+    html += '<button class="btn btn-complete" id="proxy-replace-btn-' + uid + '"' +
+            ' onclick="startProxyReplace(\'' + uid + '\')">Replace proxy</button>';
+    html += '</div>';
+    html += '<input type="file" id="proxy-file-' + uid + '" accept="video/*" style="display:none"' +
+            ' onchange="onProxyFileSelected(\'' + uid + '\', this)">';
+    html += '<div class="ep-upload-panel" id="proxy-upload-panel-' + uid + '" style="display:none">';
+    html += '<div class="ep-upload-bar-wrap"><div class="ep-upload-bar" id="proxy-upload-bar-' + uid + '"></div></div>';
+    html += '<div class="ep-upload-status" id="proxy-upload-status-' + uid + '"></div>';
+    html += '</div>';
+    html += '</div>';
+  }
+
   return html;
 }
 
@@ -7982,6 +8050,57 @@ function stCompleteFinalEpisodeUpload(taskId, rowIndex, episodeUid) {
       if (btn) { btn.disabled = false; btn.textContent = 'Complete (file uploaded)'; }
     })
     .completeFinalEpisodeUpload(episodeUid, rowIndex);
+}
+
+// Isolated Remove of the full-res final — confirms, then calls server.
+function stRemoveFinalEpisode(episodeUid) {
+  var btn = document.getElementById('remove-btn-' + episodeUid);
+  if (!confirm('Remove the final episode file from Episode/?\n\nThe file will be trashed, Final_Episode_ID cleared, and status reverted to review. Video_Status (approved) is preserved.\n\nThis cannot be undone from the app.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast('Error: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Remove final'; }
+        return;
+      }
+      var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+      if (ep) { ep.Final_Episode_ID = ''; ep.Status = 'review'; }
+      showToast('Final removed -- Upload Final Episode task reopened.');
+      refreshCurrentView();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = 'Remove final'; }
+    })
+    .removeFinalEpisodeUpload(episodeUid);
+}
+
+// Sync button — reconciles slot truth (covers direct-Drive deletes).
+function stSyncFinalSlot(episodeUid) {
+  var btn = document.getElementById('sync-btn-' + episodeUid);
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync'; }
+      if (!res || !res.ok) {
+        showToast('Sync error: ' + (res && res.error ? res.error : 'unknown'), true);
+        return;
+      }
+      if (res.action === 'none') {
+        showToast('Slot is consistent -- nothing to reconcile.');
+      } else {
+        showToast(res.message || 'Reconciled.');
+        var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+        if (ep && res.action === 'reconciled_missing') { ep.Final_Episode_ID = ''; ep.Status = 'review'; }
+        refreshCurrentView();
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync'; }
+      showToast('Error: ' + ((err && err.message) || err), true);
+    })
+    .reconcileFinalEpisodeSlot(episodeUid);
 }
 
 // Release task confirmation — marks complete; checkbox stays checked on success.
@@ -8091,7 +8210,7 @@ function stArrToolbarHtml() {
   var html = '<div class="arr-mode-bar">';
   html += '<span class="arr-mode-bar-title">Episodes</span>';
   html += '<span class="arr-dirty-dot' + (arr && st.arrangeDirty ? ' visible' : '') + '" id="arrDirtyDot" title="Unsaved changes"></span>';
-  html += '<button class="arr-discard-btn' + (arr ? ' visible' : '') + '" id="arrDiscardBtn" onclick="stArrangeDiscard()">Discard</button>';
+  html += '<button class="arr-discard-btn' + (arr ? ' visible' : '') + '" id="arrDiscardBtn" onclick="stArrangeDiscard()">Undo Changes</button>';
   html += '<button class="arr-save-btn'    + (arr ? ' visible' : '') + '" id="arrSaveBtn" onclick="stSaveArrangeOrder()">Save</button>';
   html += '<button class="arr-toggle-btn' + (arr ? ' active' : '') + '" onclick="stToggleArrangeMode()">Arrange</button>';
   html += '</div>';
@@ -8269,7 +8388,6 @@ function stArrangeEnter() {
 }
 
 function stArrangeDiscard() {
-  if (!confirm('Discard unsaved arrangement?')) return;
   stArrangeExit(true);
 }
 
@@ -9057,6 +9175,7 @@ function stLoadDesignEpisode(uid) {
   epReviewState.composerLocked  = ep && ep.Video_Status === 'revision_requested';
 
   epChatReset(uid);
+  epNotesLoad(uid);
   stEpRenderBrowser(uid, ep);
 
   var urlEntry = _cacheGet('episodeUrl', uid);
@@ -9202,6 +9321,196 @@ function stSetEpRailTab(tab) {
   if (chatPane) chatPane.style.display = isRevisions ? 'none'  : 'flex';
 }
 
+// ── SHOW NOTES CARD EDITOR ────────────────────────────────────
+
+var epNotes = {
+  loading:      false,
+  dirty:        false,
+  sections:     [],
+  savedSections: null,
+  preamble:     ''
+};
+
+function epNotesDeepCopy(sections) {
+  return sections.map(function(s) {
+    if (s.type === 'hooks') return { type: 'hooks', header: s.header, items: s.items.slice() };
+    if (s.type === 'quotes') return { type: 'quotes', header: s.header, items: s.items.map(function(q) { return { quoteText: q.quoteText, attribution: q.attribution }; }) };
+    return { type: 'standard', header: s.header, content: s.content };
+  });
+}
+
+function epNotesLoad(uid) {
+  var area = document.getElementById('stEpNotesCards');
+  if (!area) return;
+  area.innerHTML = '<div class="sn-notes-notice">Loading show notes...</div>';
+  epNotesDirtySet(false);
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || res.status === 'no_doc') {
+        area.innerHTML = '<div class="sn-notes-notice">Show notes not yet generated for this episode.</div>';
+        return;
+      }
+      if (res.status === 'error') {
+        area.innerHTML = '<div class="sn-notes-notice">Could not load show notes: ' + esc(res.error || '') + '</div>';
+        return;
+      }
+      epNotes.preamble      = res.preamble || '';
+      epNotes.sections      = res.sections || [];
+      epNotes.savedSections = epNotesDeepCopy(epNotes.sections);
+      epNotesRender(epNotes.sections);
+    })
+    .withFailureHandler(function(err) {
+      area.innerHTML = '<div class="sn-notes-notice">Failed to load show notes.</div>';
+    })
+    .getShowNotesForEdit(uid);
+}
+
+function epNotesRender(sections) {
+  var area = document.getElementById('stEpNotesCards');
+  if (!area) return;
+
+  var html = '';
+  sections.forEach(function(s, si) {
+    if (s.type === 'hooks') {
+      html += '<div class="sn-card sn-card-special" data-si="' + si + '">';
+      html += '<div class="sn-card-label">Hooks (' + s.items.length + ')</div>';
+      html += '<div class="sn-hook-list" id="snHookList' + si + '">';
+      s.items.forEach(function(text, ii) {
+        html += '<div class="sn-hook-item" data-ii="' + ii + '">';
+        html += '<div class="sn-hook-text" contenteditable="true" data-si="' + si + '" data-ii="' + ii + '">' + esc(text) + '</div>';
+        html += '<button class="sn-delete-btn" onclick="epNotesDeleteItem(' + si + ',' + ii + ')" title="Remove">&#x2715;</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '<button class="sn-add-btn" onclick="epNotesAddHook(' + si + ')">+ Add hook</button>';
+      html += '</div>';
+
+    } else if (s.type === 'quotes') {
+      html += '<div class="sn-card sn-card-special" data-si="' + si + '">';
+      html += '<div class="sn-card-label">Guest Quotes (' + s.items.length + ')</div>';
+      html += '<div class="sn-quote-list" id="snQuoteList' + si + '">';
+      s.items.forEach(function(item, ii) {
+        html += '<div class="sn-quote-item" data-ii="' + ii + '">';
+        html += '<div class="sn-quote-fields">';
+        html += '<div class="sn-quote-text" contenteditable="true" data-si="' + si + '" data-ii="' + ii + '" data-field="quoteText">' + esc(item.quoteText) + '</div>';
+        html += '<div class="sn-quote-attr" contenteditable="true" data-si="' + si + '" data-ii="' + ii + '" data-field="attribution">' + esc(item.attribution) + '</div>';
+        html += '</div>';
+        html += '<button class="sn-delete-btn" onclick="epNotesDeleteItem(' + si + ',' + ii + ')" title="Remove">&#x2715;</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+      html += '<button class="sn-add-btn" onclick="epNotesAddQuote(' + si + ')">+ Add quote</button>';
+      html += '</div>';
+
+    } else {
+      html += '<div class="sn-card" data-si="' + si + '">';
+      html += '<div class="sn-card-label">' + esc(s.header.replace(/:$/, '').toLowerCase().replace(/\b\w/g, function(c) { return c.toUpperCase(); })) + '</div>';
+      html += '<div class="sn-card-body" contenteditable="true" data-si="' + si + '" data-ph="(empty section)">' + esc(s.content) + '</div>';
+      html += '</div>';
+    }
+  });
+  area.innerHTML = html;
+
+  // Wire input listeners after render
+  area.querySelectorAll('[contenteditable="true"]').forEach(function(el) {
+    el.addEventListener('input', function() {
+      var si = parseInt(el.dataset.si, 10);
+      var s  = epNotes.sections[si];
+      if (!s) return;
+      if (s.type === 'standard') {
+        s.content = el.innerText;
+      } else if (s.type === 'hooks') {
+        var ii = parseInt(el.dataset.ii, 10);
+        s.items[ii] = el.innerText;
+      } else if (s.type === 'quotes') {
+        var ii    = parseInt(el.dataset.ii, 10);
+        var field = el.dataset.field;
+        s.items[ii][field] = el.innerText;
+      }
+      epNotesDirtySet(true);
+    });
+  });
+}
+
+function epNotesDirtySet(val) {
+  epNotes.dirty = val;
+  var dot  = document.getElementById('epNotesDirtyDot');
+  var bar  = document.getElementById('epNotesActionBar');
+  if (dot) dot.classList.toggle('visible', val);
+  if (bar) bar.style.display = val ? 'flex' : 'none';
+}
+
+function epNotesAddHook(si) {
+  var s = epNotes.sections[si];
+  if (!s || s.type !== 'hooks') return;
+  s.items.push('');
+  epNotesRender(epNotes.sections);
+  epNotesDirtySet(true);
+  // Focus the new item
+  var newEl = document.querySelector('#snHookList' + si + ' .sn-hook-item:last-child .sn-hook-text');
+  if (newEl) newEl.focus();
+}
+
+function epNotesAddQuote(si) {
+  var s = epNotes.sections[si];
+  if (!s || s.type !== 'quotes') return;
+  s.items.push({ quoteText: '', attribution: '' });
+  epNotesRender(epNotes.sections);
+  epNotesDirtySet(true);
+  var newEl = document.querySelector('#snQuoteList' + si + ' .sn-quote-item:last-child .sn-quote-text');
+  if (newEl) newEl.focus();
+}
+
+function epNotesDeleteItem(si, ii) {
+  var s = epNotes.sections[si];
+  if (!s) return;
+  s.items.splice(ii, 1);
+  epNotesRender(epNotes.sections);
+  epNotesDirtySet(true);
+}
+
+function epNotesBuildText() {
+  return epNotes.sections.map(function(s) {
+    if (s.type === 'hooks') return s.header + '\n' + s.items.map(function(t, i) { return 'HOOK ' + (i + 1) + ': ' + t; }).join('\n');
+    if (s.type === 'quotes') return s.header + '\n' + s.items.map(function(q, i) { return 'QUOTE ' + (i + 1) + ': ' + q.quoteText + '\nATTRIBUTION: ' + q.attribution; }).join('\n');
+    return s.header + '\n' + s.content;
+  }).join('\n\n');
+}
+
+function epNotesUndoChanges() {
+  if (!epNotes.savedSections) return;
+  epNotes.sections = epNotesDeepCopy(epNotes.savedSections);
+  epNotesRender(epNotes.sections);
+  epNotesDirtySet(false);
+}
+
+function epNotesSave() {
+  var btn = document.getElementById('epNotesSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  var uid = st.episodeUid;
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      if (!res || !res.ok) {
+        showToast('Save failed: ' + (res && res.error ? res.error : 'unknown'), true);
+        return;
+      }
+      epNotes.savedSections = epNotesDeepCopy(epNotes.sections);
+      epNotesDirtySet(false);
+    })
+    .withFailureHandler(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+      showToast('Save failed.', true);
+    })
+    .saveShowNotes(uid, epNotes.sections, epNotes.preamble);
+}
+
+function epNotesLeaveCheck() {
+  if (!epNotes.dirty) return true;
+  return confirm('You have unsaved show notes changes. Leave anyway?');
+}
+
 // ── EPISODE COMPANION CHAT ────────────────────────────────────
 function epChatReset(uid) {
   epChat.history = [];
@@ -9234,8 +9543,7 @@ function epChatSend() {
 
   epChatAppend('user', msg);
 
-  var snBox = document.getElementById('stEpShowNotesBox');
-  var workspaceState = { showNotesText: snBox ? (snBox.innerText || '').trim() : '' };
+  var workspaceState = { showNotesText: epNotesBuildText() };
 
   var historySnapshot = epChat.history.slice();
   epChat.history.push({ role: 'user', content: msg });
@@ -12152,6 +12460,107 @@ function _resetEpUploadUI(taskId) {
   var panel = document.getElementById("ep-upload-panel-"  + taskId);
   if (btn)   { btn.style.display = ""; setButtonLoading("complete-" + taskId, false); }
   if (panel) panel.style.display = "none";
+}
+
+// ── PROXY REPLACE FLOW ───────────────────────────────────────
+// startProxyReplace → file picker → onProxyFileSelected → mint URL →
+// _initiateResumableSession → _doProxyResumableUpload → toast, no task change.
+
+function startProxyReplace(episodeUid) {
+  var fileInput = document.getElementById('proxy-file-' + episodeUid);
+  if (fileInput) fileInput.click();
+  else showToast('Upload control not found -- refresh and try again.', true);
+}
+
+function onProxyFileSelected(episodeUid, input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  var btn   = document.getElementById('proxy-replace-btn-'  + episodeUid);
+  var panel = document.getElementById('proxy-upload-panel-' + episodeUid);
+  if (btn)   btn.style.display = 'none';
+  if (panel) panel.style.display = '';
+  _updateProxyUploadUI(episodeUid, 0, file.size, 'Getting upload URL...');
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.error) {
+        showToast('Error: ' + result.error, true);
+        _resetProxyUploadUI(episodeUid);
+        return;
+      }
+      _initiateResumableSession(result.url, file, function(err, sessionUri) {
+        if (err) {
+          showToast('Upload init failed: ' + err, true);
+          _resetProxyUploadUI(episodeUid);
+          return;
+        }
+        _doProxyResumableUpload(file, sessionUri, episodeUid);
+      });
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + (err.message || err), true);
+      _resetProxyUploadUI(episodeUid);
+    })
+    .getEpisodeUploadUrl(episodeUid);
+}
+
+function _doProxyResumableUpload(file, sessionUri, episodeUid) {
+  var CHUNK  = 5 * 1024 * 1024;
+  var total  = file.size;
+  var offset = 0;
+
+  function next() {
+    var end          = Math.min(offset + CHUNK, total);
+    var chunk        = file.slice(offset, end);
+    var contentRange = 'bytes ' + offset + '-' + (end - 1) + '/' + total;
+    _updateProxyUploadUI(episodeUid, offset, total, _fmtBytes(offset) + ' / ' + _fmtBytes(total));
+
+    fetch(sessionUri, {
+      method:   'PUT',
+      headers:  { 'Content-Range': contentRange },
+      body:     chunk,
+      redirect: 'manual'
+    }).then(function(response) {
+      if (response.type === 'opaqueredirect') {
+        offset = end;
+        next();
+      } else if (response.status === 200 || response.status === 201) {
+        _updateProxyUploadUI(episodeUid, total, total, 'Done');
+        setTimeout(function() {
+          _resetProxyUploadUI(episodeUid);
+          showToast('Proxy replaced.');
+        }, 600);
+      } else {
+        response.text().then(function(body) {
+          console.log('[Proxy Replace] PUT error body:', body);
+          showToast('Upload error ' + response.status + ' -- see console', true);
+          _resetProxyUploadUI(episodeUid);
+        });
+      }
+    }).catch(function(err) {
+      console.log('[Proxy Replace] PUT network error:', err);
+      showToast('Upload failed -- check connection', true);
+      _resetProxyUploadUI(episodeUid);
+    });
+  }
+
+  next();
+}
+
+function _updateProxyUploadUI(uid, uploaded, total, statusText) {
+  var bar    = document.getElementById('proxy-upload-bar-'    + uid);
+  var status = document.getElementById('proxy-upload-status-' + uid);
+  if (bar)    bar.style.width    = (total > 0 ? Math.round(uploaded / total * 100) : 0) + '%';
+  if (status) status.textContent = statusText || '';
+}
+
+function _resetProxyUploadUI(uid) {
+  var btn   = document.getElementById('proxy-replace-btn-'   + uid);
+  var panel = document.getElementById('proxy-upload-panel-'  + uid);
+  if (btn)   btn.style.display = '';
+  if (panel) panel.style.display = 'none';
 }
 
 function _fmtBytes(n) {

@@ -3663,7 +3663,7 @@ function saveShowNotes(episodeUid, sections, preamble) {
       body.appendParagraph(s.header);
       if (s.type === 'hooks') {
         (s.items || []).forEach(function(text, idx) {
-          body.appendParagraph('HOOK ' + (idx + 1) + ': ' + text);
+          body.appendParagraph((idx + 1) + '. ' + text);
         });
       } else if (s.type === 'quotes') {
         (s.items || []).forEach(function(item, idx) {

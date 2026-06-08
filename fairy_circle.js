@@ -83,6 +83,13 @@
  * Returns null if key is not found — callers should handle null gracefully.
  */
 function getGovernance(key) {
+  // DEV OVERRIDE: test harness writes _DEV_OVERRIDE_<key>; cleared in finally. Per-invocation only.
+  const devOverride = PropertiesService.getScriptProperties().getProperty('_DEV_OVERRIDE_' + key);
+  if (devOverride !== null) {
+    console.log('[getGovernance] DEV OVERRIDE active: ' + key + ' = ' + devOverride);
+    return devOverride;
+  }
+
   const scriptProps = PropertiesService.getScriptProperties();
   const sheetId = scriptProps.getProperty("MASTER_SHEET_ID");
   if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties. Cannot open master sheet.");
@@ -775,31 +782,6 @@ function extractSectionFromProse(proseText, sectionName) {
   }
 
   return "";
-}
-
-/**
- * Reads a Google Doc and returns its body text as a clean plain string,
- * skipping all heading-styled paragraphs (H1–H6).
- */
-function getBodyTextSkippingHeadings(docId) {
-  try {
-    const doc        = DocumentApp.openById(docId);
-    const paragraphs = doc.getBody().getParagraphs();
-    const lines      = [];
-
-    for (const para of paragraphs) {
-      const heading = para.getHeading();
-      if (heading === DocumentApp.ParagraphHeading.NORMAL) {
-        lines.push(para.getText());
-      }
-    }
-
-    return lines.join("\n\n");
-
-  } catch (e) {
-    console.error(`getBodyTextSkippingHeadings error (docId: ${docId}): ${e.message}`);
-    return "";
-  }
 }
 
 // =============================================================================
@@ -1631,124 +1613,6 @@ function generateLogId() {
 }
 
 // =============================================================================
-// THE SCRIBE (Gmail Draft Architect)
-// =============================================================================
-
-/**
- * Creates a draft email in the host's Gmail.
- */
-function draftPhaseEmail(emailConfig) {
-  try {
-    const options = {};
-    if (emailConfig.htmlBody) {
-      options.htmlBody = emailConfig.htmlBody;
-    } else if (emailConfig.isHtml) {
-      options.htmlBody = emailConfig.body;
-    }
-
-    GmailApp.createDraft(
-      emailConfig.to,
-      emailConfig.subject,
-      emailConfig.plainBody || (emailConfig.isHtml ? "" : emailConfig.body),
-      options
-    );
-
-    logToAuditTrail(
-      "Scribe",
-      "state_change",
-      emailConfig.episodeUid || "",
-      "",
-      `[INFO] ${emailConfig.phase} draft created for: ${emailConfig.to}`,
-      "INFO"
-    );
-  } catch (e) {
-    logToAuditTrail(
-      "Scribe",
-      "error",
-      emailConfig.episodeUid || "",
-      "",
-      `[ERROR] Draft creation failed: ${e.message}`,
-      "ERROR"
-    );
-    throw e;
-  }
-}
-
-/**
- * Generates email copy via Gemini and routes to draftPhaseEmail().
- */
-function scribeWriteAndDraft(scribeConfig) {
-  const brandVoiceId = getGovernance("BRAND_VOICE_ID");
-  let brandVoice = "";
-  try {
-    brandVoice = DocumentApp.openById(brandVoiceId).getBody().getText();
-  } catch (e) {
-    logToAuditTrail(
-      "Scribe",
-      "error",
-      scribeConfig.episodeUid || "",
-      "",
-      `[WARNING] Brand Voice doc could not be loaded. Proceeding without it.`,
-      "WARNING"
-    );
-  }
-
-  const PHASE_TO_TEMPLATE = {
-    "Phase1_TechCheck":      "# Email: Lets Schedule",
-    "Phase1_Confirmation":   "# Email: Date Confirmed and Tech",
-    "Phase2_TechCheck":      "# Email: Lets Schedule",
-    "Phase2_PostRecording":  "# Email: Great Interview",
-    "Phase2_Reminder":       "# Email: Date Confirmed and Tech",
-    "Phase2_Reschedule":     "# Email: Date Confirmed and Tech",
-    "Phase3_WeAreLive":      "# Email: Were Live",
-    "Phase3_ReviewEpisode":  "# Email: Review Your Episode"
-  };
-
-  const templateSection      = PHASE_TO_TEMPLATE[scribeConfig.phase] || null;
-  const templateInstructions = templateSection ? extractPrompt(templateSection) : "";
-
-  const systemInstruction = `You are The Scribe for "${CONFIG.PODCAST_NAME}."
-You are the voice of the host, ${scribeConfig.hostName}.
-Your emails are warm, sincere, visceral, and unflinching — never corporate, never hollow.
-${brandVoice ? `\n\nBRAND VOICE GUIDE:\n${brandVoice}` : ""}
-${templateInstructions ? `\n\nEMAIL TEMPLATE INSTRUCTIONS (from Master Template — follow these):\n${templateInstructions}` : ""}
-
-CRITICAL OUTPUT RULES:
-- Write plain prose. No markdown. No asterisks for bold. No underscores. No bullet points with hyphens.
-- Use natural paragraph breaks only.
-- First line = subject line (no "Subject:" label).
-- Second line blank.
-- Then body.
-- No commentary, no preamble, no sign-off formatting instructions.`;
-
-  const prompt = `Write an email for the following purpose:
-Guest Name: ${scribeConfig.guestName}
-Host: ${scribeConfig.hostName}
-Purpose: ${scribeConfig.contentPrompt}
-Podcast: ${CONFIG.PODCAST_NAME}`;
-
-  const rawEmail = callGeminiAPINoSearch(prompt, systemInstruction, "Scribe");
-
-  const lines     = rawEmail.trim().split("\n");
-  const subject   = lines[0].trim();
-  const plainBody = lines.slice(2).join("\n").trim();
-
-  const htmlBody = plainBody
-    .split(/\n\n+/)
-    .map(para => `<p>${para.replace(/\n/g, "<br>")}</p>`)
-    .join("");
-
-  draftPhaseEmail({
-    to:         scribeConfig.to,
-    subject:    subject,
-    body:       plainBody,
-    htmlBody:   htmlBody,
-    phase:      scribeConfig.phase,
-    episodeUid: scribeConfig.episodeUid
-  });
-}
-
-// =============================================================================
 // DRIVE FILE UTILITIES
 // =============================================================================
 
@@ -1892,17 +1756,17 @@ function getEpisodeRow(episodeUid) {
 }
 
 // =============================================================================
-// DAILY PULSE
-// Time-based trigger — runs once daily. eventCategory: human_action
+// DAILY PULSE — State-driven orchestrator
+// Time-based trigger — runs once daily.
 //
-// Loop 1  — Recording Date Reminder date-sync and self-complete
-// Loop 2  — Release Day reminder spawn (D-1 + day-of fallback), date-sync,
-//            self-complete. Restored from v1.5 removal. Scribe email portion
-//            remains deferred. Task idempotency (Workflow_Step = "Release_Reminder")
-//            is the sole dedup mechanism — Release_Reminder_Sent field not used.
-// Loop 3  — Safety audit scan
-// Loop 3b — Review_Episode spawn (Video_Status = "ready" detection)
-// Loop 4  — _ready subfolder scan
+// Stage 0  — Calendar intake (system-level)
+// Stage 1  — upcoming: recording reminders + transcript watch → flip to in_production
+// Stage 2  — in_production: content chain (A→B→C, chained-within-pulse) + reel chain
+// Stage 3  — review: release reminders + final-video detect (backup path)
+// Stage 4  — ready_to_release: no pulse action
+// Stage 5+ — live/archived: no pulse action / stub
+//
+// Loops 1/2/3/B/C/D retired. See DWYP_Orchestrator_Design.md.
 // =============================================================================
 
 function dailyPulse() {
@@ -1910,796 +1774,388 @@ function dailyPulse() {
   logToAuditTrail(agentName, "human_action", "", "", "[INFO] Daily Pulse running.", "INFO");
 
   try {
-    const scriptProps = PropertiesService.getScriptProperties();
-    const sheetId     = getMasterSheetId();
+    // =========================================================================
+    // STAGE 0: Calendar intake (system-level, not per-episode)
+    // =========================================================================
+    try {
+      checkCalendarForInterviews();
+    } catch(e) {
+      logToAuditTrail(agentName, "error", "", "",
+        "[ERROR] Stage 0 (calendar intake) failed: " + e.message, "ERROR");
+    }
+
+    const sheetId = getMasterSheetId();
     if (!sheetId) throw new Error("FATAL: MASTER_SHEET_ID not set in Script Properties.");
 
-    const ss    = SpreadsheetApp.openById(sheetId);
-    const sheet = ss.getSheetByName("Episodes");
-    if (!sheet) {
-      logToAuditTrail(agentName, "error", "", "", "[ERROR] Episodes tab not found. Daily Pulse cannot run.", "ERROR");
+    const ss = SpreadsheetApp.openById(sheetId);
+
+    // Load Episodes
+    const epSheet = ss.getSheetByName("Episodes");
+    if (!epSheet) {
+      logToAuditTrail(agentName, "error", "", "", "[ERROR] Episodes tab not found. Pulse cannot run.", "ERROR");
       return;
     }
+    const epData    = epSheet.getDataRange().getValues();
+    const epHeaders = epData[0];
 
-    const data    = sheet.getDataRange().getValues();
-    const headers = data[0];
-
-    const uidCol          = headers.indexOf("Episode_UID");
-    const statusCol       = headers.indexOf("Status");
-    const prodFolCol      = headers.indexOf("Production_Folder_ID");  // #5 — renamed
-    const rawFolderCol    = headers.indexOf("Raw_Folder_ID");
-    const guestNameCol    = headers.indexOf("Guest_Name");
-    const contactIdCol    = headers.indexOf("Contact_ID");
-    const videoStatusCol   = headers.indexOf("Video_Status");
-    const imagesStatusCol  = headers.indexOf("Images_Status");
-    const recordingDateCol = headers.indexOf("Recording_Date");
-    const releaseDateCol   = headers.indexOf("Release_Date");
-    const proxyFileIdCol   = headers.indexOf("Proxy_File_ID");
-
-    if (uidCol === -1 || statusCol === -1 || prodFolCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[ERROR] Required columns missing from Episodes tab (Episode_UID, Status, Production_Folder_ID). Daily Pulse cannot run.", "ERROR");
-      return;
-    }
-
-    // =========================================================================
-    // TASKS SHEET — hoisted above all loops so Loop 3b and Loop 4 share
-    // the same snapshot. Read once here; do not re-read inside any loop.
-    // #6 — moved from top of Loop 4 to here.
-    // =========================================================================
+    // Load Tasks (for reminder idempotency + self-complete)
     const tasksSheet   = ss.getSheetByName("Tasks");
     const tasksData    = tasksSheet ? tasksSheet.getDataRange().getValues() : [];
     const tasksHeaders = tasksData.length > 0 ? tasksData[0] : [];
 
+    const today    = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Episode column indices (header-driven)
+    const uidCol           = epHeaders.indexOf("Episode_UID");
+    const statusCol        = epHeaders.indexOf("Status");
+    const prodFolCol       = epHeaders.indexOf("Production_Folder_ID");
+    const guestNameCol     = epHeaders.indexOf("Guest_Name");
+    const contactIdCol     = epHeaders.indexOf("Contact_ID");
+    const recordingDateCol = epHeaders.indexOf("Recording_Date");
+    const releaseDateCol   = epHeaders.indexOf("Release_Date");
+    const finalEpIdCol     = epHeaders.indexOf("Final_Episode_ID");
+
+    // Tasks column indices
     const taskEpUidCol    = tasksHeaders.indexOf("Episode_UID");
     const taskStatusCol   = tasksHeaders.indexOf("Status");
     const taskWorkflowCol = tasksHeaders.indexOf("Workflow_Step");
     const taskIdCol       = tasksHeaders.indexOf("Task_ID");
     const taskDueDateCol  = tasksHeaders.indexOf("Due_Date");
 
-    // =========================================================================
-    // LOOP 1: Recording Date Reminder — D-1 spawn, date-sync, and self-complete
-    // Spawn condition: Recording_Date - 1 = today (D-1) or Recording_Date = today
-    //   (day-of fallback). Two tasks per episode (HOST + PRODUCER).
-    // Idempotency: open Workflow_Step = "Recording_Reminder" is sole dedup.
-    // Date-sync: if existing task Due_Date != Recording_Date, update it.
-    // Self-complete: if Due_Date <= today, mark task complete.
-    // =========================================================================
-    let recReminderProcessed = 0;
-    let recRemindersSpawned  = 0;
-
-    if (recordingDateCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Recording_Date column not found in Episodes tab. Skipping Recording Reminder sync.", "WARNING");
-    } else {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrowRec = new Date(today);
-      tomorrowRec.setDate(tomorrowRec.getDate() + 1);
-
-      for (let i = 1; i < data.length; i++) {
-        const epUid         = data[i][uidCol];
-        const status        = String(data[i][statusCol]);
-        const recordingDate = data[i][recordingDateCol];
-        const guestName     = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-        const contactId     = contactIdCol !== -1 ? data[i][contactIdCol] : "";
-
-        if (!epUid)                  continue;
-        if (status === "archived")   continue;
-        if (!recordingDate)          continue;
-
-        const recDate = new Date(recordingDate);
-        recDate.setHours(0, 0, 0, 0);
-
-        if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1 ||
-            taskIdCol === -1 || taskDueDateCol === -1) continue;
-
-        let existingTaskCount = 0;
-
-        for (let t = 1; t < tasksData.length; t++) {
-          if (tasksData[t][taskEpUidCol]    !== epUid)             continue;
-          if (String(tasksData[t][taskWorkflowCol]) !== "Recording_Reminder") continue;
-          const tStatus = String(tasksData[t][taskStatusCol]);
-          if (tStatus !== "open" && tStatus !== "in_progress")     continue;
-
-          existingTaskCount++;
-          recReminderProcessed++;
-
-          const rawDue    = tasksData[t][taskDueDateCol];
-          const taskDue   = rawDue ? new Date(rawDue) : null;
-          if (taskDue) taskDue.setHours(0, 0, 0, 0);
-
-          // Self-complete: Due_Date is today or past
-          if (taskDue && taskDue <= today) {
-            const taskId = tasksData[t][taskIdCol];
-            try {
-              updateTaskStatus(String(taskId), "complete", true);
-              logToAuditTrail(agentName, "state_change", epUid, "",
-                `[INFO] Recording_Reminder task ${taskId} self-completed — due date reached.`, "INFO");
-            } catch (e) {
-              logToAuditTrail(agentName, "error", epUid, "",
-                `[ERROR] Failed to self-complete Recording_Reminder task ${taskId}: ${e.message}`, "ERROR");
-            }
-            continue;
-          }
-
-          // Due_Date update: Recording_Date has changed
-          if (taskDue && recDate.getTime() !== taskDue.getTime()) {
-            const taskId = tasksData[t][taskIdCol];
-            try {
-              tasksSheet.getRange(t + 1, taskDueDateCol + 1).setValue(recDate);
-              logToAuditTrail(agentName, "state_change", epUid, "",
-                `[INFO] Recording_Reminder task ${taskId} Due_Date updated to ${recDate.toDateString()}.`, "INFO");
-            } catch (e) {
-              logToAuditTrail(agentName, "error", epUid, "",
-                `[ERROR] Failed to update Due_Date on Recording_Reminder task ${taskId}: ${e.message}`, "ERROR");
-            }
-          }
-        }
-
-        if (existingTaskCount > 0) continue;  // existing tasks found — skip spawn
-
-        // Determine spawn title based on date proximity
-        let spawnTitle = null;
-        if (recDate.getTime() === tomorrowRec.getTime()) {
-          spawnTitle = `Recording tomorrow — ${guestName}, you've got this!`;
-        } else if (recDate.getTime() === today.getTime()) {
-          spawnTitle = `Recording is today — ${guestName}, you've got this!`;
-        }
-
-        if (!spawnTitle) continue;
-
-        spawnTask({
-          actionTitle:      spawnTitle,
-          assignee:         getGovernance("ASSIGNEE_HOST"),
-          assignedBy:       "The Fairy Team",
-          status:           "open",
-          priority:         "normal",
-          dueDate:          recDate,
-          contactId:        contactId,
-          episodeUid:       epUid,
-          workflowStep:     "Recording_Reminder",
-          executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
-        }, true);
-        spawnTask({
-          actionTitle:      spawnTitle,
-          assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-          assignedBy:       "The Fairy Team",
-          status:           "open",
-          priority:         "normal",
-          dueDate:          recDate,
-          contactId:        contactId,
-          episodeUid:       epUid,
-          workflowStep:     "Recording_Reminder",
-          executiveSummary: `Recording reminder for ${guestName}. Recording date: ${recDate.toDateString()}.`
-        }, true);
-        recRemindersSpawned += 2;
-        logToAuditTrail(agentName, "state_change", epUid, contactId,
-          `[INFO] Recording_Reminder tasks spawned for ${guestName} (${recDate.toDateString()}).`, "INFO");
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Recording Reminder sync complete. Tasks processed: ${recReminderProcessed}. Tasks spawned: ${recRemindersSpawned}.`, "INFO");
-    }
-
-    // =========================================================================
-    // LOOP 2: Release Day — spawn reminder and self-complete
-    // Spawn condition: Release_Date - 1 = today (D-1) or Release_Date = today
-    //   (day-of fallback). Two tasks per episode (HOST + PRODUCER).
-    // Idempotency: open Workflow_Step = "Release_Reminder" is sole dedup.
-    // Due_Date update: if existing release task and Release_Date changed.
-    // Self-complete: if release task Due_Date <= today (morning run on release day).
-    // =========================================================================
-    let releaseRemindersSpawned = 0;
-
-    if (releaseDateCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Release_Date column not found in Episodes tab. Skipping Release Day loop.", "WARNING");
-    } else {
-      const todayRel = new Date();
-      todayRel.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(todayRel);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      for (let i = 1; i < data.length; i++) {
-        const epUid       = data[i][uidCol];
-        const status      = String(data[i][statusCol]);
-        const releaseDate = data[i][releaseDateCol];
-        const guestName   = guestNameCol !== -1 ? data[i][guestNameCol]  : epUid;
-        const contactId   = contactIdCol !== -1 ? data[i][contactIdCol]  : "";
-
-        if (!epUid)                  continue;
-        if (status === "archived")   continue;
-        if (!releaseDate)            continue;
-
-        const relDate = new Date(releaseDate);
-        relDate.setHours(0, 0, 0, 0);
-
-        if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1 ||
-            taskIdCol === -1 || taskDueDateCol === -1) continue;
-
-        // Collect all open Release_Reminder tasks for this episode
-        let existingTaskCount = 0;
-        for (let t = 1; t < tasksData.length; t++) {
-          if (tasksData[t][taskEpUidCol]    !== epUid)             continue;
-          if (String(tasksData[t][taskWorkflowCol]) !== "Release_Reminder") continue;
-          const tStatus = String(tasksData[t][taskStatusCol]);
-          if (tStatus !== "open" && tStatus !== "in_progress")     continue;
-
-          existingTaskCount++;
-
-          const rawDue  = tasksData[t][taskDueDateCol];
-          const taskDue = rawDue ? new Date(rawDue) : null;
-          if (taskDue) taskDue.setHours(0, 0, 0, 0);
-
-          // Self-complete: Due_Date is today or past
-          if (taskDue && taskDue <= todayRel) {
-            const taskId = tasksData[t][taskIdCol];
-            try {
-              updateTaskStatus(String(taskId), "complete", true);
-              logToAuditTrail(agentName, "state_change", epUid, contactId,
-                `[INFO] Release_Reminder task ${taskId} self-completed — release date reached.`, "INFO");
-            } catch (e) {
-              logToAuditTrail(agentName, "error", epUid, "",
-                `[ERROR] Failed to self-complete Release_Reminder task ${taskId}: ${e.message}`, "ERROR");
-            }
-            continue;
-          }
-
-          // Due_Date update: Release_Date has changed
-          if (taskDue && relDate.getTime() !== taskDue.getTime()) {
-            const taskId = tasksData[t][taskIdCol];
-            try {
-              tasksSheet.getRange(t + 1, taskDueDateCol + 1).setValue(relDate);
-              logToAuditTrail(agentName, "state_change", epUid, contactId,
-                `[INFO] Release_Reminder task ${taskId} Due_Date updated to ${relDate.toDateString()}.`, "INFO");
-            } catch (e) {
-              logToAuditTrail(agentName, "error", epUid, "",
-                `[ERROR] Failed to update Due_Date on Release_Reminder task ${taskId}: ${e.message}`, "ERROR");
-            }
-          }
-        }
-
-        if (existingTaskCount > 0) continue;  // existing tasks found — skip spawn
-
-        // Determine spawn title based on date proximity
-        let spawnTitle = null;
-        if (relDate.getTime() === tomorrow.getTime()) {
-          spawnTitle = `Episode drops tomorrow — ${guestName} is almost live!`;
-        } else if (relDate.getTime() === todayRel.getTime()) {
-          spawnTitle = `Release day! ${guestName} episode is live today.`;
-        }
-
-        if (!spawnTitle) continue;
-
-        // Spawn two tasks (HOST + PRODUCER) — spawnTask() supports single assignee only
-        spawnTask({
-          actionTitle:      spawnTitle,
-          assignee:         getGovernance("ASSIGNEE_HOST"),
-          assignedBy:       "The Fairy Team",
-          status:           "open",
-          priority:         "normal",
-          dueDate:          relDate,
-          contactId:        contactId,
-          episodeUid:       epUid,
-          workflowStep:     "Release_Reminder",
-          executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
-        }, true);
-        spawnTask({
-          actionTitle:      spawnTitle,
-          assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-          assignedBy:       "The Fairy Team",
-          status:           "open",
-          priority:         "normal",
-          dueDate:          relDate,
-          contactId:        contactId,
-          episodeUid:       epUid,
-          workflowStep:     "Release_Reminder",
-          executiveSummary: `Release reminder for ${guestName}. Release date: ${relDate.toDateString()}.`
-        }, true);
-        releaseRemindersSpawned += 2;
-        logToAuditTrail(agentName, "state_change", epUid, contactId,
-          `[INFO] Release_Reminder tasks spawned for ${guestName} (${relDate.toDateString()}).`, "INFO");
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Release Day loop complete. Tasks spawned: ${releaseRemindersSpawned}.`, "INFO");
-    }
-
-    // =========================================================================
-    // LOOP 3: Safety audit scan
-    // =========================================================================
-    let safetyScanned = 0;
-
-    if (rawFolderCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Raw_Folder_ID column not found in Episodes tab. Skipping safety audit scan.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid         = data[i][uidCol];
-        const status        = String(data[i][statusCol]);
-        const prodFolderId  = data[i][prodFolCol];
-        const rawFolderId   = data[i][rawFolderCol];
-
-        if (!epUid)        continue;
-        if (!rawFolderId)  continue;
-        if (status === "archived") continue;
-
-        safetyScanned++;
-
-        try {
-          if (!prodFolderId) {
-            logToAuditTrail(agentName, "state_change", epUid, "", "[WARNING] Production_Folder_ID not set — cannot read manifest. Skipping safety audit.", "WARNING");
-            continue;
-          }
-
-          const manifest = getManifest(prodFolderId);
-
-          if (!manifest) {
-            logToAuditTrail(agentName, "state_change", epUid, "", "[WARNING] Manifest not found or unreadable. Skipping safety audit for this episode.", "WARNING");
-            continue;
-          }
-
-          if (manifest.safety_audited === true) continue;
-
-        } catch (e) {
-          logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Safety audit scan failed for episode: ${e.message}`, "ERROR");
-          if (e.isManifestCorrupt) {
-            spawnTask({
-              episodeUid:       epUid,
-              actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
-              assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-              assignedBy:       "The Fairy Team",
-              status:           "open",
-              priority:         "urgent",
-              executiveSummary: `episode_manifest.json in folder ${e.folderId || prodFolderId} failed JSON.parse during the daily safety audit scan. Manually inspect and repair the manifest file, then re-run the daily pulse or manually clear the safety_audited flag.`
-            }, true);
-          }
-        }
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "", `[INFO] Safety audit scan complete. Episodes checked: ${safetyScanned}. (Safety Fairy retired — pipeline parsing now in housekeeping.gs)`, "INFO");
-    }
-
-    // =========================================================================
-    // LOOP A: Proxy Detection — RETIRED
-    // Detection replaced by Upload_Produced_Episode task completion handler
-    // (completeUploadEpisode in dwyp_app.js). Producer marks the task complete
-    // after uploading to GCS; handler flips Video_Status → review and spawns
-    // Review_Episode. Drive folder-watch no longer needed.
-    // =========================================================================
-
-    // =========================================================================
-    // LOOP B: Images Detection — Review Images
-    // Checks Images/ root in Staging folder for files ready to review.
-    // Files placed directly in Images/ (not in subfolders) signal readiness.
-    // Idempotency: skips if open or in_progress Review_Images task already exists.
-    // =========================================================================
-    let imagesDetectScanned = 0;
-    let imagesDetectSpawned = 0;
-
-    if (prodFolCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping Images detection.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid        = data[i][uidCol];
-        const status       = String(data[i][statusCol]);
-        const prodFolderId = data[i][prodFolCol];
-        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
-
-        if (!epUid)                continue;
-        if (status === "archived") continue;
-        if (!prodFolderId)         continue;
-
-        imagesDetectScanned++;
-
-        try {
-          // Idempotency check — skip if open or in_progress Review_Images task exists
-          let reviewTaskExists = false;
-          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-            for (let t = 1; t < tasksData.length; t++) {
-              if (tasksData[t][taskEpUidCol]    !== epUid)                   continue;
-              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Images") continue;
-              const tStatus = String(tasksData[t][taskStatusCol]);
-              if (tStatus === "open" || tStatus === "in_progress") {
-                reviewTaskExists = true;
-                break;
-              }
-            }
-          }
-          if (reviewTaskExists) continue;
-
-          // Navigate to Images/ subfolder
-          const stagingFolder  = DriveApp.getFolderById(prodFolderId);
-          const imagesFolderIt = stagingFolder.getFoldersByName("Images");
-          if (!imagesFolderIt.hasNext()) continue;
-          const imagesFolder = imagesFolderIt.next();
-
-          // Check for files directly in Images/ root (not in subfolders)
-          if (!imagesFolder.getFiles().hasNext()) continue;
-
-          spawnTask({
-            actionTitle:      `Review images: ${guestName}`,
-            assignee:         getGovernance("ASSIGNEE_HOST"),
-            assignedBy:       "The Fairy Team",
-            status:           "open",
-            priority:         "normal",
-            contactId:        contactId,
-            episodeUid:       epUid,
-            workflowStep:     "Review_Images",
-            executiveSummary: `New images are ready for your review for ${guestName}.`
-          }, true);
-
-          imagesDetectSpawned++;
-          logToAuditTrail(agentName, "state_change", epUid, contactId,
-            `[INFO] Images detected in staging for ${guestName}. Review Images task spawned.`, "INFO");
-
-        } catch (e) {
-          logToAuditTrail(agentName, "error", epUid, "",
-            `[ERROR] Images detection failed for episode ${epUid}: ${e.message}`, "ERROR");
-        }
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Images detection complete. Episodes scanned: ${imagesDetectScanned}. Tasks spawned: ${imagesDetectSpawned}.`, "INFO");
-    }
-
-    // =========================================================================
-    // LOOP C: Reels Detection — Review Reels
-    // Checks Reels/ root in Staging folder for files ready to review.
-    // Files placed directly in Reels/ (not in subfolders) signal readiness.
-    // Idempotency: skips if open or in_progress Review_Reels task already exists.
-    // =========================================================================
-    let reelsDetectScanned = 0;
-    let reelsDetectSpawned = 0;
-
-    if (prodFolCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Production_Folder_ID column not found in Episodes tab. Skipping Reels detection.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid        = data[i][uidCol];
-        const status       = String(data[i][statusCol]);
-        const prodFolderId = data[i][prodFolCol];
-        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
-
-        if (!epUid)                continue;
-        if (status === "archived") continue;
-        if (!prodFolderId)         continue;
-
-        reelsDetectScanned++;
-
-        try {
-          // Idempotency check — skip if open or in_progress Review_Reels task exists
-          let reviewTaskExists = false;
-          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-            for (let t = 1; t < tasksData.length; t++) {
-              if (tasksData[t][taskEpUidCol]    !== epUid)                  continue;
-              if (String(tasksData[t][taskWorkflowCol]) !== "Review_Reels") continue;
-              const tStatus = String(tasksData[t][taskStatusCol]);
-              if (tStatus === "open" || tStatus === "in_progress") {
-                reviewTaskExists = true;
-                break;
-              }
-            }
-          }
-          if (reviewTaskExists) continue;
-
-          // Navigate to Reels/ subfolder
-          const stagingFolder = DriveApp.getFolderById(prodFolderId);
-          const reelsFolderIt = stagingFolder.getFoldersByName("Reels");
-          if (!reelsFolderIt.hasNext()) continue;
-          const reelsFolder = reelsFolderIt.next();
-
-          // Check for files directly in Reels/ root (not in subfolders)
-          if (!reelsFolder.getFiles().hasNext()) continue;
-
-          spawnTask({
-            actionTitle:      `Review reels: ${guestName}`,
-            assignee:         getGovernance("ASSIGNEE_HOST"),
-            assignedBy:       "The Fairy Team",
-            status:           "open",
-            priority:         "normal",
-            contactId:        contactId,
-            episodeUid:       epUid,
-            workflowStep:     "Review_Reels",
-            executiveSummary: `New reels are ready for your review for ${guestName}.`
-          }, true);
-
-          reelsDetectSpawned++;
-          logToAuditTrail(agentName, "state_change", epUid, contactId,
-            `[INFO] Reels detected in staging for ${guestName}. Review Reels task spawned.`, "INFO");
-
-        } catch (e) {
-          logToAuditTrail(agentName, "error", epUid, "",
-            `[ERROR] Reels detection failed for episode ${epUid}: ${e.message}`, "ERROR");
-        }
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Reels detection complete. Episodes scanned: ${reelsDetectScanned}. Tasks spawned: ${reelsDetectSpawned}.`, "INFO");
-    }
-
-    // =========================================================================
-    // LOOP D: Transcript Detection — Track A (Index Build) + Track B (Editorial)
-    // Scans Staging/Episode/ subfolder for a finished transcript file.
-    // Condition A: transcript present + episode_index_v2 not set → buildEpisodeIndexV2
-    // Condition B: episode_index_v2 set + show_notes not set → runEditorialPass
-    // An episode satisfies at most one condition per pulse run.
-    // Only reads manifest when a transcript is confirmed present (minimizes
-    // Drive API calls across the episode roster).
-    // =========================================================================
-    let vertScanned = 0;
-    let vertRun     = 0;
-
-    if (prodFolCol === -1) {
+    if (uidCol === -1 || statusCol === -1) {
       logToAuditTrail(agentName, "error", "", "",
-        "[WARNING] Production_Folder_ID column not found. Skipping transcript pipeline scan.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid        = data[i][uidCol];
-        const status       = String(data[i][statusCol]);
-        const prodFolderId = data[i][prodFolCol];
-        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-
-        if (!epUid)                continue;
-        if (status === "archived") continue;
-        if (!prodFolderId)         continue;
-
-        vertScanned++;
-
-        try {
-          // Navigate to Episode/ subfolder — transcript lives there (same as proxy_)
-          const stagingFolder   = DriveApp.getFolderById(prodFolderId);
-          const episodeFolderIt = stagingFolder.getFoldersByName("Episode");
-          if (!episodeFolderIt.hasNext()) continue;
-          const episodeFolder = episodeFolderIt.next();
-
-          // Scan Episode/ for a finished transcript file (skip proxy_ files)
-          const files        = episodeFolder.getFiles();
-          let hasTranscript  = false;
-
-          while (files.hasNext()) {
-            const f    = files.next();
-            const name = f.getName().toLowerCase();
-            const mime = f.getMimeType();
-            if (name.startsWith("proxy_")) continue;
-            if (name.includes("transcript") &&
-                (mime === MimeType.PLAIN_TEXT || mime === MimeType.GOOGLE_DOCS || name.endsWith(".txt"))) {
-              hasTranscript = true;
-              break;
-            }
-          }
-
-          if (!hasTranscript) continue;
-
-          patchEpisodes(epUid, { Status: "in_production" });
-
-          // Transcript found — check manifest before making the extra Drive read
-          const manifest = getManifest(prodFolderId);
-
-          // Condition A — Track A: transcript present + index not built → build index
-          if (!manifest || !manifest.episode_index_v2) {
-            logToAuditTrail(agentName, "state_change", epUid, "",
-              `[INFO] Transcript detected for ${guestName}. episode_index_v2 not set. Running buildEpisodeIndexV2.`, "INFO");
-            buildEpisodeIndexV2(epUid, { force: false });
-            vertRun++;
-
-          // Condition B — Track B: index built + show notes not set → editorial pass
-          } else if (!manifest.show_notes) {
-            logToAuditTrail(agentName, "state_change", epUid, "",
-              `[INFO] episode_index_v2 set for ${guestName}. show_notes not set. Running runEditorialPass.`, "INFO");
-            runEditorialPass(epUid, { force: false });
-            vertRun++;
-          }
-
-        } catch (e) {
-          logToAuditTrail(agentName, "error", epUid, "",
-            `[ERROR] Transcript pipeline scan failed for ${epUid}: ${e.message}`, "ERROR");
-        }
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "",
-        `[INFO] Transcript pipeline scan complete. Episodes scanned: ${vertScanned}. Pipeline runs: ${vertRun}.`, "INFO");
+        "[ERROR] Required columns (Episode_UID, Status) missing from Episodes tab. Pulse cannot run.", "ERROR");
+      return;
     }
 
-    /* SUPERSEDED — Loop 3b replaced by Loop A (file-based proxy detection).
-       Video_Status = "ready" was a placeholder trigger that was never properly implemented.
+    const heavyBudget = parseInt(getGovernance("PULSE_HEAVY_PASS_BUDGET") || "2", 10) || 2;
+    let heavyUsed = 0;
+
     // =========================================================================
-    // LOOP 3b: Review_Episode spawn
-    // Detects when Audra has set Video_Status = "ready" on an episode and
-    // spawns a Review_Episode task for JT if one doesn't already exist.
-    // Payload_Link: Production folder URL (JT navigates from there).
-    // Detection signal: Video_Status = "ready" (set manually by Audra).
-    // Idempotency: skips spawn if open or in_progress Review_Episode task
-    // already exists for this episode.
-    // #6 — new loop.
+    // PER-EPISODE ORCHESTRATION
     // =========================================================================
-    let reviewEpisodeSpawned = 0;
+    for (let i = 1; i < epData.length; i++) {
+      const epUid = String(epData[i][uidCol] || "");
+      if (!epUid) continue;
+      const status = String(epData[i][statusCol] || "");
+      if (!status || status === "archived") continue;
 
-    if (videoStatusCol === -1) {
-      logToAuditTrail(agentName, "error", "", "", "[WARNING] Video_Status column not found in Episodes tab. Skipping Review_Episode spawn scan.", "WARNING");
-    } else {
-      for (let i = 1; i < data.length; i++) {
-        const epUid        = data[i][uidCol];
-        const status       = String(data[i][statusCol]);
-        const prodFolderId = data[i][prodFolCol];
-        const guestName    = guestNameCol !== -1 ? data[i][guestNameCol] : epUid;
-        const contactId    = contactIdCol !== -1 ? data[i][contactIdCol] : "";
-        const videoStatus  = String(data[i][videoStatusCol]);
-
-        if (!epUid)                  continue;
-        if (status === "complete")   continue;
-        if (videoStatus !== "ready") continue;
-
-        // Idempotency check — skip if open or in_progress Review_Episode task exists
-        let reviewEpisodeTaskExists = false;
-        if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-          for (let t = 1; t < tasksData.length; t++) {
-            const tEpUid    = tasksData[t][taskEpUidCol];
-            const tStatus   = String(tasksData[t][taskStatusCol]);
-            const tWorkflow = String(tasksData[t][taskWorkflowCol]);
-
-            if (tEpUid    === epUid &&
-                tWorkflow === "Review_Episode" &&
-                (tStatus  === "open" || tStatus === "in_progress")) {
-              reviewEpisodeTaskExists = true;
-              break;
-            }
-          }
-        }
-
-        if (reviewEpisodeTaskExists) continue;
-
-        // TODO: payloadLink currently opens a Drive folder. Should open in-app review view once wired.
-        const payloadLink = prodFolderId
-          ? `https://drive.google.com/drive/folders/${prodFolderId}`
-          : "";
-
-        spawnTask({
-          actionTitle:      `Review: Episode video — ${guestName}`,
-          assignee:         getGovernance("ASSIGNEE_HOST"),
-          assignedBy:       "The Fairy Team",
-          status:           "open",
-          priority:         "normal",
-          contactId:        contactId,
-          episodeUid:       epUid,
-          workflowStep:     "Review_Episode",
-          payloadLink:      payloadLink,
-          executiveSummary: `The finished episode video for ${guestName} is ready for your review. Tap to watch, then approve or request revisions.`
-        });
-
-        reviewEpisodeSpawned++;
-        logToAuditTrail(agentName, "state_change", epUid, contactId, `[INFO] Review_Episode task spawned for ${guestName}.`, "INFO");
-      }
-
-      logToAuditTrail(agentName, "state_change", "", "", `[INFO] Review_Episode scan complete. Tasks spawned: ${reviewEpisodeSpawned}.`, "INFO");
-    }
-    */
-
-    /* SUPERSEDED — Loop 4 replaced by Loops A, B, C (direct folder detection).
-    // =========================================================================
-    // LOOP 4: _ready subfolder scan
-    // =========================================================================
-    let subfolderScanned = 0;
-    let reviewsSpawned   = 0;
-    let filingSpawned    = 0;
-
-    for (let i = 1; i < data.length; i++) {
-      const epUid        = data[i][uidCol];
-      const status       = String(data[i][statusCol]);
-      const prodFolderId = data[i][prodFolCol];
-      const guestName    = guestNameCol  !== -1 ? data[i][guestNameCol]  : epUid;
-      const contactId    = contactIdCol  !== -1 ? data[i][contactIdCol]  : "";
-      const videoStatus  = videoStatusCol  !== -1 ? String(data[i][videoStatusCol])  : "";
-      const imagesStatus = imagesStatusCol !== -1 ? String(data[i][imagesStatusCol]) : "";
-
-      if (!epUid)        continue;
-      if (!prodFolderId) continue;
-      if (status === "complete") continue;
-
-      subfolderScanned++;
+      const guestName = guestNameCol !== -1 ? String(epData[i][guestNameCol] || epUid) : epUid;
+      const contactId = contactIdCol !== -1 ? String(epData[i][contactIdCol] || "")    : "";
+      const prodFolId = prodFolCol   !== -1 ? String(epData[i][prodFolCol]   || "")    : "";
 
       try {
-        const stagingFolder = DriveApp.getFolderById(prodFolderId);
-        const subfolders    = stagingFolder.getFolders();
+        // =======================================================================
+        // STAGE 1: upcoming → recording reminders + transcript watch
+        // =======================================================================
+        if (status === "upcoming") {
+          if (recordingDateCol !== -1 && taskEpUidCol !== -1 &&
+              taskStatusCol !== -1 && taskWorkflowCol !== -1 &&
+              taskIdCol !== -1 && taskDueDateCol !== -1) {
+            _pulse_recordingReminders(
+              epUid, guestName, contactId, epData[i][recordingDateCol],
+              today, tomorrow, tasksData, tasksSheet,
+              taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, agentName
+            );
+          }
+          // Transcript watch: transcript detected → flip to in_production + run chain
+          if (prodFolId && _pulse_detectTranscript(prodFolId)) {
+            patchEpisodes(epUid, { Status: "in_production" });
+            _pulse_spawnUploadTask(epUid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol);
+            heavyUsed += _pulse_contentChain(epUid, guestName, prodFolId, agentName, heavyBudget - heavyUsed);
+            _pulse_reelChain(epUid, guestName, agentName);
+          }
+        }
 
-        while (subfolders.hasNext()) {
-          const subfolder     = subfolders.next();
-          const subfolderName = subfolder.getName();
+        // =======================================================================
+        // STAGE 2: in_production → content pipeline + reel chain
+        // =======================================================================
+        else if (status === "in_production") {
+          _pulse_spawnUploadTask(epUid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol);
+          if (prodFolId) {
+            heavyUsed += _pulse_contentChain(epUid, guestName, prodFolId, agentName, heavyBudget - heavyUsed);
+            _pulse_reelChain(epUid, guestName, agentName);
+          }
+        }
 
-          if (!subfolderName.toLowerCase().endsWith("_ready")) continue;
-
-          const baseName = subfolderName.slice(0, subfolderName.toLowerCase().lastIndexOf("_ready"));
-
-          let openTaskExists = false;
-          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-            for (let t = 1; t < tasksData.length; t++) {
-              const tEpUid    = tasksData[t][taskEpUidCol];
-              const tStatus   = String(tasksData[t][taskStatusCol]);
-              const tWorkflow = String(tasksData[t][taskWorkflowCol]);
-
-              if (tEpUid === epUid &&
-                  tWorkflow === `Review_${baseName}` &&
-                  (tStatus === "open" || tStatus === "in_progress")) {
-                openTaskExists = true;
-                break;
-              }
+        // =======================================================================
+        // STAGE 3: review → release reminders + final-video detect (backup)
+        // =======================================================================
+        else if (status === "review") {
+          if (releaseDateCol !== -1 && taskEpUidCol !== -1 &&
+              taskStatusCol !== -1 && taskWorkflowCol !== -1 &&
+              taskIdCol !== -1 && taskDueDateCol !== -1) {
+            _pulse_releaseReminders(
+              epUid, guestName, contactId, epData[i][releaseDateCol],
+              today, tomorrow, tasksData, tasksSheet,
+              taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, agentName
+            );
+          }
+          // Final-video backup detect (primary is the UI Complete button)
+          const finalEpId = finalEpIdCol !== -1 ? String(epData[i][finalEpIdCol] || "") : "";
+          if (!finalEpId && prodFolId) {
+            const result = completeFinalEpisodeUpload(epUid); // no rowIndex
+            if (result && result.ok) {
+              logToAuditTrail(agentName, "state_change", epUid, contactId,
+                "[INFO] Final-video detect: completeFinalEpisodeUpload succeeded for " + guestName + ".", "INFO");
+            } else if (result && result.error && !result.error.includes("No file found")) {
+              logToAuditTrail(agentName, "error", epUid, "",
+                "[ERROR] Final-video detect failed for " + epUid + ": " + result.error, "ERROR");
             }
           }
+        }
 
-          if (openTaskExists) continue;
+        // STAGE 4 (ready_to_release), 5 (live), 6 (archived): no pulse action
 
-          // TODO: payloadLink should open in-app review view once wired — same as Review_Episode.
-          const FRIENDLY_NAMES = { "Social_Images": "Images", "Reels": "Reels" };
-          const friendlyName = FRIENDLY_NAMES[baseName] || baseName;
-
+      } catch(epErr) {
+        logToAuditTrail(agentName, "error", epUid, "",
+          "[ERROR] Pulse threw for episode " + epUid + ": " + epErr.message, "ERROR");
+        try {
           spawnTask({
-            actionTitle:      `Review: ${friendlyName} — ${guestName}`,
-            assignee:         getGovernance("ASSIGNEE_HOST"),
+            episodeUid:       epUid,
+            workflowStep:     "Errors",
+            actionTitle:      "Pulse error — " + guestName,
+            assignee:         getGovernance("ASSIGNEE_PRODUCER"),
             assignedBy:       "The Fairy Team",
             status:           "open",
-            priority:         "normal",
-            contactId:        contactId,
-            episodeUid:       epUid,
-            workflowStep:     `Review_${baseName}`,
-            executiveSummary: `Assets are ready for your review. Tap to view, then approve or request revisions.`
-          });
-
-          reviewsSpawned++;
-          logToAuditTrail(agentName, "state_change", epUid, contactId, `[INFO] Review task spawned for ${baseName} — ${guestName}.`, "INFO");
+            priority:         "urgent",
+            executiveSummary: "Daily Pulse threw an error for " + guestName + " (" + epUid + "): " + epErr.message + ". Check Audit_Trail."
+          }, true);
+        } catch(alertErr) {
+          logToAuditTrail(agentName, "error", epUid, "",
+            "[ERROR] Could not spawn alert task for " + epUid + ": " + alertErr.message, "ERROR");
         }
-
-        const allApproved = videoStatus === "approved" && imagesStatus === "approved";
-
-        if (allApproved) {
-          let filingTaskExists = false;
-          if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
-            for (let t = 1; t < tasksData.length; t++) {
-              const tEpUid    = tasksData[t][taskEpUidCol];
-              const tStatus   = String(tasksData[t][taskStatusCol]);
-              const tWorkflow = String(tasksData[t][taskWorkflowCol]);
-
-              if (tEpUid === epUid &&
-                  tWorkflow === "Filing" &&
-                  (tStatus === "open" || tStatus === "in_progress")) {
-                filingTaskExists = true;
-                break;
-              }
-            }
-          }
-
-          if (!filingTaskExists) {
-            spawnTask({
-              actionTitle:      `Ready to file: ${guestName}`,
-              assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-              assignedBy:       "The Fairy Team",
-              status:           "open",
-              priority:         "normal",
-              contactId:        contactId,
-              episodeUid:       epUid,
-              workflowStep:     "Filing",
-              executiveSummary: `All assets are approved. Tap the button below to trigger Filing Fairy and close out this episode.`
-            });
-
-            filingSpawned++;
-            logToAuditTrail(agentName, "state_change", epUid, contactId, `[INFO] Filing task spawned for ${guestName} — all assets approved.`, "INFO");
-          }
-        }
-
-      } catch (e) {
-        logToAuditTrail(agentName, "error", epUid, "", `[ERROR] _ready subfolder scan failed for episode: ${e.message}`, "ERROR");
       }
     }
 
-    logToAuditTrail(agentName, "state_change", "", "", `[INFO] _ready subfolder scan complete. Episodes scanned: ${subfolderScanned}. Review tasks spawned: ${reviewsSpawned}. Filing tasks spawned: ${filingSpawned}.`, "INFO");
-    */
-
-    bumpVersion("tasks", "dailyPulse");
+    bumpVersion("tasks",    "dailyPulse");
     bumpVersion("episodes", "dailyPulse");
     logToAuditTrail(agentName, "human_action", "", "", "[INFO] Daily Pulse complete.", "INFO");
 
-  } catch (e) {
-    logToAuditTrail(agentName, "error", "", "", `[ERROR] Daily Pulse threw a fatal error: ${e.message}`, "ERROR");
+  } catch(e) {
+    logToAuditTrail(agentName, "error", "", "", "[ERROR] Daily Pulse threw a fatal error: " + e.message, "ERROR");
   }
 }
+
+
+// =============================================================================
+// DAILY PULSE — HELPER FUNCTIONS
+// Private; prefixed _pulse_ to signal call site.
+// =============================================================================
+
+/**
+ * Detects a finished transcript file in Episode/ subfolder.
+ * Skips proxy_ files. Returns true if a .txt / Google Doc named "transcript" is found.
+ */
+function _pulse_detectTranscript(prodFolderId) {
+  try {
+    const stagingFolder = DriveApp.getFolderById(prodFolderId);
+    const epFolderIt    = stagingFolder.getFoldersByName("Episode");
+    if (!epFolderIt.hasNext()) return false;
+    const epFolder = epFolderIt.next();
+    const files    = epFolder.getFiles();
+    while (files.hasNext()) {
+      const f    = files.next();
+      const name = f.getName().toLowerCase();
+      const mime = f.getMimeType();
+      if (name.startsWith("proxy_")) continue;
+      if (name.includes("transcript") &&
+          (mime === MimeType.PLAIN_TEXT || mime === MimeType.GOOGLE_DOCS || name.endsWith(".txt"))) {
+        return true;
+      }
+    }
+    return false;
+  } catch(e) {
+    return false;
+  }
+}
+
+/**
+ * Runs the content chain (A→B→C) for a single in_production episode.
+ * Chained-within-pulse: advances all ready stages in one run.
+ * Per-stage try/catch: failure stops the chain and spawns an alert task.
+ *
+ * heavyBudgetRemaining: how many more heavy Claude passes (Track A + B) this
+ * run may fire. Track C (materializeQuoteGraphicAssets) is not counted and
+ * always runs when its condition is met. Returns count of heavy passes fired.
+ * When Track C is auto-triggered it will join the budget — note for that spoke.
+ */
+function _pulse_contentChain(epUid, guestName, prodFolderId, agentName, heavyBudgetRemaining) {
+  if (String(getGovernance("PULSE_CONTENT_ENABLED") || "").toUpperCase() !== "TRUE") return 0;
+  let manifest = getManifest(prodFolderId);
+  let heavyFired = 0;
+
+  // Track A: no index → build it (heavy pass)
+  if (!manifest || !manifest.episode_index_v2) {
+    if (heavyBudgetRemaining <= 0) {
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Track A deferred — heavy-pass budget exhausted for " + guestName + ".", "INFO");
+      return heavyFired;
+    }
+    try {
+      buildEpisodeIndexV2(epUid, { force: false });
+      heavyFired++;
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Track A complete for " + guestName + ".", "INFO");
+    } catch(e) {
+      logToAuditTrail(agentName, "error", epUid, "",
+        "[ERROR] Track A failed for " + epUid + ": " + e.message, "ERROR");
+      _pulse_spawnErrorTask(epUid, guestName, "Track A (buildEpisodeIndexV2)", e.message);
+      return heavyFired;
+    }
+    manifest = getManifest(prodFolderId);
+    if (!manifest || !manifest.episode_index_v2) return heavyFired;
+  }
+
+  // Track B: no show notes → editorial pass (heavy pass)
+  if (!manifest.show_notes) {
+    if (heavyBudgetRemaining - heavyFired <= 0) {
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Track B deferred — heavy-pass budget exhausted for " + guestName + ".", "INFO");
+      return heavyFired;
+    }
+    try {
+      runEditorialPass(epUid, { force: false });
+      heavyFired++;
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Track B complete for " + guestName + ".", "INFO");
+    } catch(e) {
+      logToAuditTrail(agentName, "error", epUid, "",
+        "[ERROR] Track B failed for " + epUid + ": " + e.message, "ERROR");
+      _pulse_spawnErrorTask(epUid, guestName, "Track B (runEditorialPass)", e.message);
+      return heavyFired;
+    }
+    manifest = getManifest(prodFolderId);
+    if (!manifest || !manifest.show_notes) return heavyFired;
+  }
+
+  // Track C: show notes present, no quote graphics (not counted in heavy budget)
+  if (!manifest.quote_graphic_assets_built) {
+    try {
+      materializeQuoteGraphicAssets(epUid, { force: false });
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Track C complete for " + guestName + ".", "INFO");
+    } catch(e) {
+      logToAuditTrail(agentName, "error", epUid, "",
+        "[ERROR] Track C failed for " + epUid + ": " + e.message, "ERROR");
+      _pulse_spawnErrorTask(epUid, guestName, "Track C (materializeQuoteGraphicAssets)", e.message);
+    }
+  }
+
+  return heavyFired;
+}
+
+/**
+ * Runs the reel chain for a single episode. syncReelAssets handles full analysis
+ * (audio upload → Gemini dual-output → Reel_Transcript + Reel_Summary). Idempotent.
+ */
+function _pulse_reelChain(epUid, guestName, agentName) {
+  if (String(getGovernance("PULSE_REELS_ENABLED") || "").toUpperCase() !== "TRUE") return;
+  try {
+    const result = syncReelAssets(epUid, { force: false });
+    if (result && result.timedOut) {
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] syncReelAssets timed out for " + guestName + " — will resume next pulse.", "INFO");
+    }
+  } catch(e) {
+    logToAuditTrail(agentName, "error", epUid, "",
+      "[ERROR] syncReelAssets failed for " + epUid + ": " + e.message, "ERROR");
+  }
+}
+
+/**
+ * Spawns an Upload_Produced_Episode task if one does not already exist (open/in_progress).
+ * Idempotent — safe to call every pulse while the episode is in_production.
+ */
+function _pulse_spawnUploadTask(epUid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol) {
+  if (taskEpUidCol === -1 || taskStatusCol === -1 || taskWorkflowCol === -1) return;
+  for (let t = 1; t < tasksData.length; t++) {
+    if (tasksData[t][taskEpUidCol] !== epUid) continue;
+    if (String(tasksData[t][taskWorkflowCol]) !== "Upload_Produced_Episode") continue;
+    const s = String(tasksData[t][taskStatusCol]);
+    if (s === "open" || s === "in_progress") return;
+  }
+  spawnTask({
+    episodeUid:   epUid,
+    contactId:    contactId,
+    workflowStep: "Upload_Produced_Episode",
+    actionTitle:  "Upload produced episode — " + guestName,
+    assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:   "The Fairy Team",
+    status:       "open",
+    priority:     "normal"
+  });
+}
+
+/**
+ * Spawns an urgent Errors task to alert Audra of a content-chain failure.
+ */
+function _pulse_spawnErrorTask(epUid, guestName, stage, errorMsg) {
+  try {
+    spawnTask({
+      episodeUid:       epUid,
+      workflowStep:     "Errors",
+      actionTitle:      "Pipeline error: " + guestName + " — " + stage,
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "urgent",
+      executiveSummary: stage + " threw an error for " + guestName + " (" + epUid + "): " + errorMsg + ". Check Audit_Trail."
+    }, true);
+  } catch(alertErr) {
+    logToAuditTrail("Daily_Pulse", "error", epUid, "",
+      "[ERROR] Could not spawn error task for " + epUid + ": " + alertErr.message, "ERROR");
+  }
+}
+
+// Recording reminders demoted to projected cues — no task rows written.
+// Rendered client-side by stGetEpCues() against Recording_Date on each read.
+// Existing rows cleared by clearReminderRows().
+function _pulse_recordingReminders(epUid, guestName, contactId, recordingDate,
+    today, tomorrow, tasksData, tasksSheet,
+    taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, agentName) {
+}
+
+// Release reminders demoted to projected cues — no task rows written.
+// Rendered client-side by stGetEpCues() against Release_Date on each read.
+// Existing rows cleared by clearReminderRows().
+function _pulse_releaseReminders(epUid, guestName, contactId, releaseDate,
+    today, tomorrow, tasksData, tasksSheet,
+    taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, agentName) {
+}
+
+/**
+ * One-time sweep: marks all open/in_progress reminder rows complete.
+ * Safe — reminder tasks carry no payload. Idempotent; invoke via dev_tools.
+ * Workflow_Step values targeted: Recording_Reminder, Release_Reminder, Runway, Release_Day.
+ */
+function clearReminderRows() {
+  var REMINDER_STEPS = ['Recording_Reminder', 'Release_Reminder', 'Runway', 'Release_Day'];
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var sheet   = ss.getSheetByName('Tasks');
+  if (!sheet) return { cleared: 0 };
+  var data    = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var wsCol   = headers.indexOf('Workflow_Step');
+  var statCol = headers.indexOf('Status');
+  if (wsCol === -1 || statCol === -1) return { cleared: 0 };
+
+  var cleared = 0;
+  for (var i = 1; i < data.length; i++) {
+    var ws     = String(data[i][wsCol]);
+    var status = String(data[i][statCol]);
+    if (REMINDER_STEPS.indexOf(ws) === -1) continue;
+    if (status === 'complete')              continue;
+    sheet.getRange(i + 1, statCol + 1).setValue('complete');
+    cleared++;
+  }
+  logToAuditTrail('clearReminderRows', 'state_change', '', '',
+    '[INFO] Cleared ' + cleared + ' reminder task rows (Recording_Reminder / Release_Reminder).', 'INFO');
+  return { cleared: cleared };
+}
+
 
 /**
  * Resolves a guest's email address from the Contacts tab by Contact_ID.

@@ -4,13 +4,15 @@
 //
 // USAGE: Paste the active episode UID into ACTIVE_EP_UID, then run any function.
 //        System-level functions (dailyPulse, calendar) ignore the UID.
+//
+// ORDER: Lifecycle order (Stage 0 → 6), then REELS REVISION, then SYSTEM-LEVEL.
 // =============================================================================
 
-var ACTIVE_EP_UID = 'EP-260430-1458'; // ← paste UID here before running
+var ACTIVE_EP_UID = 'EP-260430-1505'; // ← paste UID here before running
 
 
 // =============================================================================
-// SYSTEM — No episode UID required
+// DIAGNOSTICS — Run anytime; no episode UID required
 // =============================================================================
 
 // Logs the scopes actually present in the current OAuth token.
@@ -48,11 +50,10 @@ function test_checkSignerSa() {
   Logger.log(resp.getContentText());
 }
 
-function test_dailyPulse() {
-  console.log("[test_dailyPulse] START");
-  dailyPulse();
-  console.log("[test_dailyPulse] END");
-}
+
+// =============================================================================
+// STAGE 0 — Intake (calendar scan → Secretary + Herald)
+// =============================================================================
 
 function test_checkCalendarForInterviews() {
   console.log("[test_checkCalendarForInterviews] START");
@@ -62,7 +63,7 @@ function test_checkCalendarForInterviews() {
 
 
 // =============================================================================
-// VERT FAIRY PIPELINE — Uses ACTIVE_EP_UID
+// STAGE 1 — Transcript → Index (Track A)
 // =============================================================================
 
 // Track A: Episode Index v2 (Claude, extract-not-interpret posture)
@@ -73,12 +74,22 @@ function test_buildEpisodeIndexV2() {
   return result;
 }
 
+
+// =============================================================================
+// STAGE 2 — Index → Show Notes (Track B)
+// =============================================================================
+
 // Track B: Editorial Pass — requires Index v2 to exist first
 function test_runEditorialPass() {
   var result = runEditorialPass(ACTIVE_EP_UID, { force: true });
   Logger.log(JSON.stringify(result, null, 2));
   return result;
 }
+
+
+// =============================================================================
+// STAGE 3 — Show Notes → Quote Graphics (Track C)
+// =============================================================================
 
 // Track C: Materialize quote graphic assets — requires Track B Show Notes Doc
 function test_materializeQuoteGraphicAssets() {
@@ -87,16 +98,13 @@ function test_materializeQuoteGraphicAssets() {
   return result;
 }
 
-// Track C: Reel editorial pass — set force: true to rebuild even if already run
-function test_runReelEditorialPass(force) {
-  var result = runReelEditorialPass(ACTIVE_EP_UID, { force: !!force });
-  Logger.log(JSON.stringify(result, null, 2));
-  return result;
-}
 
-// Reel sync: creates AL rows for MP4s in Staging/Reels/, then Gemini-summarizes each.
-// Run this first, then test_runReelEditorialPass() to have Claude clean the summaries.
+// =============================================================================
+// STAGE 4 — Reels (sync + Gemini dual-output)
+// syncReelAssets handles the full pipeline: audio upload → Gemini → Reel_Transcript (col 8) + Reel_Summary (col 9).
 // If result.timedOut is true, re-run — it picks up where it left off.
+// =============================================================================
+
 function test_syncReelAssets() {
   var result = syncReelAssets(ACTIVE_EP_UID, { force: false });
   Logger.log(JSON.stringify(result, null, 2));
@@ -105,28 +113,23 @@ function test_syncReelAssets() {
 
 
 // =============================================================================
-// REELS SURFACE — Uses ACTIVE_EP_UID
+// STAGE 5 — Visual Export
 // =============================================================================
 
-// Atomic close after Audra uploads a revised reel.
-// Paste the Asset_Library Asset_ID and the new Drive file ID, then run.
-// After this completes, the next Pulse will spawn a fresh Review_Reels for JT.
-function test_closeReelRevision() {
-  var ASSET_ID       = ''; // ← paste Asset_Library Asset_ID here
-  var NEW_DRIVE_FILE = ''; // ← paste Drive file ID of revised reel here
-  if (!ASSET_ID || !NEW_DRIVE_FILE) throw new Error('Set ASSET_ID and NEW_DRIVE_FILE before running.');
-  var result = closeReelRevision(ACTIVE_EP_UID, ASSET_ID, NEW_DRIVE_FILE);
-  Logger.log(JSON.stringify(result, null, 2));
-  return result;
+// Exports slides to PNG. Paste the presentation ID before running.
+function test_exportSlidesToPng() {
+  var DECK_ID = ''; // ← paste presentation ID here
+  if (!DECK_ID) throw new Error("test_exportSlidesToPng: set DECK_ID before running.");
+  exportSlidesToPng(DECK_ID);
 }
 
 
 // =============================================================================
-// EPISODE UPLOAD — Uses ACTIVE_EP_UID
+// STAGE 6 — Episode Upload
 // =============================================================================
 
 // Spawns an Upload_Produced_Episode task for the active episode.
-// Set ACTIVE_EP_UID to Mai's UID, then run once from the editor dropdown.
+// Set ACTIVE_EP_UID to the episode's UID, then run once from the editor dropdown.
 function test_spawnUploadEpisodeTask() {
   var sheetId = getMasterSheetId();
   var ss      = SpreadsheetApp.openById(sheetId);
@@ -155,35 +158,322 @@ function test_spawnUploadEpisodeTask() {
 
 
 // =============================================================================
-// ARTIST FAIRY — Uses ACTIVE_EP_UID
+// REELS REVISION — Dormant surface; kept for manual close
 // =============================================================================
 
-function test_artistFairy() {
-  console.log("[test_artistFairy] START — " + ACTIVE_EP_UID);
-  runArtistFairy(ACTIVE_EP_UID);
-  console.log("[test_artistFairy] END");
-}
-
-// Exports slides to PNG. Paste the presentation ID before running.
-function test_exportSlidesToPng() {
-  var DECK_ID = ''; // ← paste presentation ID here
-  if (!DECK_ID) throw new Error("test_exportSlidesToPng: set DECK_ID before running.");
-  exportSlidesToPng(DECK_ID);
+// Atomic close after Audra uploads a revised reel.
+// Paste the Asset_Library Asset_ID and the new Drive file ID, then run.
+// After this completes, the next Pulse will spawn a fresh Review_Reels for JT.
+function test_closeReelRevision() {
+  var ASSET_ID       = ''; // ← paste Asset_Library Asset_ID here
+  var NEW_DRIVE_FILE = ''; // ← paste Drive file ID of revised reel here
+  if (!ASSET_ID || !NEW_DRIVE_FILE) throw new Error('Set ASSET_ID and NEW_DRIVE_FILE before running.');
+  var result = closeReelRevision(ACTIVE_EP_UID, ASSET_ID, NEW_DRIVE_FILE);
+  Logger.log(JSON.stringify(result, null, 2));
+  return result;
 }
 
 
 // =============================================================================
-// FOLDER REPAIR — Uses ACTIVE_EP_UID
+// SYSTEM-LEVEL
+// =============================================================================
+
+function test_dailyPulse() {
+  console.log("[test_dailyPulse] START");
+  dailyPulse();
+  console.log("[test_dailyPulse] END");
+}
+
+
+// =============================================================================
+// PULSE HARNESS — Single-episode end-to-end validation
+//
+// Runs the Pulse stage(s) appropriate to one episode's current Status.
+// Calls the actual _pulse_* helpers — never reimplements spawn/pass logic.
+// Safe to re-run: inherits real Pulse idempotency by wrapping it.
+//
+// Stage 0 (Calendar intake) is skipped — system-level; no per-episode scope.
+// Use test_checkCalendarForInterviews() for Stage 0 validation.
+//
+// Flag overrides: harness writes sentinel Script Properties (_DEV_OVERRIDE_<key>)
+// and clears them in a finally block. Per-invocation only, never persisted.
+// Requires the _DEV_OVERRIDE sentinel path active in getGovernance() to work.
+// Default (no flagOverrides arg): reads real flags from Governance_Config.
+//
+// Usage:
+//   test_pulseOneEpisode('EP-260423-1454')
+//   test_pulseOneEpisode('EP-260423-1454', { PULSE_CONTENT_ENABLED: 'TRUE' })
+// =============================================================================
+
+function test_pulseOneEpisode(euid, flagOverrides) {
+  var AGENT = 'Daily_Pulse';
+  if (!euid) euid = ACTIVE_EP_UID;
+  console.log('=== PULSE HARNESS: ' + euid + ' START ===');
+  console.log('Flag overrides: ' + (flagOverrides ? JSON.stringify(flagOverrides) : 'none (reading real flags)'));
+
+  // Set override sentinels. getGovernance() must have the _DEV_OVERRIDE path active.
+  var overrideKeys = flagOverrides ? Object.keys(flagOverrides) : [];
+  for (var k = 0; k < overrideKeys.length; k++) {
+    PropertiesService.getScriptProperties()
+      .setProperty('_DEV_OVERRIDE_' + overrideKeys[k], String(flagOverrides[overrideKeys[k]]));
+  }
+  if (overrideKeys.length) console.log('[HARNESS] Sentinels set: ' + overrideKeys.join(', '));
+
+  try {
+    var epRow = getEpisodeRow(euid);
+    if (!epRow) { console.log('[ABORT] Episode not found: ' + euid); return; }
+
+    var status    = String(epRow.Status               || '');
+    var guestName = String(epRow.Guest_Name           || euid);
+    var contactId = String(epRow.Contact_ID           || '');
+    var prodFolId = String(epRow.Production_Folder_ID || '');
+    var recDate   = epRow.Recording_Date              || null;
+    var relDate   = epRow.Release_Date                || null;
+    var finalEpId = String(epRow.Final_Episode_ID     || '');
+
+    console.log('[EPISODE] Status=' + status + ' | Guest=' + guestName + ' | Folder=' + (prodFolId || '(blank)'));
+
+    if (!status || status === 'archived') {
+      console.log('[SKIP ALL] Status "' + status + '" — not pulse-active');
+      return;
+    }
+
+    // Build snapshot (mirrors dailyPulse() per-run setup)
+    var sheetId    = getMasterSheetId();
+    var ss         = SpreadsheetApp.openById(sheetId);
+    var tasksSheet = ss.getSheetByName('Tasks');
+    var tasksData  = tasksSheet ? tasksSheet.getDataRange().getValues() : [];
+    var tH         = tasksData.length > 0 ? tasksData[0] : [];
+
+    var taskEpUidCol    = tH.indexOf('Episode_UID');
+    var taskStatusCol   = tH.indexOf('Status');
+    var taskWorkflowCol = tH.indexOf('Workflow_Step');
+    var taskIdCol       = tH.indexOf('Task_ID');
+    var taskDueDateCol  = tH.indexOf('Due_Date');
+    var hasTaskCols     = taskEpUidCol !== -1 && taskStatusCol !== -1 &&
+                          taskWorkflowCol !== -1 && taskIdCol !== -1 && taskDueDateCol !== -1;
+
+    var today    = new Date(); today.setHours(0, 0, 0, 0);
+    var tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+
+    var heavyBudget = parseInt(getGovernance('PULSE_HEAVY_PASS_BUDGET') || '2', 10) || 2;
+    var heavyUsed   = 0;
+    console.log('[CONFIG] PULSE_HEAVY_PASS_BUDGET=' + heavyBudget);
+
+    // Stage 0: system-level calendar intake — no single-episode scope; skipped.
+    console.log('---');
+    console.log('[STAGE 0] SKIPPED — system-level; use test_checkCalendarForInterviews()');
+
+    // =========================================================================
+    // Stage 1: upcoming — recording reminders + transcript watch
+    // =========================================================================
+    if (status === 'upcoming') {
+      console.log('---');
+      console.log('[STAGE 1] upcoming');
+
+      // Recording reminders
+      var rrRaw = String(getGovernance('PULSE_RECORDING_REMINDERS_ENABLED') || '');
+      if (rrRaw.toUpperCase() !== 'TRUE') {
+        console.log('[STAGE 1 > Recording_Reminder] SKIPPED — flag off (PULSE_RECORDING_REMINDERS_ENABLED=' + rrRaw + ')');
+      } else if (!recDate) {
+        console.log('[STAGE 1 > Recording_Reminder] SKIPPED — upstream state absent (Recording_Date blank)');
+      } else if (!hasTaskCols) {
+        console.log('[STAGE 1 > Recording_Reminder] SKIPPED — Tasks tab missing required columns');
+      } else {
+        console.log('[STAGE 1 > Recording_Reminder] FIRED → _pulse_recordingReminders()');
+        _pulse_recordingReminders(
+          euid, guestName, contactId, recDate,
+          today, tomorrow, tasksData, tasksSheet,
+          taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, AGENT
+        );
+      }
+
+      // Transcript watch → status flip + content chain + reel chain
+      if (!prodFolId) {
+        console.log('[STAGE 1 > Transcript_Watch] SKIPPED — upstream state absent (Production_Folder_ID blank)');
+        console.log('[STAGE 1 > Content_Chain]    SKIPPED — no folder');
+        console.log('[STAGE 1 > Reel_Chain]       SKIPPED — no folder');
+      } else {
+        var transcriptFound = _pulse_detectTranscript(prodFolId);
+        if (!transcriptFound) {
+          console.log('[STAGE 1 > Transcript_Watch] SKIPPED — no transcript in Episode/ subfolder');
+          console.log('[STAGE 1 > Content_Chain]    SKIPPED — no transcript detected');
+          console.log('[STAGE 1 > Reel_Chain]       SKIPPED — no transcript detected');
+        } else {
+          console.log('[STAGE 1 > Transcript_Watch] FIRED — transcript found; flipping Status to in_production');
+          patchEpisodes(euid, { Status: 'in_production' });
+          _pulse_spawnUploadTask(euid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol);
+          heavyUsed += _pulseHarness_runContentChain(euid, guestName, prodFolId, AGENT, heavyBudget, heavyUsed, 1);
+          _pulseHarness_runReelChain(euid, guestName, AGENT, 1);
+        }
+      }
+    }
+
+    // =========================================================================
+    // Stage 2: in_production — content chain + reel chain
+    // =========================================================================
+    else if (status === 'in_production') {
+      console.log('---');
+      console.log('[STAGE 2] in_production');
+
+      if (!prodFolId) {
+        console.log('[STAGE 2 > Content_Chain] SKIPPED — upstream state absent (Production_Folder_ID blank)');
+        console.log('[STAGE 2 > Reel_Chain]    SKIPPED — upstream state absent (Production_Folder_ID blank)');
+      } else {
+        _pulse_spawnUploadTask(euid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol);
+        heavyUsed += _pulseHarness_runContentChain(euid, guestName, prodFolId, AGENT, heavyBudget, heavyUsed, 2);
+        _pulseHarness_runReelChain(euid, guestName, AGENT, 2);
+        console.log('[STAGE 2] Done. Total heavy passes this run: ' + heavyUsed + '/' + heavyBudget);
+      }
+    }
+
+    // =========================================================================
+    // Stage 3: review — release reminders + final-video detect (backup path)
+    // =========================================================================
+    else if (status === 'review') {
+      console.log('---');
+      console.log('[STAGE 3] review');
+
+      // Release reminders
+      var rrelRaw = String(getGovernance('PULSE_RELEASE_REMINDERS_ENABLED') || '');
+      if (rrelRaw.toUpperCase() !== 'TRUE') {
+        console.log('[STAGE 3 > Release_Reminder] SKIPPED — flag off (PULSE_RELEASE_REMINDERS_ENABLED=' + rrelRaw + ')');
+      } else if (!relDate) {
+        console.log('[STAGE 3 > Release_Reminder] SKIPPED — upstream state absent (Release_Date blank)');
+      } else if (!hasTaskCols) {
+        console.log('[STAGE 3 > Release_Reminder] SKIPPED — Tasks tab missing required columns');
+      } else {
+        console.log('[STAGE 3 > Release_Reminder] FIRED → _pulse_releaseReminders()');
+        _pulse_releaseReminders(
+          euid, guestName, contactId, relDate,
+          today, tomorrow, tasksData, tasksSheet,
+          taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, AGENT
+        );
+      }
+
+      // Final-video detect: backup to UI Complete button
+      if (finalEpId) {
+        console.log('[STAGE 3 > Final_Video_Detect] SKIPPED — already exists (Final_Episode_ID populated, idempotent)');
+      } else if (!prodFolId) {
+        console.log('[STAGE 3 > Final_Video_Detect] SKIPPED — upstream state absent (Production_Folder_ID blank)');
+      } else {
+        console.log('[STAGE 3 > Final_Video_Detect] FIRED → completeFinalEpisodeUpload() (no Final_Episode_ID yet)');
+        try {
+          var r = completeFinalEpisodeUpload(euid);
+          if (r && r.ok) {
+            console.log('[STAGE 3 > Final_Video_Detect] succeeded');
+          } else if (r && r.error && !r.error.includes('No file found')) {
+            console.log('[STAGE 3 > Final_Video_Detect] returned error: ' + r.error);
+          } else {
+            console.log('[STAGE 3 > Final_Video_Detect] SKIPPED — no final-video file found in folder');
+          }
+        } catch(e) {
+          console.log('[STAGE 3 > Final_Video_Detect] ERROR: ' + e.message);
+        }
+      }
+    }
+
+    // =========================================================================
+    // Stage 4: ready_to_release — no pulse action
+    // =========================================================================
+    else if (status === 'ready_to_release') {
+      console.log('---');
+      console.log('[STAGE 4] ready_to_release — no pulse action');
+    }
+
+    else {
+      console.log('---');
+      console.log('[STAGE ?] Status "' + status + '" — no pulse action defined');
+    }
+
+    console.log('=== PULSE HARNESS: ' + euid + ' COMPLETE ===');
+
+  } finally {
+    // Always clear override sentinels, even on error.
+    for (var c = 0; c < overrideKeys.length; c++) {
+      try { PropertiesService.getScriptProperties().deleteProperty('_DEV_OVERRIDE_' + overrideKeys[c]); } catch(e) {}
+    }
+    if (overrideKeys.length) console.log('[HARNESS] Override sentinels cleared');
+  }
+}
+
+
+/**
+ * Logs content chain pre-call state and calls _pulse_contentChain.
+ * Returns heavy passes fired (from _pulse_contentChain return value).
+ * Handles flag check and budget check with verbose SKIPPED/FIRED reasoning.
+ */
+function _pulseHarness_runContentChain(epUid, guestName, prodFolderId, agentName, heavyBudget, heavyUsed, stage) {
+  var cfRaw    = String(getGovernance('PULSE_CONTENT_ENABLED') || '');
+  var pfx      = '[STAGE ' + stage + ' > Content_Chain]';
+  var budgetLeft = heavyBudget - heavyUsed;
+
+  if (cfRaw.toUpperCase() !== 'TRUE') {
+    console.log(pfx + ' SKIPPED — flag off (PULSE_CONTENT_ENABLED=' + cfRaw + ')');
+    return 0;
+  }
+  if (budgetLeft <= 0) {
+    console.log(pfx + ' SKIPPED — budget exhausted (' + heavyUsed + '/' + heavyBudget + ' heavy passes used)');
+    return 0;
+  }
+
+  // Read manifest to preview per-track state before calling
+  var manifest = null;
+  try { manifest = getManifest(prodFolderId); } catch(e) { /* unreadable — chain will handle it */ }
+  var hasIndex  = !!(manifest && manifest.episode_index_v2);
+  var hasNotes  = !!(manifest && manifest.show_notes);
+  var hasGraphs = !!(manifest && manifest.quote_graphic_assets_built);
+
+  console.log(pfx + ' FIRED → _pulse_contentChain() | budget remaining: ' + budgetLeft);
+  if (!hasIndex) {
+    console.log(pfx + ' | Track_A (buildEpisodeIndexV2):      will FIRE — no index v2 yet');
+    if (budgetLeft >= 2) {
+      console.log(pfx + ' | Track_B (runEditorialPass):         will FIRE if Track_A succeeds — budget covers both');
+    } else {
+      console.log(pfx + ' | Track_B (runEditorialPass):         SKIPPED — budget exhausted after Track A (1 remaining)');
+    }
+    console.log(pfx + ' | Track_C (materializeQuoteGraphics): ceiling held (Status >= Track B) — depends on Track B');
+  } else if (!hasNotes) {
+    console.log(pfx + ' | Track_A (buildEpisodeIndexV2):      already exists (idempotent)');
+    console.log(pfx + ' | Track_B (runEditorialPass):         will FIRE — index v2 present, no show notes yet');
+    console.log(pfx + ' | Track_C (materializeQuoteGraphics): ceiling held — depends on Track B');
+  } else if (!hasGraphs) {
+    console.log(pfx + ' | Track_A (buildEpisodeIndexV2):      already exists (idempotent)');
+    console.log(pfx + ' | Track_B (runEditorialPass):         already exists (idempotent)');
+    console.log(pfx + ' | Track_C (materializeQuoteGraphics): will FIRE — show notes present, no quote graphics yet (not budget-counted)');
+  } else {
+    console.log(pfx + ' | all tracks already complete (fully idempotent run expected)');
+  }
+
+  var fired = _pulse_contentChain(epUid, guestName, prodFolderId, agentName, budgetLeft);
+  console.log(pfx + ' returned. Heavy passes fired: ' + fired);
+  return fired;
+}
+
+
+/**
+ * Logs reel chain pre-call state and calls _pulse_reelChain (or logs SKIPPED if flag off).
+ */
+function _pulseHarness_runReelChain(epUid, guestName, agentName, stage) {
+  var rfRaw = String(getGovernance('PULSE_REELS_ENABLED') || '');
+  var pfx   = '[STAGE ' + stage + ' > Reel_Chain]';
+  if (rfRaw.toUpperCase() !== 'TRUE') {
+    console.log(pfx + ' SKIPPED — flag off (PULSE_REELS_ENABLED=' + rfRaw + ')');
+    return;
+  }
+  console.log(pfx + ' FIRED → _pulse_reelChain() (syncReelAssets → Gemini dual-output)');
+  _pulse_reelChain(epUid, guestName, agentName);
+  console.log(pfx + ' call returned');
+}
+
+
+// =============================================================================
+// MAINTENANCE — Filing + folder repair
 // =============================================================================
 
 function test_repairStagingSubfolders() {
   repairStagingSubfolders(ACTIVE_EP_UID);
 }
-
-
-// =============================================================================
-// FILING — Uses ACTIVE_EP_UID
-// =============================================================================
 
 // Runs the full archive flow for a single episode (patch manifest + Episodes tab + move folder).
 function test_runFilingFairy() {
@@ -193,4 +483,16 @@ function test_runFilingFairy() {
 // Runs the full Sunday archive sweep (all live episodes past their promotion window).
 function test_archiveLiveEpisodes() {
   archiveLiveEpisodes();
+}
+
+// =============================================================================
+// TASK PROJECTION MIGRATION
+// =============================================================================
+
+// One-time sweep: marks all open/in_progress reminder task rows complete.
+// Run once after deploying the Task Projection spoke. Safe to re-run — idempotent.
+function test_clearReminderRows() {
+  var result = clearReminderRows();
+  Logger.log('[test_clearReminderRows] cleared=' + result.cleared);
+  return result;
 }

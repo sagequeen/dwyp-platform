@@ -132,8 +132,8 @@ var ASSET_LIBRARY_COLS = {
   Display_Name:  5,
   Slide_Index:   6,
   Quote_Text:    7,
-  Reel_Summary:  8,
-  Reel_Summary_Clean: 9,  // Claude editorial pass output; Gemini raw lives in Reel_Summary (col 8)
+  Reel_Transcript: 8,
+  Reel_Summary:    9,
   Caption_Host:  10,  // working caption — sole source of truth for card render, schedule, Make pull
   Caption_Guest: 11,  // omni-voice caption for guest package (Guest Package builder populates; empty until then)
   Notes:         12,
@@ -774,7 +774,7 @@ function getSocialAssets(episodeUid, assetType) {
         Slide_Index:  String(row[ASSET_LIBRARY_COLS.Slide_Index   - 1]),
         Availability: String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
         Display_Name: String(row[ASSET_LIBRARY_COLS.Display_Name  - 1]),
-        Summary:      String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
+        Summary:      String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || ''),
         thumbnailUrl: fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w160' : ''
       });
     }
@@ -2597,6 +2597,15 @@ function requestEpisodeRevisions(episodeUid, authorEmail) {
         foundTask = true;
         break;
       }
+      // Auto-complete the open Review_Episode task — JT is done reviewing
+      for (var t = 1; t < tData.length; t++) {
+        if (String(tData[t][TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid)) continue;
+        if (String(tData[t][TASKS_COLS.Workflow_Step - 1]) !== 'Review_Episode')   continue;
+        if (String(tData[t][TASKS_COLS.Status        - 1]) === 'complete')         continue;
+        taskSheet.getRange(t + 1, TASKS_COLS.Status).setValue('complete');
+        taskSheet.getRange(t + 1, TASKS_COLS.Completed_At).setValue(new Date());
+        break;
+      }
     }
     if (!foundTask) {
       spawnTask({
@@ -3433,106 +3442,135 @@ function addPostingSlot(day, platform, assetType) {
 // ── REEL ASSET SYNC ───────────────────────────────────────────────────────────
 
 /**
- * Uploads a Drive video to the Gemini Files API and returns a verbose
- * description using the configured Gemini model. Returns null on any failure.
+ * Uploads a Drive MP4 to the Gemini Files API as audio/mp4 and returns the raw
+ * response text. Throws on any failure — no silent nulls.
  * Flow: resumable upload → poll until ACTIVE → generateContent → DELETE temp file.
- * Size limit: 45 MB (Files API practical limit for GAS payload).
  * @private
  */
-function callGeminiVideoAnalysis_(driveFileId, prompt, apiKey) {
-  try {
-    var file     = DriveApp.getFileById(driveFileId);
-    var fileSize = file.getSize();
-    var mimeType = file.getMimeType() || 'video/mp4';
-    var fileName = file.getName();
-    if (fileSize > 45 * 1024 * 1024) {
-      Logger.log('[callGeminiVideoAnalysis_] Skipping — too large (' + Math.round(fileSize / 1048576) + 'MB): ' + fileName);
-      return null;
-    }
+function callGeminiAudioAnalysis_(driveFileId, prompt, apiKey) {
+  var file     = DriveApp.getFileById(driveFileId);
+  var fileSize = file.getSize();
+  var fileName = file.getName();
+  var mimeType = 'audio/mp4';
 
-    // Initiate resumable upload
-    var initResp = UrlFetchApp.fetch(
-      'https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable&key=' + apiKey,
-      {
-        method: 'POST', contentType: 'application/json',
-        headers: {
-          'X-Goog-Upload-Protocol':              'resumable',
-          'X-Goog-Upload-Command':               'start',
-          'X-Goog-Upload-Header-Content-Length': String(fileSize),
-          'X-Goog-Upload-Header-Content-Type':   mimeType
-        },
-        payload: JSON.stringify({ file: { display_name: fileName } }),
-        muteHttpExceptions: true
-      }
-    );
-    if (initResp.getResponseCode() !== 200) {
-      Logger.log('[callGeminiVideoAnalysis_] Init failed ' + initResp.getResponseCode() + ': ' + initResp.getContentText().slice(0, 200));
-      return null;
+  var initResp = UrlFetchApp.fetch(
+    'https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=resumable&key=' + apiKey,
+    {
+      method: 'POST', contentType: 'application/json',
+      headers: {
+        'X-Goog-Upload-Protocol':              'resumable',
+        'X-Goog-Upload-Command':               'start',
+        'X-Goog-Upload-Header-Content-Length': String(fileSize),
+        'X-Goog-Upload-Header-Content-Type':   mimeType
+      },
+      payload: JSON.stringify({ file: { display_name: fileName } }),
+      muteHttpExceptions: true
     }
-    var hdrs      = initResp.getHeaders();
-    var uploadUrl = hdrs['location'] || hdrs['Location'] || hdrs['x-goog-upload-url'];
-    if (!uploadUrl) { Logger.log('[callGeminiVideoAnalysis_] No upload URL in response headers'); return null; }
+  );
+  if (initResp.getResponseCode() !== 200) {
+    throw new Error('Upload init failed (' + initResp.getResponseCode() + '): ' + initResp.getContentText().slice(0, 200));
+  }
+  var hdrs      = initResp.getHeaders();
+  var uploadUrl = hdrs['location'] || hdrs['Location'] || hdrs['x-goog-upload-url'];
+  if (!uploadUrl) throw new Error('No upload URL in response headers for: ' + fileName);
 
-    // Upload bytes
-    var uploadResp = UrlFetchApp.fetch(uploadUrl, {
-      method: 'POST', contentType: mimeType,
-      headers: { 'X-Goog-Upload-Command': 'upload, finalize', 'X-Goog-Upload-Offset': '0' },
-      payload: file.getBlob(),
+  var rawChunkSize = getGovernance('REEL_UPLOAD_CHUNK_BYTES');
+  var chunkBytes   = (rawChunkSize && parseInt(rawChunkSize, 10) > 0)
+                     ? parseInt(rawChunkSize, 10)
+                     : 40 * 1024 * 1024;
+  var token        = ScriptApp.getOAuthToken();
+  var driveUrl     = 'https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media';
+  var offset       = 0;
+  var uploadResp;
+
+  while (offset < fileSize) {
+    var end       = Math.min(offset + chunkBytes - 1, fileSize - 1);
+    var actualLen = end - offset + 1;
+    var isFinal   = (end >= fileSize - 1);
+
+    var chunkFetch = UrlFetchApp.fetch(driveUrl, {
+      method:  'GET',
+      headers: { 'Authorization': 'Bearer ' + token, 'Range': 'bytes=' + offset + '-' + end },
       muteHttpExceptions: true
     });
-    if (uploadResp.getResponseCode() !== 200) {
-      Logger.log('[callGeminiVideoAnalysis_] Upload failed ' + uploadResp.getResponseCode());
-      return null;
+    var driveCode = chunkFetch.getResponseCode();
+    if (driveCode !== 206 && driveCode !== 200) {
+      throw new Error('Drive byte-range fetch failed (' + driveCode + ') at offset ' + offset + ' for: ' + fileName);
     }
 
-    var gemFile = JSON.parse(uploadResp.getContentText()).file;
-    if (!gemFile || !gemFile.uri) { Logger.log('[callGeminiVideoAnalysis_] No file URI in upload response'); return null; }
+    uploadResp = UrlFetchApp.fetch(uploadUrl, {
+      method:  'POST',
+      headers: {
+        'X-Goog-Upload-Command': isFinal ? 'upload, finalize' : 'upload',
+        'X-Goog-Upload-Offset':  String(offset)
+      },
+      payload:            chunkFetch.getBlob().setContentType(mimeType),
+      muteHttpExceptions: true
+    });
 
-    // Poll until ACTIVE (max ~60s at 5s intervals)
-    var state = gemFile.state || 'PROCESSING';
-    var polls = 0;
-    while (state !== 'ACTIVE' && polls < 12) {
-      Utilities.sleep(5000);
-      var pollResp = UrlFetchApp.fetch(
-        'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
-        { muteHttpExceptions: true }
-      );
-      state = (JSON.parse(pollResp.getContentText()).state) || 'PROCESSING';
-      polls++;
+    var upCode = uploadResp.getResponseCode();
+    if (upCode !== 200) {
+      throw new Error((isFinal ? 'Final chunk' : 'Chunk') + ' upload failed (' + upCode + ') at offset ' + offset + ' for: ' + fileName);
     }
-    if (state !== 'ACTIVE') { Logger.log('[callGeminiVideoAnalysis_] File never became ACTIVE after ' + polls + ' polls'); return null; }
-
-    // Generate content
-    var model     = getGovernance('MODEL_NAME') || 'gemini-2.5-flash';
-    var genResp   = UrlFetchApp.fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey,
-      {
-        method: 'POST', contentType: 'application/json',
-        payload: JSON.stringify({ contents: [{ parts: [
-          { file_data: { mime_type: mimeType, file_uri: gemFile.uri } },
-          { text: prompt }
-        ]}]}),
-        muteHttpExceptions: true
-      }
-    );
-    var genResult = JSON.parse(genResp.getContentText());
-    var text = genResult.candidates && genResult.candidates[0] &&
-               genResult.candidates[0].content && genResult.candidates[0].content.parts &&
-               genResult.candidates[0].content.parts[0] && genResult.candidates[0].content.parts[0].text;
-
-    // Delete temp file from Gemini — non-fatal
-    try {
-      UrlFetchApp.fetch(
-        'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
-        { method: 'DELETE', muteHttpExceptions: true }
-      );
-    } catch (e) {}
-
-    return text || null;
-  } catch (err) {
-    Logger.log('[callGeminiVideoAnalysis_] Error: ' + err.message);
-    return null;
+    offset += actualLen;
   }
+
+  var gemFile = JSON.parse(uploadResp.getContentText()).file;
+  if (!gemFile || !gemFile.uri) throw new Error('No file URI in upload response for: ' + fileName);
+
+  var state = gemFile.state || 'PROCESSING';
+  var polls = 0;
+  while (state !== 'ACTIVE' && polls < 12) {
+    Utilities.sleep(5000);
+    var pollResp = UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
+      { muteHttpExceptions: true }
+    );
+    state = (JSON.parse(pollResp.getContentText()).state) || 'PROCESSING';
+    polls++;
+  }
+  if (state !== 'ACTIVE') throw new Error('Gemini file never became ACTIVE after ' + polls + ' polls: ' + fileName);
+
+  var model   = getGovernance('MODEL_NAME') || 'gemini-2.5-flash';
+  var genResp = UrlFetchApp.fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey,
+    {
+      method: 'POST', contentType: 'application/json',
+      payload: JSON.stringify({ contents: [{ parts: [
+        { file_data: { mime_type: mimeType, file_uri: gemFile.uri } },
+        { text: prompt }
+      ]}]}),
+      muteHttpExceptions: true
+    }
+  );
+  var genResult = JSON.parse(genResp.getContentText());
+  var text = genResult.candidates && genResult.candidates[0] &&
+             genResult.candidates[0].content && genResult.candidates[0].content.parts &&
+             genResult.candidates[0].content.parts[0] && genResult.candidates[0].content.parts[0].text;
+  if (!text) throw new Error('Gemini returned empty response for: ' + fileName);
+
+  try {
+    UrlFetchApp.fetch(
+      'https://generativelanguage.googleapis.com/v1beta/' + gemFile.name + '?key=' + apiKey,
+      { method: 'DELETE', muteHttpExceptions: true }
+    );
+  } catch (e) {}
+
+  return text;
+}
+
+/**
+ * Parses Gemini dual-output: splits on TRANSCRIPT: / GLOSS: delimiters.
+ * Throws if neither field is found.
+ * @private
+ */
+function _parseReelAudioResponse_(text) {
+  var tMatch = text.match(/TRANSCRIPT:\s*([\s\S]*?)(?=GLOSS:|$)/i);
+  var gMatch = text.match(/GLOSS:\s*([\s\S]*?)$/i);
+  var transcript = tMatch ? tMatch[1].trim() : '';
+  var gloss      = gMatch ? gMatch[1].trim() : '';
+  if (!transcript && !gloss) throw new Error('Could not parse TRANSCRIPT or GLOSS from Gemini response');
+  return { transcript: transcript, gloss: gloss };
 }
 
 
@@ -3552,8 +3590,6 @@ function normalizeSummary(s) {
  * Idempotent: skips files already in AL; skips rows with Reel_Summary unless
  * force:true. Has a 4.5-minute timeout guard — re-run if timedOut:true.
  *
- * After this runs: call runReelEditorialPass(epUid) to have Claude clean the
- * summaries.
  *
  * @param {string} epUid
  * @param {Object} [opts]
@@ -3564,7 +3600,7 @@ function syncReelAssets(epUid, opts) {
   var force     = !!(opts && opts.force === true);
   var agentName = 'SyncReelAssets';
   var errors    = [];
-  var MAX_MS    = 4.5 * 60 * 1000;
+  var MAX_MS    = 20 * 60 * 1000;
   var startTime = Date.now();
 
   // ── 1. Staging folder + guest name ──────────────────────────────────────
@@ -3594,7 +3630,7 @@ function syncReelAssets(epUid, opts) {
     if (fid) existingRows[fid] = {
       rowNum:     i + 1,
       assetId:    String(row[ASSET_LIBRARY_COLS.Asset_ID     - 1]),
-      hasSummary: !!String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1]).trim()
+      hasSummary: !!String(row[ASSET_LIBRARY_COLS.Reel_Transcript - 1]).trim()
     };
   }
 
@@ -3657,19 +3693,14 @@ function syncReelAssets(epUid, opts) {
 
   if (created > 0) bumpVersion('asset_library', 'syncReelAssets');
 
-  // ── 5. Gemini summary for rows with empty Reel_Summary ───────────────────
-  var apiKey = getGovernance('GEMINI_API_KEY');
-  var videoPrompt =
-    "Watch this video clip carefully. This is a reel clip from the podcast 'Don't Waste Your Pain'" +
-    (guestName ? ', featuring ' + guestName : '') + '.\n\n' +
-    'Describe in full detail:\n' +
-    '1. What is being said — key phrases and direct quotes verbatim\n' +
-    '2. The emotional tone and energy of the speaker\n' +
-    '3. The main point or takeaway\n' +
-    '4. Any compelling story beats or turning points\n\n' +
-    'Be verbose and thorough — this summary will be used by Claude to write social media captions. ' +
-    'Use single line breaks only between items. Do not emit blank lines or consecutive newlines (no \\n\\n).';
+  // ── 5. Gemini dual-output audio analysis for rows without a transcript ─────
+  var promptKey = getGovernance('REEL_ANALYSIS_PROMPT_KEY');
+  if (!promptKey) throw new Error('syncReelAssets: REEL_ANALYSIS_PROMPT_KEY not set in Governance_Config');
+  var basePrompt = extractPrompt(promptKey);
+  if (!basePrompt) throw new Error('syncReelAssets: prompt section "' + promptKey + '" not found in Master Template');
+  var audioPrompt = basePrompt + (guestName ? '\n\nGuest: ' + guestName : '');
 
+  var apiKey     = getGovernance('GEMINI_API_KEY');
   var summarized = 0;
   var skipped    = 0;
   var timedOut   = false;
@@ -3681,16 +3712,16 @@ function syncReelAssets(epUid, opts) {
     if (!entry) { skipped++; continue; }
     if (entry.hasSummary && !force) { skipped++; continue; }
 
-    var summary = callGeminiVideoAnalysis_(mp4s[n].getId(), videoPrompt, apiKey);
-    if (!summary) {
-      errors.push('Gemini returned null for file ' + mp4s[n].getId() + ' (' + mp4s[n].getName() + ')');
+    try {
+      var raw    = callGeminiAudioAnalysis_(mp4s[n].getId(), audioPrompt, apiKey);
+      var parsed = _parseReelAudioResponse_(raw);
+      alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Transcript).setValue(normalizeSummary(parsed.transcript));
+      alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(normalizeSummary(parsed.gloss));
+      summarized++;
+    } catch (e) {
+      errors.push('Audio analysis failed for ' + mp4s[n].getName() + ': ' + e.message);
       skipped++;
-      continue;
     }
-
-    // raw summary — companion-only context feed; not orphan, do not clear
-    alSheet.getRange(entry.rowNum, ASSET_LIBRARY_COLS.Reel_Summary).setValue(normalizeSummary(summary));
-    summarized++;
     Utilities.sleep(2000);
   }
 
@@ -3743,8 +3774,8 @@ function getReelsForEpisode(episodeUid) {
         Drive_File_ID: fileId,
         Display_Name:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
         Quote_Text:         String(row[ASSET_LIBRARY_COLS.Quote_Text         - 1] || ''),
-        Reel_Summary:       String(row[ASSET_LIBRARY_COLS.Reel_Summary       - 1] || ''),
-        Reel_Summary_Clean: String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
+        Reel_Transcript: String(row[ASSET_LIBRARY_COLS.Reel_Transcript - 1] || ''),
+        Reel_Summary:    String(row[ASSET_LIBRARY_COLS.Reel_Summary    - 1] || ''),
         Caption_Host:       String(row[ASSET_LIBRARY_COLS.Caption_Host       - 1] || ''),
         Caption_Guest: String(row[ASSET_LIBRARY_COLS.Caption_Guest - 1] || ''),
         Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
@@ -3760,8 +3791,8 @@ function getReelsForEpisode(episodeUid) {
       var key = r.Drive_File_ID || r.Asset_ID;
       if (!bestByKey[key]) { bestByKey[key] = r; keyOrder.push(key); return; }
       var prev      = bestByKey[key];
-      var prevScore = (prev.Caption_Host ? 2 : 0) + ((prev.Reel_Summary_Clean || prev.Reel_Summary) ? 1 : 0);
-      var currScore = (r.Caption_Host    ? 2 : 0) + ((r.Reel_Summary_Clean    || r.Reel_Summary)    ? 1 : 0);
+      var prevScore = (prev.Caption_Host ? 2 : 0) + ((prev.Reel_Summary || prev.Reel_Transcript) ? 1 : 0);
+      var currScore = (r.Caption_Host    ? 2 : 0) + ((r.Reel_Summary    || r.Reel_Transcript)    ? 1 : 0);
       if (currScore > prevScore || (currScore === prevScore && r.createdAt > prev.createdAt)) {
         bestByKey[key] = r;
       }
@@ -3837,7 +3868,7 @@ function generateReelCaption(assetId) {
     var rowNum  = -1, summary = '', episodeUid = '';
     for (var i = 1; i < data.length; i++) {
       if (String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
-      summary    = String(data[i][ASSET_LIBRARY_COLS.Reel_Summary - 1] || '').trim();
+      summary    = String(data[i][ASSET_LIBRARY_COLS.Reel_Transcript - 1] || '').trim();
       episodeUid = String(data[i][ASSET_LIBRARY_COLS.Episode_UID  - 1] || '');
       rowNum     = i + 1;
       break;
@@ -4194,7 +4225,7 @@ function getScheduleData(episodeUid) {
           driveFileId:  fileId,
           displayName:  String(row[ASSET_LIBRARY_COLS.Display_Name  - 1] || ''),
           quoteText:    String(row[ASSET_LIBRARY_COLS.Quote_Text     - 1] || ''),
-          reelSummary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary_Clean - 1] || ''),
+          reelSummary:  String(row[ASSET_LIBRARY_COLS.Reel_Summary - 1] || ''),
           captionHost:  String(row[ASSET_LIBRARY_COLS.Caption_Host   - 1] || ''),
           captionGuest: String(row[ASSET_LIBRARY_COLS.Caption_Guest  - 1] || ''),
           canvasState:  String(row[ASSET_LIBRARY_COLS.Canvas_State   - 1] || ''),
@@ -4539,4 +4570,155 @@ function _uniqueFilename(folder, baseName, ext) {
 function _safeFilename(name) {
   if (!name) return '';
   return String(name).replace(/[\\/:*?"<>|#%&{}]/g, '').replace(/\s+/g, ' ').trim().substring(0, 120);
+}
+
+// ── EPISODE ARRANGE ──────────────────────────────────────────────────────────
+
+/**
+ * Full-rewrite save of the episode schedule.
+ * orderedEuids: ordered array of future episode UIDs (in_production/review/ready_to_release).
+ * Computes next-Tuesday base, assigns dates by position, clears dates for
+ * non-live/non-archived episodes not in the list (drag-back to TBD).
+ */
+function saveArrangeOrder(orderedEuids) {
+  try {
+    if (!Array.isArray(orderedEuids)) return { ok: false, error: 'orderedEuids must be an array' };
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Episodes');
+    if (!sheet) return { ok: false, error: 'Episodes tab not found' };
+
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var uidIdx  = headers.indexOf('Episode_UID');
+    var rdIdx   = headers.indexOf('Release_Date');
+    var statIdx = headers.indexOf('Status');
+    if (uidIdx === -1 || rdIdx === -1 || statIdx === -1) {
+      return { ok: false, error: 'Required columns missing from Episodes tab' };
+    }
+
+    var base     = _nextTuesdayBase_();
+    var orderMap = {};
+    orderedEuids.forEach(function(uid, i) { orderMap[String(uid)] = i; });
+
+    for (var i = 1; i < data.length; i++) {
+      var uid    = String(data[i][uidIdx]);
+      var status = String(data[i][statIdx]);
+      if (status === 'live' || status === 'archived') continue; // fixed — never touched
+
+      if (orderMap.hasOwnProperty(uid)) {
+        var pos  = orderMap[uid];
+        var date = new Date(base.getTime());
+        date.setDate(date.getDate() + pos * 7);
+        sheet.getRange(i + 1, rdIdx + 1).setValue(date);
+      } else {
+        sheet.getRange(i + 1, rdIdx + 1).setValue(''); // drag-back → TBD
+      }
+    }
+
+    bumpVersion('episodes', 'saveArrangeOrder');
+    logToAuditTrail('Arrange', 'state_change', '', '',
+      '[INFO] Episode schedule saved: ' + orderedEuids.length + ' episodes arranged.', 'INFO');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Returns next Tuesday on or after today (client and server use the same rule).
+ * If today IS Tuesday, base = today.
+ */
+function _nextTuesdayBase_() {
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  var day      = d.getDay(); // 0=Sun, 2=Tue
+  var daysUntil = (2 - day + 7) % 7;
+  d.setDate(d.getDate() + daysUntil);
+  return d;
+}
+
+// ── CARD EDIT MODE ────────────────────────────────────────────────────────────
+
+/**
+ * Updates the Guest_Name field on a single episode row.
+ */
+function updateEpisodeName(episodeUid, newName) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Episodes');
+    if (!sheet) return { ok: false, error: 'Episodes tab not found' };
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var uidIdx  = headers.indexOf('Episode_UID');
+    var nameIdx = headers.indexOf('Guest_Name');
+    if (uidIdx === -1 || nameIdx === -1) return { ok: false, error: 'Required columns missing' };
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][uidIdx]) !== String(episodeUid)) continue;
+      sheet.getRange(i + 1, nameIdx + 1).setValue(String(newName || '').trim());
+      bumpVersion('episodes', 'updateEpisodeName');
+      return { ok: true };
+    }
+    return { ok: false, error: 'Episode not found' };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Returns completed tasks for a given episode — for the un-complete affordance
+ * in the card edit mode. Excludes open/in_progress (those are in state.tasks).
+ */
+function getEpisodeCompletedTasks(episodeUid) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Tasks');
+    if (!sheet) return [];
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var epIdx   = headers.indexOf('Episode_UID');
+    var statIdx = headers.indexOf('Status');
+    var wsIdx   = headers.indexOf('Workflow_Step');
+    var titIdx  = headers.indexOf('Action_Title');
+    var idIdx   = headers.indexOf('Task_ID');
+    if (epIdx === -1 || statIdx === -1) return [];
+
+    var SKIP_STEPS = ['Recording_Reminder', 'Release_Reminder', 'Runway', 'Release_Day'];
+    var tasks = [];
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][epIdx]) !== String(episodeUid)) continue;
+      if (String(data[i][statIdx]) !== 'complete')       continue;
+      var ws = String(data[i][wsIdx] || '');
+      if (SKIP_STEPS.indexOf(ws) !== -1)                 continue; // demoted cues — skip
+      tasks.push({
+        _rowIndex:     i + 1,
+        Task_ID:       data[i][idIdx],
+        Action_Title:  data[i][titIdx],
+        Workflow_Step: ws
+      });
+    }
+    return tasks;
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Flips a completed task back to open. Human-reversible; no system cascade.
+ */
+function uncompleteTask(rowIndex) {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Tasks');
+    if (!sheet) return { ok: false, error: 'Tasks tab not found' };
+    sheet.getRange(rowIndex, TASKS_COLS.Status).setValue('open');
+    sheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue('');
+    bumpVersion('tasks', 'uncompleteTask');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 }

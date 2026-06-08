@@ -1005,6 +1005,136 @@ svg { display: block; flex-shrink: 0; }
 }
 .st-ep-task-link:hover { text-decoration: underline; }
 
+/* Projected date cues — computed on read, no action button */
+.st-ep-cue {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-style: italic;
+  padding: 3px 0;
+}
+.st-ep-cue svg { flex-shrink: 0; }
+
+/* ── ARRANGE MODE ──────────────────────────────────────────────── */
+.arr-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.arr-mode-bar-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  flex: 1;
+}
+.arr-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold-deep);
+  display: none;
+}
+.arr-dirty-dot.visible { display: block; }
+.arr-toggle-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.arr-toggle-btn.active {
+  background: var(--gold-light);
+  border-color: var(--gold-deep);
+  color: var(--gold-deep);
+}
+.arr-save-btn, .arr-discard-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+}
+.arr-save-btn { background: var(--gold-deep); border-color: var(--gold-deep); color: #fff; }
+.arr-discard-btn { color: var(--text-2); }
+.arr-save-btn.visible, .arr-discard-btn.visible { display: block; }
+
+/* Drop zones between draggable cards */
+.arr-drop-zone {
+  height: 4px;
+  margin: 2px 12px;
+  border-radius: 2px;
+  transition: height 0.12s, background 0.12s;
+}
+.arr-drop-zone.arr-over { height: 24px; background: var(--gold-light); border: 1px dashed var(--gold-deep); }
+
+/* Draggable band card */
+.st-ep-band-card[draggable='true'] { cursor: grab; }
+.st-ep-band-card[draggable='true']:active { cursor: grabbing; }
+.st-ep-band-card.arr-dragging { opacity: 0.35; }
+.st-ep-band-card.arr-locked { opacity: 0.55; cursor: default; }
+
+/* TBD drop zone in arrange mode */
+.arr-tbd-drop {
+  min-height: 44px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  margin: 6px 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.arr-tbd-drop.arr-over { border-color: var(--gold-deep); background: var(--gold-light); color: var(--gold-deep); }
+
+/* Drag handle icon inside cards in arrange mode */
+.arr-drag-handle {
+  color: var(--text-3);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+/* Completed task rows in card edit mode */
+.st-ep-completed-task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.st-ep-completed-title {
+  font-size: 11px;
+  color: var(--text-3);
+  text-decoration: line-through;
+  flex: 1;
+}
+.st-ep-uncomplete-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.st-ep-uncomplete-btn:hover { border-color: var(--text-2); color: var(--text-2); }
+
 /* Side region cards (Upcoming Recordings / TBD Episodes) */
 .st-ep-side-card {
   display: flex;
@@ -3957,6 +4087,7 @@ body.studio-open .app-header { display: none; }
       <div class="avatar-menu" id="avatarMenu">
         <div class="avatar-menu-name" id="avatarMenuName"></div>
         <button class="avatar-menu-item" id="fairyRemoteMenuItem" style="display:none" onclick="openFairyRemote()">Fairy Remote Control</button>
+        <button class="avatar-menu-item" onclick="stSyncFlush()">Sync</button>
 
         <button class="avatar-menu-signout" onclick="signOut()">Sign Out</button>
       </div>
@@ -4420,7 +4551,7 @@ body.studio-open .app-header { display: none; }
       </div>
 
       <!-- Tasks: Episodes workspace (month calendar + Upcoming/TBD regions) -->
-      <div id="stEpisodesView" style="display:none;flex-direction:row;flex:1;min-height:0;overflow:hidden">
+      <div id="stEpisodesView" style="display:none;flex-direction:column;flex:1;min-height:0;overflow:hidden">
         <!-- Populated by stRenderEpisodesView() -->
       </div>
 
@@ -4858,6 +4989,81 @@ function loadDomain(domain, callback) {
     .getDomainsBatch([domain]);
 }
 
+// ── STUDIO SURFACE CACHE ─────────────────────────────────────
+// In-memory session cache for Studio surfaces. Not persisted across reloads.
+// Episode-scoped surfaces keyed by uid. imagesBg is global (no uid key).
+// episodeUrl has no version gate — 8h signed GCS URL, session-safe.
+
+function _cacheGet(surface, uid) {
+  var c = st._cache[surface];
+  if (c === undefined) return null;
+  if (surface === 'imagesBg') return c || null;
+  return (uid && c[uid]) ? c[uid] : null;
+}
+
+function _cacheSet(surface, uid, data, versionsAtFetch) {
+  if (!(surface in st._cache)) return;
+  var entry = { data: data };
+  if (versionsAtFetch) entry.versionsAtFetch = versionsAtFetch;
+  if (surface === 'imagesBg') {
+    st._cache['imagesBg'] = entry;
+  } else if (uid) {
+    st._cache[surface][uid] = entry;
+  }
+}
+
+function _cacheIsStale(surface, uid, currentVersions) {
+  var entry = _cacheGet(surface, uid);
+  if (!entry) return true;
+  if (!entry.versionsAtFetch) return false; // no version gate — UID-keyed only, never version-stale
+  var tracked = entry.versionsAtFetch;
+  var domains = Object.keys(tracked);
+  for (var i = 0; i < domains.length; i++) {
+    var d = domains[i];
+    if (currentVersions[d] === undefined) continue;
+    if (currentVersions[d] > tracked[d]) return true;
+  }
+  return false;
+}
+
+function _cacheInvalidate(surface, uid) {
+  if (!(surface in st._cache)) return;
+  if (surface === 'imagesBg') {
+    st._cache['imagesBg'] = null;
+  } else if (uid) {
+    delete st._cache[surface][uid];
+  }
+}
+
+function stSyncFlush() {
+  var menu = document.getElementById('avatarMenu');
+  if (menu) menu.classList.remove('open');
+
+  // Capture Studio location before flushing
+  var inStudio = (document.getElementById('studioOverlay').style.display !== 'none');
+  var tab  = st.currentTab;
+  var dtab = st.designTab;
+  var uid  = st.episodeUid;
+
+  // Global flush — all surfaces, all episodes
+  st._cache.reels      = {};
+  st._cache.imagesHq   = {};
+  st._cache.imagesBg   = null;
+  st._cache.episodeRev = {};
+  st._cache.episodeUrl = {};
+  st._cache.schedule   = {};
+
+  if (!inStudio || !uid) return;
+
+  showToast('Syncing...');
+  if (tab === 'design') {
+    if      (dtab === 'schedule') { stShowSchedule(uid); }
+    else if (dtab === 'reels')    { stLoadRailReels(uid); }
+    else if (dtab === 'episode')  { stLoadDesignEpisode(uid); }
+    else                          { stLoadHqContent(uid); stLoadBackgrounds(); }
+  }
+}
+
 var epReviewState = {
   episodeUid:      null,
   frozenTimestamp: null,
@@ -4917,15 +5123,21 @@ function loadData() {
           _coldStartComplete   = true;
           stRenderRailGuests();
           stRenderAccordionTasks();
-          // Auto-select closest-date episode now that data is ready
+          // Auto-select closest-date episode for design; re-render for task views
           if (!st.episodeUid && state.episodes && state.episodes.length) {
-            var _sorted = state.episodes.slice().sort(function(a, b) {
-              var da = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
-              var db = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
-              return da - db;
-            });
-            var _fe = _sorted[0];
-            stSelectGuest(_fe.Episode_UID, _fe.Guest_Name || _fe.Episode_UID);
+            if (st.currentMode === 'episodes') {
+              stRenderEpisodesView();
+            } else if (st.currentMode === 'buckets') {
+              stRenderBucketsView();
+            } else {
+              var _sorted = state.episodes.slice().sort(function(a, b) {
+                var da = a.Release_Date ? new Date(a.Release_Date).getTime() : Infinity;
+                var db = b.Release_Date ? new Date(b.Release_Date).getTime() : Infinity;
+                return da - db;
+              });
+              var _fe = _sorted[0];
+              stSelectGuest(_fe.Episode_UID, _fe.Guest_Name || _fe.Episode_UID);
+            }
           }
         })
         .withFailureHandler(handleLoadError)
@@ -5029,6 +5241,7 @@ function hideAllViews() {
 
 // ── ROUTING / TAB SWITCHING ──────────────────────────────────
 function switchTab(tab) {
+  if (!stArrangeLeaveCheck()) return;
   state.currentTab     = tab;
   state.currentEpisode = null;
   state.currentContact = null;
@@ -5092,7 +5305,20 @@ var st = {
   exportDay:       'MON',
   selectedReelId:  null,
   editingAssetId:  null,  // Asset_ID of the AL row currently open in the canvas (set on edit ↗ round-trip or after first Send to Schedule)
-  derivativeMode:  false  // true when navigated via edit ↗ from Schedule — swaps action bar to exit triad
+  derivativeMode:  false, // true when navigated via edit ↗ from Schedule — swaps action bar to exit triad
+  arrangeMode:     false, // true when Arrange toggle is active on Tasks → Episodes
+  arrangeDirty:    false, // unsaved drag changes
+  arrangeOrder:    [],    // ordered EUIDs of scheduled future episodes in draft
+  arrangeTbdIds:   [],    // EUIDs of unscheduled episodes in draft
+  _arrangeDragSrc: null,  // EUID being dragged
+  _cache: {
+    reels:      {},   // { [uid]: { data, versionsAtFetch: { asset_library } } }
+    imagesHq:   {},   // { [uid]: { data, versionsAtFetch: { manifests } } }
+    imagesBg:   null, // { data, versionsAtFetch: { image_library } } — global, not uid-keyed
+    episodeRev: {},   // { [uid]: { data, versionsAtFetch: { episodes } } }
+    episodeUrl: {},   // { [uid]: { data } } — no version gate, 8h signed URL
+    schedule:   {}    // { [uid]: { data, versionsAtFetch: { asset_library, episodes } } }
+  }
 };
 
 // ── PUBLISH STATE ─────────────────────────────────────────────
@@ -5122,6 +5348,7 @@ function openStudio(tab) {
   stInitReelCaptionPersistence();
 
   stSwitchTab(tab || 'design');
+  if (!tab) stAccSelectTaskView('episodes');
 }
 
 function closeStudio() {
@@ -5830,14 +6057,54 @@ function stResetBgBrightness() {
 // ── BACKGROUNDS ───────────────────────────────────────────────
 function stLoadBackgrounds() {
   var grid = document.getElementById('stBgGrid');
+
+  var entry = _cacheGet('imagesBg', null);
+  if (entry) {
+    stRenderBgGrid(entry.data);
+    // Check if background library has been updated since last fetch
+    google.script.run
+      .withSuccessHandler(function(versions) {
+        if (_cacheIsStale('imagesBg', null, versions)) {
+          google.script.run
+            .withSuccessHandler(function(items) {
+              _cacheSet('imagesBg', null, items || [], { image_library: versions.image_library });
+              stRenderBgGrid(items);
+            })
+            .withFailureHandler(function() {})
+            .getBackgroundLibrary();
+        }
+      })
+      .withFailureHandler(function() {})
+      .getAllVersions();
+    return;
+  }
+
+  // Cache miss: get versions first (needed for versionsAtFetch), then fetch library
   if (grid) grid.innerHTML = '<div class="iw-empty-msg">Loading…</div>';
   google.script.run
-    .withSuccessHandler(stRenderBgGrid)
-    .withFailureHandler(function() {
-      var g = document.getElementById('stBgGrid');
-      if (g) g.innerHTML = '<div class="iw-empty-msg">Could not load backgrounds.</div>';
+    .withSuccessHandler(function(versions) {
+      google.script.run
+        .withSuccessHandler(function(items) {
+          _cacheSet('imagesBg', null, items || [], { image_library: versions.image_library });
+          stRenderBgGrid(items);
+        })
+        .withFailureHandler(function() {
+          var g = document.getElementById('stBgGrid');
+          if (g) g.innerHTML = '<div class="iw-empty-msg">Could not load backgrounds.</div>';
+        })
+        .getBackgroundLibrary();
     })
-    .getBackgroundLibrary();
+    .withFailureHandler(function() {
+      // getAllVersions failed — fetch without caching; next canvas init retries
+      google.script.run
+        .withSuccessHandler(stRenderBgGrid)
+        .withFailureHandler(function() {
+          var g = document.getElementById('stBgGrid');
+          if (g) g.innerHTML = '<div class="iw-empty-msg">Could not load backgrounds.</div>';
+        })
+        .getBackgroundLibrary();
+    })
+    .getAllVersions();
 }
 
 var BG_PREFIX_MAP = { 'vertical_': 'instagram', 'feed_': 'feed', 'square_': 'square', 'landscape_': 'landscape' };
@@ -6159,6 +6426,7 @@ function stRenderAccordionTasks() {
 }
 
 function stSelectGuest(uid, name) {
+  if (!stArrangeLeaveCheck()) return;
   stExpandGuest(uid);
   stSelectEpisode(uid, name);
   if (st.currentTab !== 'design') stSwitchTab('design');
@@ -6166,6 +6434,7 @@ function stSelectGuest(uid, name) {
 }
 
 function stSelectGuestView(uid, name, view) {
+  if (!stArrangeLeaveCheck()) return;
   stExpandGuest(uid);
   stSelectEpisode(uid, name);
   if (view === 'schedule') {
@@ -6221,31 +6490,67 @@ var sch = {
 function stLoadSchedule(uid) {
   if (!uid) return;
   sch.episodeUid = uid;
-  // Derive guest name from loaded episodes
   var ep = state.episodes && state.episodes.filter(function(e) { return e.Episode_UID === uid; })[0];
   sch.guestName = ep ? (ep.Guest_Name || uid) : uid;
 
   var weekEl  = document.getElementById('schWeekView');
   var swipeEl = document.getElementById('schSwipeView');
   var poolEl  = document.getElementById('schPoolList');
-  if (weekEl)  weekEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:32px 0">Loading…</div>';
-  if (swipeEl) swipeEl.innerHTML = '';
-  if (poolEl)  poolEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:24px 8px">Loading…</div>';
+
+  var entry = _cacheGet('schedule', uid);
+  if (entry) {
+    sch.candidates = entry.data.candidates || [];
+    sch.placements = entry.data.placements || [];
+    sch.days       = entry.data.days       || [];
+    stRenderSchedulePool();
+    stRenderScheduleWeek();
+    stRenderScheduleSwipe();
+  } else {
+    if (weekEl)  weekEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:32px 0">Loading…</div>';
+    if (swipeEl) swipeEl.innerHTML = '';
+    if (poolEl)  poolEl.innerHTML  = '<div style="font-size:12px;color:rgba(255,255,255,0.3);text-align:center;padding:24px 8px">Loading…</div>';
+  }
 
   google.script.run
-    .withSuccessHandler(function(data) {
-      if (!data) return;
-      sch.candidates = data.candidates || [];
-      sch.placements = data.placements || [];
-      sch.days       = data.days       || [];
-      stRenderSchedulePool();
-      stRenderScheduleWeek();
-      stRenderScheduleSwipe();
+    .withSuccessHandler(function(versions) {
+      if (_cacheIsStale('schedule', uid, versions)) {
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (!data) return;
+            _cacheSet('schedule', uid, data, { asset_library: versions.asset_library, episodes: versions.episodes });
+            sch.candidates = data.candidates || [];
+            sch.placements = data.placements || [];
+            sch.days       = data.days       || [];
+            stRenderSchedulePool();
+            stRenderScheduleWeek();
+            stRenderScheduleSwipe();
+          })
+          .withFailureHandler(function(err) {
+            if (!entry) showToast('Schedule load failed: ' + (err.message || err));
+          })
+          .getScheduleData(uid);
+      }
     })
-    .withFailureHandler(function(err) {
-      showToast('Schedule load failed: ' + (err.message || err));
+    .withFailureHandler(function() {
+      // getAllVersions failed — fetch without caching; next nav-in retries
+      if (!entry) {
+        google.script.run
+          .withSuccessHandler(function(data) {
+            if (!data) return;
+            sch.candidates = data.candidates || [];
+            sch.placements = data.placements || [];
+            sch.days       = data.days       || [];
+            stRenderSchedulePool();
+            stRenderScheduleWeek();
+            stRenderScheduleSwipe();
+          })
+          .withFailureHandler(function(err) {
+            showToast('Schedule load failed: ' + (err.message || err));
+          })
+          .getScheduleData(uid);
+      }
     })
-    .getScheduleData(uid);
+    .getAllVersions();
 }
 
 // Returns Set of assetIds that are placed in the week (Availability='placed' check is client-only)
@@ -6820,6 +7125,7 @@ function schDoPlace(assetId, slotId) {
           p.postId = result.postId;
         }
       });
+      _cacheInvalidate('schedule', sch.episodeUid);
     })
     .withFailureHandler(function(err) {
       showToast('Placement failed: ' + (err.message || err));
@@ -6851,6 +7157,8 @@ function schRemoveFromSlot(assetId, slotId, callback) {
       if (!result || !result.success) {
         showToast('Remove failed — reverting');
         schRefreshFromServer();
+      } else {
+        _cacheInvalidate('schedule', sch.episodeUid);
       }
       if (callback) callback();
     })
@@ -6928,6 +7236,7 @@ function schExportAll() {
 // Re-fetches from server to correct any optimistic drift
 function schRefreshFromServer() {
   if (!sch.episodeUid) return;
+  _cacheInvalidate('schedule', sch.episodeUid);
   google.script.run
     .withSuccessHandler(function(data) {
       if (!data) return;
@@ -7078,6 +7387,8 @@ function derivativeSave() {
       if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
       if (!res || !res.ok) { showToast('Save failed: ' + (res && res.error || 'unknown'), true); return; }
       showToast('Saved ✓');
+      _cacheInvalidate('reels', returnTo.episodeUid);
+      _cacheInvalidate('schedule', returnTo.episodeUid);
       st.derivativeMode = false;
       stSyncDerivativeUI();
       stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
@@ -7101,6 +7412,8 @@ function derivativeSaveACopy() {
       if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
       if (!res || !res.ok) { showToast('Copy failed: ' + (res && res.error || 'unknown'), true); return; }
       showToast('Saved as new asset ✓');
+      _cacheInvalidate('reels', returnTo.episodeUid);
+      _cacheInvalidate('schedule', returnTo.episodeUid);
       st.derivativeMode = false;
       stSyncDerivativeUI();
       stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
@@ -7135,6 +7448,8 @@ function derivativeReelSave() {
       if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
       if (!res || !res.ok) { showToast('Save failed: ' + (res && res.error || 'unknown'), true); return; }
       showToast('Saved ✓');
+      _cacheInvalidate('reels', returnTo.episodeUid);
+      _cacheInvalidate('schedule', returnTo.episodeUid);
       st.derivativeMode = false;
       stSyncDerivativeUI();
       stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
@@ -7161,6 +7476,8 @@ function derivativeReelSaveACopy() {
       if (btn) { btn.disabled = false; btn.textContent = 'Save a Copy'; }
       if (!res || !res.ok) { showToast('Copy failed: ' + (res && res.error || 'unknown'), true); return; }
       showToast('Saved as new reel entry ✓');
+      _cacheInvalidate('reels', returnTo.episodeUid);
+      _cacheInvalidate('schedule', returnTo.episodeUid);
       st.derivativeMode = false;
       stSyncDerivativeUI();
       stSelectGuestView(returnTo.episodeUid, returnTo.guestName, 'schedule');
@@ -7194,6 +7511,8 @@ function stSendToScheduleReel() {
         return;
       }
       showToast('Reel sent to Schedule ✓');
+      _cacheInvalidate('reels', st.episodeUid);
+      _cacheInvalidate('schedule', st.episodeUid);
     })
     .withFailureHandler(function(err) {
       if (btn) { btn.disabled = false; btn.textContent = 'Send to Schedule'; }
@@ -7235,6 +7554,7 @@ function stAccSelectMode(mode) {
 }
 
 function stAccSelectTaskView(view) {
+  if (!stArrangeLeaveCheck()) return;
   st.currentMode = view;
   stHideAllPanels();
   if (view === 'episodes') {
@@ -7391,7 +7711,7 @@ function stRenderEpBandCard(ep, allTasks) {
 
   // Left column: name / dateline / blocking task
   html += '<div class="st-ep-card-left">';
-  html += '<div class="st-ep-card-name">' + name + '</div>';
+  html += '<div class="st-ep-card-name" ondblclick="stEpNameDblClick(\'' + uid + '\',event)" title="Double-click to edit name">' + name + '</div>';
   html += '<div class="st-ep-card-dateline">' + esc(dateline) + '</div>';
   if (blockingTask) html += '<div class="st-ep-card-blocking">' + esc(blockingTask) + '</div>';
   html += '</div>'; // .st-ep-card-left
@@ -7408,6 +7728,8 @@ function stRenderEpBandCard(ep, allTasks) {
   // Expandable task list — hidden by default
   html += '<div class="st-ep-task-list" id="stEpTasks-' + uid + '" style="display:none">';
   html += stRenderEpCardTaskList(ep, epTasks);
+  // Completed tasks container — populated lazily on expand by stLoadEpCompletedTasks()
+  html += '<div id="stEpCompleted-' + uid + '"></div>';
   html += '</div>';
 
   html += '</div>'; // .st-ep-band-card
@@ -7452,7 +7774,49 @@ function stRenderEpTbdCard(ep) {
 function stToggleEpCard(uid) {
   var el = document.getElementById('stEpTasks-' + uid);
   if (!el) return;
-  el.style.display = el.style.display === 'none' ? '' : 'none';
+  var expanding = el.style.display === 'none';
+  el.style.display = expanding ? '' : 'none';
+  if (expanding) stLoadEpCompletedTasks(uid);
+}
+
+// Returns projected date cues for an episode — computed on read, never stored.
+// Window math: a closer-in reschedule self-heals rather than silently skipping.
+function stGetEpCues(ep) {
+  var cues  = [];
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Recording axis (independent of Release_Date)
+  if (ep.Recording_Date) {
+    var recDate = new Date(ep.Recording_Date);
+    if (!isNaN(recDate.getTime())) {
+      recDate.setHours(0, 0, 0, 0);
+      var recDiff = Math.round((recDate.getTime() - today.getTime()) / 86400000);
+      // Window: D-1 and day-of (0 <= diff <= 1)
+      if (recDiff >= 0 && recDiff <= 1) {
+        cues.push({ label: recDiff === 0 ? 'Recording today' : 'Recording tomorrow', icon: 'mic' });
+      }
+    }
+  }
+
+  // Release axis (independent of Recording_Date)
+  if (ep.Release_Date) {
+    var relDate = new Date(ep.Release_Date);
+    if (!isNaN(relDate.getTime())) {
+      relDate.setHours(0, 0, 0, 0);
+      var relDiff = Math.round((relDate.getTime() - today.getTime()) / 86400000);
+      // Window: 0 <= diff <= 7 (Runway). More specific labels at D-1 and D-0.
+      if (relDiff >= 0 && relDiff <= 7) {
+        var label;
+        if      (relDiff === 0) label = 'Release day';
+        else if (relDiff === 1) label = 'Release tomorrow';
+        else                    label = 'Runway — ' + relDiff + ' days out';
+        cues.push({ label: label, icon: 'radio' });
+      }
+    }
+  }
+
+  return cues;
 }
 
 // Renders the task list HTML for the expanded region of a band card.
@@ -7460,12 +7824,22 @@ function stToggleEpCard(uid) {
 function stRenderEpCardTaskList(ep, epTasks) {
   var uid      = esc(ep.Episode_UID);
   var filtered = securityFilter(epTasks);
+  var cues     = stGetEpCues(ep);
 
-  if (!filtered.length) {
+  if (!filtered.length && !cues.length) {
     return '<div class="st-ep-task-empty">Nothing pending</div>';
   }
 
   var html = '';
+
+  // Projected date cues (non-interactive, computed on read)
+  cues.forEach(function(cue) {
+    html += '<div class="st-ep-cue">';
+    html += '<svg width="11" height="11" data-lucide="' + cue.icon + '"></svg>';
+    html += '<span>' + esc(cue.label) + '</span>';
+    html += '</div>';
+  });
+
   filtered.forEach(function(task) {
     var tid  = esc(task.Task_ID);
     var ridx = task._rowIndex;
@@ -7481,9 +7855,21 @@ function stRenderEpCardTaskList(ep, epTasks) {
     html += '<div class="st-ep-task-actions">';
 
     // Kind 1a — GCS episode upload
-    if (ws === 'Upload_Produced_Episode' || ws === 'Produce_Episode' || ws === 'Revise_Episode') {
+    if (ws === 'Upload_Produced_Episode' || ws === 'Produce_Episode') {
       html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
               ' onclick="startEpisodeUpload(\'' + tid + '\',' + ridx + ',\'' + epUid + '\')">' +
+              '<svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload Proxy</button>';
+      html += '<input type="file" id="ep-file-' + tid + '" accept="video/*" style="display:none"' +
+              ' onchange="onEpisodeFileSelected(\'' + tid + '\',' + ridx + ',\'' + epUid + '\',this)">';
+      html += '<div class="ep-upload-panel" id="ep-upload-panel-' + tid + '" style="display:none">' +
+              '<div class="ep-upload-bar-wrap"><div class="ep-upload-bar" id="ep-upload-bar-' + tid + '"></div></div>' +
+              '<div class="ep-upload-status" id="ep-upload-status-' + tid + '"></div></div>';
+
+    // Kind 1a (replace) — Revise_Episode always has an existing proxy; skip async check so
+    // the file picker click stays within the user gesture from the button click.
+    } else if (ws === 'Revise_Episode') {
+      html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
+              ' onclick="startEpisodeReplace(\'' + tid + '\')">' +
               '<svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload Proxy</button>';
       html += '<input type="file" id="ep-file-' + tid + '" accept="video/*" style="display:none"' +
               ' onchange="onEpisodeFileSelected(\'' + tid + '\',' + ridx + ',\'' + epUid + '\',this)">';
@@ -7623,90 +8009,454 @@ function stConfirmReleaseTask(taskId, rowIndex) {
 function stRenderEpisodesView() {
   var container = document.getElementById('stEpisodesView');
   if (!container) return;
+  container.style.flexDirection = 'column';
+  if (st.arrangeMode) {
+    stRenderEpisodesViewArrange(container);
+  } else {
+    stRenderEpisodesViewNormal(container);
+  }
+}
 
+function stRenderEpisodesViewNormal(container) {
   var allTasks = securityFilter(state.tasks);
   var episodes = state.episodes || [];
 
-  // Route each episode to exactly one target.
-  var monthEps    = []; // has Release_Date → month calendar
-  var upcomingEps = []; // Status = upcoming → Upcoming Recordings
-  var tbdEps      = []; // in_production+ with no Release_Date → TBD Episodes
-
+  var monthEps = [], upcomingEps = [], tbdEps = [];
   episodes.forEach(function(ep) {
     var s     = String(ep.Status || '');
     var rd    = ep.Release_Date ? new Date(ep.Release_Date) : null;
     var hasRd = rd && !isNaN(rd.getTime());
-
-    if (s === 'upcoming') {
-      upcomingEps.push(ep);
-    } else if (hasRd) {
-      monthEps.push(ep);
-    } else {
-      tbdEps.push(ep);
-    }
+    if (s === 'upcoming')   upcomingEps.push(ep);
+    else if (hasRd)         monthEps.push(ep);
+    else                    tbdEps.push(ep);
   });
 
-  // Sort month episodes by Release_Date asc (stable ordering, not state-driven).
-  monthEps.sort(function(a, b) {
-    return new Date(a.Release_Date).getTime() - new Date(b.Release_Date).getTime();
-  });
+  monthEps.sort(function(a, b) { return new Date(a.Release_Date).getTime() - new Date(b.Release_Date).getTime(); });
 
-  // Group month episodes by month. Key = "YYYY-MM" for uniqueness; label =
-  // "JUNE" current year or "JUNE 2027" for future years (no hardcoded list).
-  var now         = new Date();
-  var monthGroups = {}; // key → { label, eps[] }
-  var monthOrder  = []; // insertion order
-
+  var now = new Date();
+  var monthGroups = {}, monthOrder = [];
   monthEps.forEach(function(ep) {
     var d     = new Date(ep.Release_Date);
     var key   = d.getFullYear() + '-' + d.getMonth();
     var month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
-    var label = d.getFullYear() === now.getFullYear()
-      ? month
-      : month + ' ' + d.getFullYear();
-    if (!monthGroups[key]) {
-      monthGroups[key] = { label: label, eps: [] };
-      monthOrder.push(key);
-    }
+    var label = d.getFullYear() === now.getFullYear() ? month : month + ' ' + d.getFullYear();
+    if (!monthGroups[key]) { monthGroups[key] = { label: label, eps: [] }; monthOrder.push(key); }
     monthGroups[key].eps.push(ep);
   });
 
-  // Left column: month bands (conditional — empty months absent).
   var leftHtml = '';
   monthOrder.forEach(function(key) {
     var g = monthGroups[key];
-    leftHtml += '<div class="st-ep-band">';
-    leftHtml += '<div class="st-ep-band-header">' + g.label + '</div>';
+    leftHtml += '<div class="st-ep-band"><div class="st-ep-band-header">' + g.label + '</div>';
     g.eps.forEach(function(ep) { leftHtml += stRenderEpBandCard(ep, allTasks); });
     leftHtml += '</div>';
   });
-  if (!leftHtml) {
-    leftHtml = '<div class="st-ep-empty">No episodes with release dates.</div>';
-  }
+  if (!leftHtml) leftHtml = '<div class="st-ep-empty">No episodes with release dates.</div>';
 
-  // Right column: Upcoming Recordings + TBD Episodes (conditional regions).
   var rightHtml = '';
   if (upcomingEps.length) {
-    rightHtml += '<div class="st-ep-region">';
-    rightHtml += '<div class="st-ep-band-header">Upcoming Recordings</div>';
+    rightHtml += '<div class="st-ep-region"><div class="st-ep-band-header">Upcoming Recordings</div>';
     upcomingEps.forEach(function(ep) { rightHtml += stRenderEpUpcomingCard(ep); });
     rightHtml += '</div>';
   }
   if (tbdEps.length) {
-    rightHtml += '<div class="st-ep-region">';
-    rightHtml += '<div class="st-ep-band-header">TBD Episodes</div>';
+    rightHtml += '<div class="st-ep-region"><div class="st-ep-band-header">TBD Episodes</div>';
     tbdEps.forEach(function(ep) { rightHtml += stRenderEpTbdCard(ep); });
     rightHtml += '</div>';
   }
-  if (!rightHtml) {
-    rightHtml = '<div class="st-ep-empty">No upcoming or TBD episodes.</div>';
-  }
+  if (!rightHtml) rightHtml = '<div class="st-ep-empty">No upcoming or TBD episodes.</div>';
 
   container.innerHTML =
-    '<div class="st-ep-bands-col">'   + leftHtml  + '</div>' +
-    '<div class="st-ep-regions-col">' + rightHtml + '</div>';
+    stArrToolbarHtml() +
+    '<div style="display:flex;flex:1;min-height:0;overflow:hidden">' +
+      '<div class="st-ep-bands-col">'   + leftHtml  + '</div>' +
+      '<div class="st-ep-regions-col">' + rightHtml + '</div>' +
+    '</div>';
 
   lucide.createIcons();
+}
+
+// ── ARRANGE MODE ──────────────────────────────────────────────
+
+function stArrangeNextTuesdayBase() {
+  var d = new Date();
+  d.setHours(0, 0, 0, 0);
+  var daysUntil = (2 - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + daysUntil);
+  return d;
+}
+
+function stArrToolbarHtml() {
+  var arr = st.arrangeMode;
+  var html = '<div class="arr-mode-bar">';
+  html += '<span class="arr-mode-bar-title">Episodes</span>';
+  html += '<span class="arr-dirty-dot' + (arr && st.arrangeDirty ? ' visible' : '') + '" id="arrDirtyDot" title="Unsaved changes"></span>';
+  html += '<button class="arr-discard-btn' + (arr ? ' visible' : '') + '" id="arrDiscardBtn" onclick="stArrangeDiscard()">Discard</button>';
+  html += '<button class="arr-save-btn'    + (arr ? ' visible' : '') + '" id="arrSaveBtn" onclick="stSaveArrangeOrder()">Save</button>';
+  html += '<button class="arr-toggle-btn' + (arr ? ' active' : '') + '" onclick="stToggleArrangeMode()">Arrange</button>';
+  html += '</div>';
+  return html;
+}
+
+function stRenderEpisodesViewArrange(container) {
+  var episodes = state.episodes || [];
+  var epByUid  = {};
+  episodes.forEach(function(ep) { epByUid[ep.Episode_UID] = ep; });
+
+  var base = stArrangeNextTuesdayBase();
+
+  // Ordered future episodes with computed dates
+  var orderedItems = st.arrangeOrder.map(function(uid, i) {
+    var ep   = epByUid[uid];
+    var date = new Date(base.getTime());
+    date.setDate(date.getDate() + i * 7);
+    return ep ? { ep: ep, date: date, locked: false } : null;
+  }).filter(Boolean);
+
+  // Live episodes at fixed dates (shown in bands, drag-locked)
+  var liveItems = episodes
+    .filter(function(ep) { return String(ep.Status || '') === 'live'; })
+    .map(function(ep) {
+      var d = ep.Release_Date ? new Date(ep.Release_Date) : null;
+      return d && !isNaN(d.getTime()) ? { ep: ep, date: d, locked: true } : null;
+    }).filter(Boolean);
+
+  // Merge + sort by date
+  var allItems = liveItems.concat(orderedItems);
+  allItems.sort(function(a, b) { return a.date.getTime() - b.date.getTime(); });
+
+  // Group by month
+  var now = new Date();
+  var monthGroups = {}, monthOrder = [];
+  allItems.forEach(function(item) {
+    var d     = item.date;
+    var key   = d.getFullYear() + '-' + d.getMonth();
+    var month = d.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+    var label = d.getFullYear() === now.getFullYear() ? month : month + ' ' + d.getFullYear();
+    if (!monthGroups[key]) { monthGroups[key] = { label: label, items: [] }; monthOrder.push(key); }
+    monthGroups[key].items.push(item);
+  });
+
+  // Left column with drop zones between draggable cards
+  var leftHtml = '';
+  if (!monthOrder.length) {
+    leftHtml = stArrDropZoneHtml(0) + '<div class="st-ep-empty">Drag episodes here to schedule them.</div>';
+  } else {
+    var insertIdx = 0; // tracks position in st.arrangeOrder for drop zone numbering
+    monthOrder.forEach(function(key) {
+      var g = monthGroups[key];
+      leftHtml += '<div class="st-ep-band"><div class="st-ep-band-header">' + g.label + '</div>';
+      g.items.forEach(function(item) {
+        if (!item.locked) leftHtml += stArrDropZoneHtml(insertIdx);
+        leftHtml += stRenderEpArrCard(item.ep, item.date, item.locked);
+        if (!item.locked) insertIdx++;
+      });
+      // Trailing drop zone after each band's last draggable card
+      leftHtml += stArrDropZoneHtml(insertIdx);
+      leftHtml += '</div>';
+    });
+  }
+
+  // Right column
+  var upcomingEps = episodes.filter(function(ep) { return String(ep.Status || '') === 'upcoming'; });
+  var tbdEps      = st.arrangeTbdIds.map(function(uid) { return epByUid[uid]; }).filter(Boolean);
+
+  var rightHtml = '';
+  if (upcomingEps.length) {
+    rightHtml += '<div class="st-ep-region"><div class="st-ep-band-header">Upcoming Recordings</div>';
+    upcomingEps.forEach(function(ep) { rightHtml += stRenderEpUpcomingCard(ep); });
+    rightHtml += '</div>';
+  }
+
+  rightHtml += '<div class="st-ep-region"><div class="st-ep-band-header">Unscheduled</div>';
+  tbdEps.forEach(function(ep) { rightHtml += stRenderEpArrTbdCard(ep); });
+  rightHtml += '<div class="arr-tbd-drop" id="arrTbdDrop"' +
+               ' ondragover="arrTbdOver(event)" ondragleave="arrTbdLeave(event)" ondrop="arrTbdDrop(event)">' +
+               (tbdEps.length ? '' : 'Drag here to unschedule') + '</div>';
+  rightHtml += '</div>';
+
+  container.innerHTML =
+    stArrToolbarHtml() +
+    '<div style="display:flex;flex:1;min-height:0;overflow:hidden">' +
+      '<div class="st-ep-bands-col">'   + leftHtml  + '</div>' +
+      '<div class="st-ep-regions-col">' + rightHtml + '</div>' +
+    '</div>';
+
+  lucide.createIcons();
+}
+
+function stArrDropZoneHtml(insertIdx) {
+  return '<div class="arr-drop-zone" data-idx="' + insertIdx + '"' +
+         ' ondragover="arrDzOver(' + insertIdx + ',event)"' +
+         ' ondragleave="arrDzLeave(' + insertIdx + ',event)"' +
+         ' ondrop="arrDzDrop(' + insertIdx + ',event)"></div>';
+}
+
+// Arrange mode band card — draggable, no task expansion.
+function stRenderEpArrCard(ep, computedDate, locked) {
+  var uid      = esc(ep.Episode_UID);
+  var name     = esc(ep.Guest_Name || 'Unknown Guest');
+  var dateStr  = computedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', weekday: 'short' }).toUpperCase();
+  var stateInfo = stGetEpStateIcon(ep);
+  var classes  = 'st-ep-band-card' + (locked ? ' arr-locked' : '');
+  var dragAttrs = locked ? '' :
+    ' draggable="true"' +
+    ' ondragstart="arrDragStart(\'' + uid + '\',event)"' +
+    ' ondragend="arrDragEnd(event)"';
+
+  var html = '<div class="' + classes + '"' + dragAttrs + ' id="arr-card-' + uid + '">';
+  html += '<div class="st-ep-card-body" style="cursor:' + (locked ? 'default' : 'grab') + '">';
+  html += '<div class="st-ep-card-layout">';
+  html += '<div class="st-ep-card-left">';
+  if (!locked) html += '<svg class="arr-drag-handle" width="12" height="12" data-lucide="grip-vertical" style="display:inline-block;vertical-align:middle;margin-right:4px"></svg>';
+  html += '<span class="st-ep-card-name">' + name + '</span>';
+  html += '<div class="st-ep-card-dateline">' + esc(dateStr) + (locked ? ' — live' : '') + '</div>';
+  html += '</div>';
+  html += '<div class="st-ep-card-right">';
+  if (stateInfo && stateInfo.label) {
+    html += '<div class="st-ep-card-state-row"><span class="st-ep-card-state-label">' + esc(stateInfo.label) + '</span></div>';
+  }
+  html += '</div>';
+  html += '</div></div></div>';
+  return html;
+}
+
+// TBD side card in arrange mode — draggable into bands.
+function stRenderEpArrTbdCard(ep) {
+  var uid  = esc(ep.Episode_UID);
+  var name = esc(ep.Guest_Name || 'Unknown Guest');
+  var stat = stGetEpStateLine(ep);
+  var html = '<div class="st-ep-side-card" draggable="true"' +
+             ' ondragstart="arrDragStart(\'' + uid + '\',event)"' +
+             ' ondragend="arrDragEnd(event)" style="cursor:grab">';
+  html += '<div class="st-ep-side-body">';
+  html += '<div class="st-ep-side-name">' + name + '</div>';
+  if (stat) html += '<div class="st-ep-side-label">' + esc(stat) + '</div>';
+  html += '</div>';
+  html += '<svg class="arr-drag-handle" width="18" height="18" data-lucide="grip-vertical"></svg>';
+  html += '</div>';
+  return html;
+}
+
+// Toggle arrange mode on/off.
+function stToggleArrangeMode() {
+  if (st.arrangeMode) {
+    if (st.arrangeDirty && !confirm('Discard unsaved arrangement?')) return;
+    stArrangeExit(true);
+  } else {
+    stArrangeEnter();
+  }
+}
+
+function stArrangeEnter() {
+  var episodes = state.episodes || [];
+  var future = [], tbd = [];
+  episodes.forEach(function(ep) {
+    var s     = String(ep.Status || '');
+    var rd    = ep.Release_Date ? new Date(ep.Release_Date) : null;
+    var hasRd = rd && !isNaN(rd.getTime());
+    if (s === 'upcoming' || s === 'live' || s === 'archived') return;
+    if (hasRd) future.push(ep);
+    else tbd.push(ep);
+  });
+  future.sort(function(a, b) { return new Date(a.Release_Date).getTime() - new Date(b.Release_Date).getTime(); });
+
+  st.arrangeMode   = true;
+  st.arrangeDirty  = false;
+  st.arrangeOrder  = future.map(function(ep) { return ep.Episode_UID; });
+  st.arrangeTbdIds = tbd.map(function(ep) { return ep.Episode_UID; });
+  stRenderEpisodesView();
+}
+
+function stArrangeDiscard() {
+  if (!confirm('Discard unsaved arrangement?')) return;
+  stArrangeExit(true);
+}
+
+function stArrangeExit(rerender) {
+  st.arrangeMode   = false;
+  st.arrangeDirty  = false;
+  st.arrangeOrder  = [];
+  st.arrangeTbdIds = [];
+  if (rerender) stRenderEpisodesView();
+}
+
+// Returns true if safe to navigate away; false (with user prompt) if dirty draft.
+function stArrangeLeaveCheck() {
+  if (!st.arrangeMode || !st.arrangeDirty) return true;
+  return confirm('You have an unsaved arrangement. Leave anyway?');
+}
+
+function stSaveArrangeOrder() {
+  var btn = document.getElementById('arrSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) {
+        showToast('Save failed: ' + (res && res.error ? res.error : 'unknown'), true);
+        if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+        return;
+      }
+      stArrangeExit(false);
+      _cacheInvalidate('episodes');
+      google.script.run
+        .withSuccessHandler(function(eps) {
+          if (eps) state.episodes = eps;
+          stRenderEpisodesView();
+          showToast('Schedule saved.');
+        })
+        .withFailureHandler(function() { stRenderEpisodesView(); })
+        .getEpisodes();
+    })
+    .withFailureHandler(function(err) {
+      showToast('Error: ' + ((err && err.message) || err), true);
+      if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+    })
+    .saveArrangeOrder(st.arrangeOrder);
+}
+
+// ── DRAG-AND-DROP ─────────────────────────────────────────────
+
+function arrDragStart(uid, event) {
+  st._arrangeDragSrc = uid;
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', uid);
+  var card = document.getElementById('arr-card-' + uid);
+  if (card) setTimeout(function() { card.classList.add('arr-dragging'); }, 0);
+}
+
+function arrDragEnd(event) {
+  st._arrangeDragSrc = null;
+  document.querySelectorAll('.arr-dragging').forEach(function(el) { el.classList.remove('arr-dragging'); });
+  document.querySelectorAll('.arr-over').forEach(function(el) { el.classList.remove('arr-over'); });
+}
+
+function arrDzOver(insertIdx, event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.arr-drop-zone').forEach(function(el) { el.classList.remove('arr-over'); });
+  var dz = document.querySelector('.arr-drop-zone[data-idx="' + insertIdx + '"]');
+  if (dz) dz.classList.add('arr-over');
+}
+
+function arrDzLeave(insertIdx, event) {
+  var dz = document.querySelector('.arr-drop-zone[data-idx="' + insertIdx + '"]');
+  if (dz) dz.classList.remove('arr-over');
+}
+
+function arrDzDrop(insertIdx, event) {
+  event.preventDefault();
+  var uid = event.dataTransfer.getData('text/plain') || st._arrangeDragSrc;
+  if (!uid) return;
+
+  var wasInOrder = st.arrangeOrder.indexOf(uid);
+  var wasInTbd   = st.arrangeTbdIds.indexOf(uid);
+
+  if (wasInOrder !== -1) {
+    st.arrangeOrder.splice(wasInOrder, 1);
+    // Adjust target index when source was before the target
+    if (wasInOrder < insertIdx) insertIdx--;
+  }
+  if (wasInTbd !== -1) st.arrangeTbdIds.splice(wasInTbd, 1);
+
+  st.arrangeOrder.splice(insertIdx, 0, uid);
+  st.arrangeDirty = true;
+  stRenderEpisodesView();
+}
+
+function arrTbdOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  var el = document.getElementById('arrTbdDrop');
+  if (el) el.classList.add('arr-over');
+}
+
+function arrTbdLeave(event) {
+  var el = document.getElementById('arrTbdDrop');
+  if (el) el.classList.remove('arr-over');
+}
+
+function arrTbdDrop(event) {
+  event.preventDefault();
+  var uid = event.dataTransfer.getData('text/plain') || st._arrangeDragSrc;
+  if (!uid) return;
+  var wasInOrder = st.arrangeOrder.indexOf(uid);
+  if (wasInOrder === -1) return; // already TBD or unknown
+  st.arrangeOrder.splice(wasInOrder, 1);
+  if (st.arrangeTbdIds.indexOf(uid) === -1) st.arrangeTbdIds.push(uid);
+  st.arrangeDirty = true;
+  stRenderEpisodesView();
+}
+
+// ── CARD EDIT MODE ────────────────────────────────────────────
+
+// Double-click on episode name → inline edit; blur commits to server.
+function stEpNameDblClick(uid, event) {
+  var span = event.target;
+  var orig = span.textContent;
+  span.contentEditable = 'true';
+  span.focus();
+  span.onblur = function() {
+    span.contentEditable = 'false';
+    var newName = span.textContent.trim();
+    if (!newName || newName === orig) { span.textContent = orig; return; }
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.ok) { showToast('Name update failed.', true); span.textContent = orig; return; }
+        (state.episodes || []).forEach(function(ep) {
+          if (ep.Episode_UID === uid) ep.Guest_Name = newName;
+        });
+        _cacheInvalidate('episodes');
+      })
+      .withFailureHandler(function() { span.textContent = orig; })
+      .updateEpisodeName(uid, newName);
+  };
+  span.onkeydown = function(e) {
+    if (e.key === 'Enter')  { e.preventDefault(); span.blur(); }
+    if (e.key === 'Escape') { span.textContent = orig; span.blur(); }
+  };
+}
+
+// Load completed tasks for the episode's expanded card section (lazy, once per expand).
+function stLoadEpCompletedTasks(uid) {
+  var el = document.getElementById('stEpCompleted-' + uid);
+  if (!el || el.dataset.loaded) return;
+  el.dataset.loaded = '1';
+  el.innerHTML = '<div class="st-ep-task-empty">Loading&hellip;</div>';
+  google.script.run
+    .withSuccessHandler(function(tasks) {
+      if (!tasks || !tasks.length) { el.innerHTML = ''; return; }
+      var html = '';
+      tasks.forEach(function(t) {
+        var tid = esc(t.Task_ID);
+        html += '<div class="st-ep-completed-task" id="ep-comp-' + tid + '">';
+        html += '<span class="st-ep-completed-title">' + esc(t.Action_Title) + '</span>';
+        html += '<button class="st-ep-uncomplete-btn" onclick="stUncompleteTask(\'' + tid + '\',' + t._rowIndex + ')">Undo</button>';
+        html += '</div>';
+      });
+      el.innerHTML = html;
+    })
+    .withFailureHandler(function() { el.innerHTML = ''; })
+    .getEpisodeCompletedTasks(uid);
+}
+
+function stUncompleteTask(taskId, rowIndex) {
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.ok) { showToast('Failed to reactivate task.', true); return; }
+      var el = document.getElementById('ep-comp-' + taskId);
+      if (el) el.remove();
+      showToast('Task reactivated.');
+      _cacheInvalidate('tasks');
+      google.script.run
+        .withSuccessHandler(function(tasks) {
+          if (tasks) state.tasks = tasks;
+          stRenderEpisodesView();
+        })
+        .getTasks();
+    })
+    .withFailureHandler(function(err) { showToast('Error: ' + ((err && err.message) || err), true); })
+    .uncompleteTask(rowIndex);
 }
 
 // ── BUCKETS WORKSPACE ────────────────────────────────────────
@@ -7958,16 +8708,46 @@ function stLoadRailReels(uid) {
   var list = document.getElementById('stRailReelList');
   if (!list) return;
   if (!uid) { stRenderRailReelList(); return; }
-  list.innerHTML = '<div class="st-reel-empty">Loading…</div>';
+
+  var entry = _cacheGet('reels', uid);
+  if (entry) {
+    st_reels = entry.data;
+    stRenderRailReelList();
+  } else {
+    list.innerHTML = '<div class="st-reel-empty">Loading…</div>';
+  }
+
   google.script.run
-    .withSuccessHandler(function(reels) {
-      st_reels = reels || [];
-      stRenderRailReelList();
+    .withSuccessHandler(function(versions) {
+      if (_cacheIsStale('reels', uid, versions)) {
+        google.script.run
+          .withSuccessHandler(function(reels) {
+            var data = reels || [];
+            _cacheSet('reels', uid, data, { asset_library: versions.asset_library });
+            st_reels = data;
+            stRenderRailReelList();
+          })
+          .withFailureHandler(function() {
+            if (!entry) list.innerHTML = '<div class="st-reel-empty">Could not load reels.</div>';
+          })
+          .getReelsForEpisode(uid);
+      }
     })
     .withFailureHandler(function() {
-      list.innerHTML = '<div class="st-reel-empty">Could not load reels.</div>';
+      // getAllVersions failed — fetch without caching; next nav-in retries
+      if (!entry) {
+        google.script.run
+          .withSuccessHandler(function(reels) {
+            st_reels = reels || [];
+            stRenderRailReelList();
+          })
+          .withFailureHandler(function() {
+            list.innerHTML = '<div class="st-reel-empty">Could not load reels.</div>';
+          })
+          .getReelsForEpisode(uid);
+      }
     })
-    .getReelsForEpisode(uid);
+    .getAllVersions();
 }
 
 function stRenderRailReelList() {
@@ -7994,7 +8774,7 @@ function stRenderRailReelList() {
     var card    = document.createElement('div');
     card.className = 'st-reel-card' + (st.selectedReelId === id ? ' active' : '');
     card.setAttribute('data-reel-id', id);
-    var summary  = String(r.Reel_Summary_Clean || '');
+    var summary  = String(r.Reel_Summary || '');
     var thumbSrc = r.Drive_File_ID
       ? 'https://drive.google.com/thumbnail?id=' + r.Drive_File_ID + '&sz=w200'
       : '';
@@ -8269,7 +9049,6 @@ function stSetDesignTab(tab) {
 function stLoadDesignEpisode(uid) {
   var videoWrap = document.getElementById('stEpVideoWrap');
   if (!videoWrap) return;
-  videoWrap.innerHTML = '<div class="st-ep-player-notice"><div class="spinner" style="margin:0 auto;border-top-color:#fff"></div></div>';
 
   var ep = state.episodes && state.episodes.find(function(e) { return e.Episode_UID === uid; });
   epReviewState.episodeUid      = uid;
@@ -8280,32 +9059,81 @@ function stLoadDesignEpisode(uid) {
   epChatReset(uid);
   stEpRenderBrowser(uid, ep);
 
+  var urlEntry = _cacheGet('episodeUrl', uid);
+  var revEntry = _cacheGet('episodeRev', uid);
+
+  // Render from cache immediately — no spinner on return visit
+  if (urlEntry) {
+    _stEpApplyStreamUrl(urlEntry.data);
+  } else {
+    videoWrap.innerHTML = '<div class="st-ep-player-notice"><div class="spinner" style="margin:0 auto;border-top-color:#fff"></div></div>';
+  }
+  if (revEntry) _stEpApplyRevisions(revEntry.data);
+
+  // One getAllVersions() call covers stale check (cache hit) and version recording (cache miss).
+  // episodeUrl: no version gate — fetched only on miss, cached without versionsAtFetch.
+  // episodeRev: gates on `episodes` domain.
   google.script.run
-    .withSuccessHandler(function(res) {
-      var wrap = document.getElementById('stEpVideoWrap');
-      if (!wrap) return;
-      if (res && res.url) {
-        wrap.innerHTML = '<div class="rv-player-wrap"><video id="stEpVideo" src="' + res.url + '" controls playsinline preload="metadata"></video></div>';
-      } else {
-        wrap.innerHTML = '<div class="st-ep-player-notice">' + (res && res.error ? esc(res.error) : 'No video found.') + '</div>';
+    .withSuccessHandler(function(versions) {
+      if (!urlEntry) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            _cacheSet('episodeUrl', uid, res); // no versionsAtFetch — UID-keyed, 8h safe
+            _stEpApplyStreamUrl(res);
+          })
+          .withFailureHandler(function() {
+            var w = document.getElementById('stEpVideoWrap');
+            if (w) w.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
+          })
+          .getEpisodeStreamUrl(uid);
+      }
+      if (_cacheIsStale('episodeRev', uid, versions)) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            _cacheSet('episodeRev', uid, res, { episodes: versions.episodes });
+            _stEpApplyRevisions(res);
+          })
+          .withFailureHandler(function() {})
+          .getEpisodeRevisionHistory(uid);
       }
     })
     .withFailureHandler(function() {
-      var wrap = document.getElementById('stEpVideoWrap');
-      if (wrap) wrap.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
-    })
-    .getEpisodeStreamUrl(uid);
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (res && res.rows && res.rows.length) {
-        var last = res.rows[res.rows.length - 1];
-        epReviewState.revisionRound = last.revisionRound || 0;
+      // getAllVersions failed — fetch without caching; next nav-in retries
+      if (!urlEntry) {
+        google.script.run
+          .withSuccessHandler(function(res) { _stEpApplyStreamUrl(res); })
+          .withFailureHandler(function() {
+            var w = document.getElementById('stEpVideoWrap');
+            if (w) w.innerHTML = '<div class="st-ep-player-notice">Could not load video.</div>';
+          })
+          .getEpisodeStreamUrl(uid);
       }
-      stEpRenderRailFromHistory(res);
+      if (!revEntry) {
+        google.script.run
+          .withSuccessHandler(function(res) { _stEpApplyRevisions(res); })
+          .withFailureHandler(function() {})
+          .getEpisodeRevisionHistory(uid);
+      }
     })
-    .withFailureHandler(function() {})
-    .getEpisodeRevisionHistory(uid);
+    .getAllVersions();
+}
+
+function _stEpApplyStreamUrl(res) {
+  var wrap = document.getElementById('stEpVideoWrap');
+  if (!wrap) return;
+  if (res && res.url) {
+    wrap.innerHTML = '<div class="rv-player-wrap"><video id="stEpVideo" src="' + res.url + '" controls playsinline preload="metadata"></video></div>';
+  } else {
+    wrap.innerHTML = '<div class="st-ep-player-notice">' + (res && res.error ? esc(res.error) : 'No video found.') + '</div>';
+  }
+}
+
+function _stEpApplyRevisions(res) {
+  if (res && res.rows && res.rows.length) {
+    var last = res.rows[res.rows.length - 1];
+    epReviewState.revisionRound = last.revisionRound || 0;
+  }
+  stEpRenderRailFromHistory(res);
 }
 
 function stEpRenderBrowser(uid, ep) {
@@ -9041,6 +9869,8 @@ function stEpRequestRevisions(episodeUid) {
       if (state.currentEpisode && state.currentEpisode.Episode_UID === episodeUid) {
         state.currentEpisode.Video_Status = 'revision_requested';
       }
+      _cacheInvalidate('episodeRev', episodeUid);
+      _cacheInvalidate('schedule', episodeUid);
       showToast('Revisions requested — Audra has been notified.');
     })
     .withFailureHandler(function(err) {
@@ -9073,6 +9903,8 @@ function stEpApprove(episodeUid) {
             '<div class="rv-notes-label">Leave a note</div>' +
             '<div class="ep-composer-locked-notice">Episode approved.</div>';
         }
+        _cacheInvalidate('episodeRev', episodeUid);
+        _cacheInvalidate('schedule', episodeUid);
         showToast('Episode approved.');
       } else {
         showToast('Error: ' + (result && result.error ? result.error : 'unknown'), true);
@@ -9090,18 +9922,47 @@ function stEpApprove(episodeUid) {
 
 // ── DESIGN TAB — H&Q chips panel ─────────────────────────────
 function stLoadHqContent(uid) {
-  if (st.hqContent !== null) { stRenderHqPanel(); return; }
   var panel = document.getElementById('stHqPanel');
-  if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px">Loading…</div>';
+
+  var entry = _cacheGet('imagesHq', uid);
+  if (entry) {
+    st.hqContent = entry.data;
+    stRenderHqPanel();
+  } else {
+    if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px">Loading…</div>';
+  }
+
   google.script.run
-    .withSuccessHandler(function(res) {
-      st.hqContent = res || { hooks: [], quotes: [], imagePrompts: [] };
-      stRenderHqPanel();
+    .withSuccessHandler(function(versions) {
+      if (_cacheIsStale('imagesHq', uid, versions)) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            var data = res || { hooks: [], quotes: [], imagePrompts: [] };
+            _cacheSet('imagesHq', uid, data, { manifests: versions.manifests });
+            st.hqContent = data;
+            stRenderHqPanel();
+          })
+          .withFailureHandler(function() {
+            if (!entry && panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px;line-height:1.5">Could not load.<br>Run Vert Fairy to generate hooks.</div>';
+          })
+          .getEpisodeHooksAndQuotes(uid);
+      }
     })
     .withFailureHandler(function() {
-      if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px;line-height:1.5">Could not load.<br>Run Vert Fairy to generate hooks.</div>';
+      // getAllVersions failed — fetch without caching; next nav-in retries
+      if (!entry) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            st.hqContent = res || { hooks: [], quotes: [], imagePrompts: [] };
+            stRenderHqPanel();
+          })
+          .withFailureHandler(function() {
+            if (panel) panel.innerHTML = '<div style="font-size:11px;color:var(--text-3);padding:12px 10px;line-height:1.5">Could not load.<br>Run Vert Fairy to generate hooks.</div>';
+          })
+          .getEpisodeHooksAndQuotes(uid);
+      }
     })
-    .getEpisodeHooksAndQuotes(uid);
+    .getAllVersions();
 }
 
 function stRenderHqPanel() {
@@ -10085,7 +10946,15 @@ function goBack() {
 }
 
 function showEpisodeReview(episodeUid) {
-  openStudio('design');
+  var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
+  if (!ep) return;
+  state.currentEpisode = ep;
+  state.backTarget     = "episodeDetail";
+  hideAllViews();
+  document.getElementById("episodeReviewView").classList.add("active");
+  document.getElementById("backBtn").classList.add("visible");
+  document.getElementById("headerTitle").textContent = ep.Guest_Name || "Episode Review";
+  renderEpisodeReview(ep);
 }
 
 function showReelsReview(episodeUid) {
@@ -10117,7 +10986,7 @@ function renderEpisodeReview(ep) {
   epReviewState.episodeUid      = ep.Episode_UID;
   epReviewState.frozenTimestamp = null;
   epReviewState.revisionRound   = 0;
-  epReviewState.composerLocked  = ep.Video_Status === 'revision_requested';
+  epReviewState.composerLocked  = false; // authoritative lock set by getEpisodeRevisionHistory below
 
   var html = "";
 
@@ -10126,32 +10995,26 @@ function renderEpisodeReview(ep) {
   html += '<div class="rv-player-notice"><div class="spinner" style="margin:0 auto"></div></div>';
   html += "</div>";
 
-  // Compose loop rail
+  // Compose loop rail — always unlocked initially; server response locks if still revision_requested
   html += '<div class="rv-notes-card" id="epComposerCard">';
   html += '<div class="rv-notes-label">Leave a note</div>';
-  if (epReviewState.composerLocked) {
-    html += '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
-  } else {
-    html += '<div class="ep-composer-ts" id="epComposerTs">—</div>';
-    html += '<textarea class="ep-composer-textarea" id="epComposerText" placeholder="Note about this moment…" onfocus="epComposerFocus()" rows="3"></textarea>';
-    html += '<div class="ep-composer-actions">';
-    html += '<button class="ep-btn-cancel" onclick="epComposerCancel()">Cancel</button>';
-    html += '<button class="ep-btn-send" id="epComposerSendBtn" onclick="epComposerSend(\'' + uid + '\')">Send</button>';
-    html += "</div>";
-  }
+  html += '<div class="ep-composer-ts" id="epComposerTs">—</div>';
+  html += '<textarea class="ep-composer-textarea" id="epComposerText" placeholder="Note about this moment..." onfocus="epComposerFocus()" rows="3"></textarea>';
+  html += '<div class="ep-composer-actions">';
+  html += '<button class="ep-btn-cancel" onclick="epComposerCancel()">Cancel</button>';
+  html += '<button class="ep-btn-send" id="epComposerSendBtn" onclick="epComposerSend(\'' + uid + '\')">Send</button>';
+  html += "</div>";
   html += "</div>";
 
   // Revision history rail — populated async
   html += '<div id="epRevisionRail"></div>';
 
-  // Approve / Request Revisions
-  html += '<div class="task-card"><div class="task-actions">';
-  if (ep.Video_Status !== 'revision_requested') {
-    html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
-    html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
-    html += '<button class="btn btn-complete" id="epReviewReviseBtn" onclick="epRequestRevisions(\'' + uid + '\')">';
-    html += '<svg width="12" height="12" data-lucide="message-square"></svg> Request Revisions</button>';
-  }
+  // Approve / Request Revisions — always rendered; hidden by lock handler if still revision_requested
+  html += '<div class="task-card"><div class="task-actions" id="epReviewActions">';
+  html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
+  html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
+  html += '<button class="btn btn-complete" id="epReviewReviseBtn" onclick="epRequestRevisions(\'' + uid + '\')">';
+  html += '<svg width="12" height="12" data-lucide="message-square"></svg> Request Revisions</button>';
   html += "</div></div>";
 
   document.getElementById("episodeReviewContent").innerHTML = html;
@@ -10177,7 +11040,7 @@ function renderEpisodeReview(ep) {
     })
     .getProxyStreamUrl(ep.Episode_UID);
 
-  // Async: load revision history into rail
+  // Async: load revision history + authoritative lock state
   google.script.run
     .withSuccessHandler(function(res) {
       if (res && res.rows && res.rows.length) {
@@ -10185,6 +11048,18 @@ function renderEpisodeReview(ep) {
         epReviewState.revisionRound = last.revisionRound || 0;
       }
       epRenderRailFromHistory(res);
+      // If still in revision_requested, lock the composer and clear action buttons now
+      if (res && res.videoStatus === 'revision_requested') {
+        epReviewState.composerLocked = true;
+        var composerCard = document.getElementById('epComposerCard');
+        if (composerCard) {
+          composerCard.innerHTML =
+            '<div class="rv-notes-label">Leave a note</div>' +
+            '<div class="ep-composer-locked-notice">Revisions requested — waiting for Audra.</div>';
+        }
+        var actions = document.getElementById('epReviewActions');
+        if (actions) actions.innerHTML = '';
+      }
     })
     .withFailureHandler(function() {})
     .getEpisodeRevisionHistory(ep.Episode_UID);
@@ -10970,6 +11845,9 @@ function renderTaskButtons(task) {
     html += "</button>";
   } else if (ws === "Revise_Episode") {
     var revEpUid = esc(task.Episode_UID || "");
+    html += '<button class="btn btn-open-link" onclick="showEpisodeReview(\'' + revEpUid + '\')">';
+    html += '  <svg width="12" height="12" data-lucide="message-square"></svg> View Comments';
+    html += "</button>";
     html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeEpisodeRevisionTask(\'' + tid + "','" + revEpUid + '\')">';
     html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
     html += "</button>";
@@ -11106,6 +11984,12 @@ function completeTask(taskId, rowIndex) {
 // startEpisodeUpload → checks proxy existence → file picker or self-heal
 // onEpisodeFileSelected → mints upload URL → initiates session → chunked PUT
 // _onEpUploadComplete → calls GAS completeUploadEpisode (marks task, flips status, spawns Review)
+
+function startEpisodeReplace(taskId) {
+  var fileInput = document.getElementById("ep-file-" + taskId);
+  if (fileInput) fileInput.click();
+  else showToast("Upload control not found — refresh and try again.", true);
+}
 
 function startEpisodeUpload(taskId, rowIndex, episodeUid) {
   setButtonLoading("complete-" + taskId, true);

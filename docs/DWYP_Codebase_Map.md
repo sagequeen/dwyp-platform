@@ -24,7 +24,6 @@
 | `isStaging()` | Returns true if serving the /dev deployment. Fails closed to production. |
 | `getMasterSheetId()` | Routes all other sheet access — returns staging or production sheet ID. |
 | `bumpVersion(domain, callerName)` | Increments version stamp for a domain; all write paths must call this. |
-| `getAllVersions()` / `getDomainVersion()` | Read paths call these to check staleness before fetching. |
 | `callClaudeAPI(prompt, systemInstruction, callerName, history, options)` | All Claude LLM calls. |
 | `callGeminiAPIGrounded()` / `callGeminiAPINoSearch()` | Gemini paths (grounded = web search; no-search = structured extraction). |
 | `callGeminiImageConversational()` | Gemini multimodal image conversation. |
@@ -40,9 +39,8 @@
 | `upsertEpisodes(episodeData)` | Write-or-update an episode row (header-driven). |
 | `patchEpisodes(epUid, fields)` | Partial update of an existing episode row. |
 | `appendEpisodeLog(logConfig)` | Appends a row to Episode_Log tab (system or human note). |
-| `appendRevisionComment(...)` | Writes a revision comment to the episode's RevisionNotes doc. |
-| `draftPhaseEmail(emailConfig)` | Drafts a Gmail message (does not send). |
-| `dailyPulse()` | Time-triggered orchestrator; runs 4 loops: recording reminder, release reminder, video-ready detection, corpus sync. |
+| `appendRevisionComment(...)` | Writes a revision comment to Episode_Log. Episode_Log is the sole revision record. |
+| `dailyPulse()` | Time-triggered state-driven orchestrator (Stages 0–6, keyed on episode `Status`); `_pulse_*` helpers handle calendar intake, recording/release reminders, transcript-detect content chain, and final-video detect. |
 | `generateEpisodeUid()` / `generateContactId()` / `generateTaskId()` | ID generators. Sole authority for each ID type. |
 | `extractPrompt(sectionHeading)` | Reads a named prompt from the Master_Template sheet section. |
 | `extractSectionFromProse(proseText, sectionName)` | Parses a named section out of a prose doc (used by Artist + Vert). |
@@ -80,7 +78,7 @@
 
 ---
 
-**`vert_fairy.js`** — Content pipeline agent. Owns three pipeline tracks (A/B/C) and the Reel Editorial pass. All tracks auto-triggered by `dailyPulse()` Loop D except Track C (manual).
+**`vert_fairy.js`** — Content pipeline agent. Owns three pipeline tracks (A/B/C). All tracks auto-triggered by the `dailyPulse()` content chain (Stage 2 / `in_production`) except Track C (manual).
 
 | Function | One-line responsibility |
 |---|---|
@@ -88,31 +86,25 @@
 | `buildEpisodeIndexPrompt(context)` | Builds the structured prompt for Track A index generation. |
 | `buildEpisodeIndexV2(epUid, opts)` | **Track A.** Reads injected transcript via Claude; produces structured Episode Index v2 (.md) with speaker attribution, topic segments, ranked hooks/quotes. Patches `manifest.episode_index_v2`. |
 | `runEditorialPass(epUid, opts)` | **Track B.** Rewrites show notes in JT's voice using in-template brand voice sections + Episode Index v2. Patches `manifest.show_notes`. |
-| `materializeQuoteGraphicAssets(epUid, opts)` | **Track C (Bridge).** Reads Episode Index v2 for ranked hooks/quotes; writes Asset_Library rows (Slot_Tags, Quality_Score, Caption_Draft with signoff) for quote graphics and reel caption stubs. |
-| `runReelEditorialPass(epUid, {force=false})` | **Reel Editorial.** Batches all Reel-type AL rows for episode into one Claude call; writes cleaned Reel_Summary + Slot_Tags + Quality_Score. Idempotent (skips scored rows unless force:true). |
-| `_bridgeParseRankedItems_(sectionText, labelPrefix)` | Parses v2.3 HOOK N: / QUOTE N: blocks with inline SLOT_TAGS + QUALITY_SCORE; defensive defaults, vocabulary validation, clamping, all anomalies logged. |
-| `_parseReelEditorialOutput_(responseText)` | Parses Claude's reel editorial response into {asset_id, summary, slot_tags, quality_score} objects; same defensive rules as bridge parser. |
+| `materializeQuoteGraphicAssets(epUid, opts)` | **Track C (Bridge).** Reads Episode Index v2 for ranked hooks/quotes; writes Asset_Library rows (Caption_Host with signoff) for quote graphics and reel caption stubs. |
+| `_bridgeParseRankedItems_(sectionText, labelPrefix)` | Parses hooks (N. text) and QUOTE N: blocks; defensive defaults, vocabulary validation, all anomalies logged. |
 | `_appendCaptionSignoff_(captionText)` | Reads CAPTION_SIGNOFF from governance; appends to caption text; idempotent (no double-append). |
 
 ---
 
-**`artist_fairy.js`** — Image production agent. Owns slide deck population for all template types and PNG export.
+**`artist_fairy.js`** — Image production agent. **Stripped to single function (janitorial 2026-06-05):** `runArtistFairy` and all image-pipeline helpers deleted; sole survivor is `exportSlidesToPng`.
 
 | Function | One-line responsibility |
 |---|---|
-| `runArtistFairy(epUid)` | Orchestrator: builds placeholder map, populates each slide deck template, exports PNGs to Staging. |
-| `buildPlaceholderMap(...)` | Assembles all substitution values (hooks, quotes, image prompts, headshots) from manifest + show notes doc. |
-| `populateSlideDeck(...)` | Copies a template deck, substitutes placeholders, exports slides as PNG to a named subfolder. |
-| `processSlide(...)` / `processGroup(...)` | Walks slide elements and groups; applies text + image substitutions. |
-| `exportSlidesToPng(presentationId)` | Calls Slides API to export each slide as PNG; returns array of image blobs. |
+| `exportSlidesToPng(presentationId)` | Exports each slide in a presentation as PNG to the same Drive folder. Called from Track C / dev_tools Stage 5. |
 
 ---
 
-**`clerk_fairy.js`** — Webhook router. Owns `doPost()` exclusively. No business logic.
+**`clerk_fairy.js`** — Webhook router. Owns `doPost()` exclusively. No business logic. **No active routes (AD #24 rebuild queued).**
 
 | Function | One-line responsibility |
 |---|---|
-| `doPost(e)` | Parses webhook JSON; routes on `type` field to `scribeLetSchedule()`. |
+| `doPost(e)` | Parses webhook JSON; logs "no active routes" error for all payload types (Clerk rebuild queued, AD #24). |
 
 ---
 
@@ -124,21 +116,28 @@
 
 ---
 
-**`housekeeping.js`** — Nightly maintenance runner. Pipeline block parsing, subfolder repair, and episode archival.
+**`housekeeping.js`** — Nightly maintenance runner. Pipeline block parsing, subfolder repair, episode archival, and Mending Fairy AI repair pass.
 
 | Function | One-line responsibility |
 |---|---|
-| `runHousekeeping()` | Nightly entry point: runs per-episode maintenance then archive sweep. |
+| `runHousekeeping()` | Nightly entry point: runs per-episode maintenance (parsePipelineBlock → repairStagingSubfolders → runMendingFairy) then archive sweep. |
 | `parsePipelineBlock(epUid)` | Reads raw transcript, parses the DWYP PIPELINE DATA block, writes raw_hooks / raw_quotes / image_prompts to manifest. |
 | `repairStagingSubfolders(epUid)` | Ensures full Staging subfolder tree exists; creates any missing folders without touching existing ones. |
 | `archiveLiveEpisodes()` | Sweeps Episodes for Status=live where Release_Date + 5 days ≤ today; calls runFilingFairy() for each. |
 | `parseHooksSection()` / `parseQuotesSection()` / `parseImagePromptsSection()` | Section-specific parsers for the pipeline block. |
+| `runMendingFairy(epUid, status)` | Orchestrator: loads manifest + ledger, calls I4/I1/O1 ops, commits `mend_ledger` patch. Pre-release guard (`in_production`\|`ready_to_release`). |
+| `_mend_I4_txtRegen(epUid, prodFolderId, ledger)` | I4 op: writes missing `.txt` caption sidecars for PNGs in Manual_Exports/. Caption sourced from Asset_Library. T1 auto, 3-attempt backoff. |
+| `_mend_I4_buildCaptionMap(epUid)` | Reads Asset_Library for episode (skips reels); returns map of `_safeFilename(Display_Name)` → `Caption_Host`. |
+| `_mend_I1_reconcile(epUid, prodFolderId, manifest, ledger)` | I1 op: compares `guest_name` / `contact_id` between manifest and Episodes row. Fill-when-absent: backoff. Conflict: immediate task + `task_spawned`. |
+| `_mend_O1_guestBioEnrich(epUid, contactId, contact, ledger)` | O1 op: runs `runHeraldBio(contactId)` when Bio_Summary is empty or 'Enrichment Pending'. No signals: immediate task. Escalate: task with research hint. |
+| `_mendDecide(ledger, key, maxAttempts)` | Backoff axis: returns 'run' / 'skip' / 'escalate' based on ledger entry state and attempt count. |
+| `_mendUpdate(ledger, key, status, bumpAttempts)` | Writes/updates a ledger entry; bumps attempt count when bumpAttempts is true. |
 
 ---
 
 **`dev_tools.js`** — Manual test wrappers. Not deployed to production users. Safe to call from Apps Script editor.
 
-Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before running any wrapper. Covers: system triggers (`dailyPulse`, `checkCalendarForInterviews`), all three pipeline tracks + Reel Editorial pass, and Artist Fairy + PNG export.
+Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before running any wrapper. Covers: system triggers (`dailyPulse`, `checkCalendarForInterviews`), all three pipeline tracks, Artist Fairy + PNG export, and Mending Fairy (`test_runMendingFairy`).
 
 ---
 
@@ -150,20 +149,22 @@ Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before 
 |---|---|
 | **App shell** | `doGet(e)` — serves `dwyp_ui.html`; `sanitizeEmail()`, `validatePin()` |
 | **Versioning** | `getAllVersions()`, `getDomainVersion()`, `getDomainsBatch()` |
-| **Episodes** | `getEpisodes()`, `getActiveEpisodes()`, `getEpisodeManifest()`, `getEpisodeReviewContext()`, `approveEpisodeForRelease()`, `completeFinalEpisodeUpload()`, `completeReelRevision()` |
+| **Episodes** | `getEpisodes()`, `getActiveEpisodes()`, `getEpisodeManifest()`, `approveEpisodeForRelease()`, `completeFinalEpisodeUpload()`, `completeReelRevision()`, `removeFinalEpisodeUpload()`, `reconcileFinalEpisodeSlot()` |
 | **Tasks** | `getTasks()`, `createTask()`, `writeTaskComplete()`, `deleteTaskRow()` |
-| **Contacts** | `getContacts()`, `updateContactField()` |
-| **Social/Publish** | `getPublishSchedule()`, `placeAssetInSlot()`, `unscheduleAsset()`, `unscheduleAssetById()`, `rescheduleAsset()`, `addPostingSlot()`, `getSocialAssets()`, `writeSocialAssetStatus()` |
-| **Asset Library** | `getAssetLibraryRow()`, `patchAssetLibraryRow()`, `rejectAsset()`, `deleteSocialAssetByAssetLibraryId()`, `getSocialAssetCandidateCounts()`, `getAssetDisplayState()` |
-| **Canvas / Studio** | `saveAssetDraft()`, `exportAssetToDrive()`, `addToWeekAsImage()` |
+| **Contacts** | `getContacts()`, `updateContactField()`, `createContactFromApp()`, `enrichContactFromApp()` |
+| **Social / Assets** | `getPublishSchedule()`, `unscheduleAsset()`, `unscheduleAssetById()`, `getSocialAssets()`, `writeSocialAssetStatus()` |
+| **Schedule surface** | `getScheduleData()`, `placeAssetSchedule()`, `removeAssetFromSchedule()`, `sendImageToSchedule()`, `sendReelToSchedule()`, `unscheduleReel()`, `exportSingleScheduleAsset()`, `exportAllSchedule()` |
+| **Asset Library** | `getAssetLibraryRow()`, `patchAssetLibraryRow()`, `rejectAsset()`, `deleteSocialAssetByAssetLibraryId()`, `getSocialAssetCandidateCounts()`, `getAssetDisplayState()`, `updateCaption()` |
+| **Canvas / Studio** | `saveAssetDraft()`, `saveDerivativeAsset()` |
 | **Background Library** | `getBackgroundLibrary()`, `getPrecompBgImages()`, `uploadBackgroundToLibrary()`, `deleteBackgroundFromLibrary()`, `deleteBackgroundPhoto()`, `generateBackground()`, `saveBackgroundToLibrary()` |
 | **Review** | `listReviewFiles()`, `moveReviewFile()`, `submitEpisodeRevisionRequest()`, `submitImageRevision()`, `submitReelRevision()`, `submitEpisodeComments()`, `writeVideoStatus()` |
-| **Reels** | `getReelStreamUrl()`, `generateReelCaption()`, `getOrGenerateReelSummary()`, `ensureReelSummaries()`, `updateReelDisplayName()` |
-| **Content gen** | `generatePublishCaption()`, `generateReelTitleCard()`, `getEpisodeHooksAndQuotes()`, `enrichQuoteAssetsFromTranscript()`, `generateWithClaude()` |
+| **Reels** | `getReelStreamUrl()`, `getReelsForEpisode()`, `syncReelAssets()`, `generateReelCaption()`, `updateReelDisplayName()`, `requestReelRevision()`, `closeReelRevision()` |
+| **Content gen** | `getEpisodeHooksAndQuotes()` |
+| **Companion** | `companionChat()` — single entry point for all four surfaces (Episode, Images, Reels, Schedule) |
 | **Quick Captions** | `getQuickCaptions()`, `continueQuickCaption()` — Gemini multimodal caption flow |
 | **Fairy triggers** | `runVertFairyForEpisode()`, `approveGuestBriefEnrich()`, `triggerFilingFromTask()` |
 | **Logging** | `appendEpisodeLogEntry()` |
-| **Episode Index** | `stLoadEpisodeIndex()` — loads Episode Index v2 doc for Studio context |
+| **Episode Index** | `stLoadEpisodeIndex()` — loads full episode transcript for Studio context |
 
 ---
 
@@ -171,14 +172,14 @@ Paste the target episode UID into `ACTIVE_EP_UID` at the top of the file before 
 
 Surfaces:
 - **Episodes tab** — episode list, episode detail, review workflow
-- **Contacts tab** — contact list, contact detail
+- **Contacts surface (Studio)** — left-rail root item; card feed with in-place editing, desktop Add overlay, mobile Quick Add + dupe warn, per-card Enrich; mobile chrome below 700px (`body.ct-active`); right rail reserved for Phase 2 Companion. `ct-*` function/CSS family. Legacy #app-shell Contacts tab is dead chrome (shell never shown).
 - **Studio tab** — Guest-name root nav accordion (Images, Reels, Episode, Schedule per guest; one guest expanded at a time); Write → Brainstorm; Tasks → Episodes/Buckets. Design as standalone root surface retired (Hub May 2026). Canvas editor, H&Q chips, export wired under guest → Images/Reels. Episode view split: `#stEpVideoWrap` (top) + `#stEpShowNotesWrap` (bottom, inert). Rail Remodel Pass 1/1.5/1.6 complete.
 
 Key client-side patterns:
 - `google.script.run.withSuccessHandler(...).withFailureHandler(...)` — all server calls
 - `st` object / `stRagContext` — global Studio state; `stRagContext` holds raw Episode Index v2 blob loaded by `stLoadEpisodeIndex()` for all Claude chat calls
 - Render-on-send: Canvas_State JSON is the authored artifact; PNG rendered at export time via `exportAssetToDrive()`, not at save time
-- Version cache: client stores domain versions; checks `getAllVersions()` on load and before stale reads
+- Studio surface cache: `st._cache` — session-scoped in-memory cache for Images/Reels/Episode/Schedule. Helpers: `_cacheGet`, `_cacheSet`, `_cacheIsStale`, `_cacheInvalidate`. Pattern: cache hit → render immediately → background `getAllVersions()` staleness check → quiet refetch if bumped. `stSyncFlush()` — global cache flush triggered from avatar-menu Sync button; re-triggers captured surface loader in place.
 
 ---
 
@@ -202,7 +203,7 @@ RESEARCH
 
 RECORDING → (human step: Audra uploads finished transcript to Staging/Episode/)
 
-TRANSCRIPT PIPELINE — auto-triggered by dailyPulse() Loop D
+TRANSCRIPT PIPELINE — auto-triggered by dailyPulse() content chain (Stage 2 / in_production)
   fairy_circle.js: dailyPulse()
     → scans each non-complete episode's Staging/Episode/ folder for a transcript file
     → Condition A: transcript present + episode_index_v2 absent → buildEpisodeIndexV2 (Track A)
@@ -210,11 +211,8 @@ TRANSCRIPT PIPELINE — auto-triggered by dailyPulse() Loop D
     → At most one condition fires per episode per pulse run
     (Track C — materializeQuoteGraphicAssets — not yet auto-triggered; run manually via dev_tools.js)
 
-IMAGE PRODUCTION — manual
-  artist_fairy.js: runArtistFairy(epUid)  [invoked via dev_tools.js or manual trigger]
-    → buildPlaceholderMap() — hooks, quotes, image prompts, headshots
-    → populateSlideDeck() × N — each template type (host graphics, guest graphics, thumbnails)
-    → exportSlidesToPng() → writes PNGs to Staging/Images/
+IMAGE PRODUCTION — retired
+  artist_fairy.js: runArtistFairy() removed; file stripped to exportSlidesToPng() only.
 
 TRACK A — Episode Index v2
   vert_fairy.js: buildEpisodeIndexV2(epUid)
@@ -255,7 +253,7 @@ ARCHIVE
 All sheet access goes through `getMasterSheetId()`. The only exception is `getGovernance()`, which reads MASTER_SHEET_ID directly from Script Properties as a bootstrap step. Routing `getGovernance()` through the helper would create infinite recursion.
 
 ### Version Stamps
-All write paths call `bumpVersion(domain, callerName)`. Client reads `getAllVersions()` on load; stale check on cache miss. Domains: episodes, contacts, tasks, versions, social_assets, asset_library, background_library.
+All write paths call `bumpVersion(domain, callerName)`. Client reads `getAllVersions()` on load; stale check on cache miss. Domains (Versions tab): tasks, episodes, contacts, asset_library, image_library, manifests, governance_config, brand_voice, playbook, content_sensitivity, audit_trail.
 
 ### Episode Manifest
 `episode_manifest.json` lives in the episode's staging folder. It is the backbone of pipeline state — tracks phase, fairy dispatch history, asset doc IDs, and herald flags. Every pipeline stage reads and patches the manifest.
@@ -292,7 +290,12 @@ Triggers always run as production — `isStaging()` returns false in trigger con
 | Asset_Library | Bridge, Studio | All social asset candidates (images, reels, quote graphics) |
 | Social_Assets | Studio | Scheduled post records |
 | Versions | fairy_circle | Version stamps by domain |
-| Master_Template | Governance | Prompt library (read via `extractPrompt()`) |
+| Posting_Schedule | Audra | Slot template driving the week accordion (one row per slot) |
+| User_Registry | Audra | User identity, role, PIN, buckets |
+| Reference | — | Single-row config values (schema undocumented) |
+| Social_Posts | — | Scheduling sheet (schema undocumented in these docs) |
+
+> `Master_Template` is **not a sheet tab** — it is an external Google Doc read via `MASTER_TEMPLATE_ID` / `extractPrompt()`.
 
 ---
 
@@ -301,7 +304,6 @@ Triggers always run as production — `isStaging()` returns false in trigger con
 ```
 RAW_PRODUCTION/
   {EUID}_{GuestName}/          ← rawFolderId
-    ProductionNotes_{EUID}.gdoc
 
 STAGING_DRAFTS/
   {EUID}_{GuestName}/          ← Production_Folder_ID (stagingFolderId)

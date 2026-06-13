@@ -184,6 +184,25 @@ function test_dailyPulse() {
   console.log("[test_dailyPulse] END");
 }
 
+// SPOKE Asset Deletion §4 — runs the purge sweep in isolation (DESTRUCTIVE).
+// Deletes Asset_Library rejected rows whose episode Release_Date + 30d has passed,
+// and trashes their Drive files. No episode UID needed (system-level sweep).
+// Check Audit_Trail for PURGED / PURGE_SWEEP lines after running.
+function test_purgeRejectedAssets() {
+  console.log("[test_purgeRejectedAssets] START");
+  _pulse_purgeRejectedAssets("Daily_Pulse_TEST");
+  console.log("[test_purgeRejectedAssets] END");
+}
+
+// Scans Asset_Library for duplicate Asset_ID values (primary-key integrity).
+// Detection only — logs ASSET_ID_DUPLICATES warning + spawns one urgent
+// Data_Integrity task (idempotent while one is open). No data is modified.
+function test_checkAssetIdIntegrity() {
+  console.log("[test_checkAssetIdIntegrity] START");
+  _pulse_checkAssetIdIntegrity("Daily_Pulse_TEST");
+  console.log("[test_checkAssetIdIntegrity] END");
+}
+
 
 // =============================================================================
 // PULSE HARNESS — Single-episode end-to-end validation
@@ -484,6 +503,26 @@ function test_runFilingFairy() {
 function test_archiveLiveEpisodes() {
   archiveLiveEpisodes();
 }
+
+// =============================================================================
+// MENDING FAIRY
+// =============================================================================
+
+// Runs the full Mending Fairy pass for a single episode.
+// Reads the episode's current Status automatically so the pre-release guard
+// behaves exactly as it does in the nightly housekeeping run.
+function test_runMendingFairy() {
+  var epRow = getEpisodeRow(ACTIVE_EP_UID);
+  if (!epRow) {
+    console.log('[test_runMendingFairy] Episode not found: ' + ACTIVE_EP_UID);
+    return;
+  }
+  var status = String(epRow.Status || '');
+  console.log('[test_runMendingFairy] START -- ' + ACTIVE_EP_UID + ' status=' + status);
+  runMendingFairy(ACTIVE_EP_UID, status);
+  console.log('[test_runMendingFairy] END');
+}
+
 
 // =============================================================================
 // TASK PROJECTION MIGRATION

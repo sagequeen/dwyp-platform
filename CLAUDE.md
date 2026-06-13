@@ -110,9 +110,7 @@ Permanent docs only. Anything in repo or project knowledge not on this list is a
 | `DWYP_PreFlight_Staging_Verification.md` | 3 | Hub |
 
 **Active specs (temporary, deleted on incorporation):**
-- `DWYP_Outstanding_Build_Items.md` — Phase 3 prioritization inventory. Retires when items are sequenced into Build Playbook.
 - `DWYP_Index_Audit_Design.md` — pre-execution design doc. Becomes spoke prompt when picked up; deleted after incorporation.
-- `SPOKE_Reels_Surface.md` — in-flight spoke (items 83–84). Refresh required before resuming — warning block at top of doc lists specifics. Delete on completion.
 
 ---
 
@@ -124,7 +122,7 @@ Code pushes directly to production. Staging-first cadence retired May 2026.
 
 | | URL | Sheet |
 |---|---|---|
-| **Production** (`/exec`) | `https://script.google.com/macros/s/AKfycbzCed5Fmv9TNDf6ivQUcmhgUWWOyEVK4P3sxS8_KMQx7YOY6JeY7r-dh8jEw5DpecrI/exec` | `1p5ahHe4hgG6sHN4u13UyvEJWg5IwCkAfADjeqxwlTnw` |
+| **Production** (`/exec`) | `https://script.google.com/a/macros/wiseonewithin.com/s/AKfycbyzG5tG1YSSwNdJsVEffbnMUNuYBr3ivnAzRf3cu6ojTE6UYONS8umSciM2ENlR2wxT/exec` | `1p5ahHe4hgG6sHN4u13UyvEJWg5IwCkAfADjeqxwlTnw` |
 | **Staging** (`/dev`) | `https://script.google.com/a/macros/wiseonewithin.com/s/AKfycbwHRxyQ22Zi0TFwT3av5jf30MiPhxBtV9tjb4hMxm0/dev` | `13bXMjxEf_L-BFH69OtUGOU6ywxt6BTat1kO9ik46Swk` |
 
 Staging deployment exists but `STAGING_DEPLOYMENT_URL` is blanked in Governance_Config — `isStaging()` returns false everywhere, `getMasterSheetId()` always resolves production.
@@ -250,6 +248,8 @@ Do not silently proceed to the next item without confirming the State update is 
 
 ## What Not to Do
 
+- **No scriptlet delimiters outside real scriptlets in `dwyp_ui.html`.** The file is a GAS template: `<?` sequences evaluate at serve time EVERYWHERE — including inside JS comments and strings. A scriptlet-looking fragment in a comment serves a blank page (`ReferenceError` at template eval). Write "printing scriptlet" in prose; never the delimiters. Related: the `JSON.stringify` printing-scriptlet idiom double-encodes (contextual escaping already produces a JS string) — APP_CONFIG strips wrapping quotes via the startup normalizer; don't add new template values without routing them through it.
+- **ASCII-only in JS string literals.** Never emit smart/curly quotes (U+2018 `'`, U+2019 `'`, U+201C/D `"` `"`) inside JavaScript — especially in `innerHTML` strings. They are not valid string delimiters; one curly quote kills the entire script block and everything in it silently fails to parse. Use straight ASCII quotes only. Pattern: double-quote the JS string, single-quote HTML attributes inside it, apostrophes need no escaping. Verify zero non-ASCII bytes in any hand-authored UI string.
 - Do not invent design decisions. If a UI question doesn't have a decision in foundation docs, surface it as a hub-session topic.
 - Do not bypass routing helpers, schema patterns, or version-stamp invalidation.
 - Do not expand spoke scope unilaterally. Surface tangential issues; do not fix them.
@@ -258,3 +258,5 @@ Do not silently proceed to the next item without confirming the State update is 
 - Do not promote staging to production. That is a manual Audra step (Manage Deployments → New version).
 - Do not write supersede notices, what-this-displaces tables, or version-trail prose in any doc. See Documentation Integrity Mandate.
 - Do not load Tier 3 docs pre-emptively. Trigger-load only.
+- **`.st-ep-*` prefix collision.** Two unrelated class families share this prefix: the Studio Episode surface family (`st-ep-video`, `st-ep-notes`, etc.) and the Tasks → Episodes band/card family (`st-ep-cue`, `st-ep-completed-*`, etc.). When working on either surface, scope grep queries and edits explicitly to the intended family. A raw `.st-ep-*` grep returns matches from both.
+- **Render-site precision: "renders in X" ≠ "renders only in X."** When diagnosing cross-surface bugs (pane bleed, duplicate elements, height anomalies), require raw grep data on all render sites — not narrative summaries. Which function sets `.style.display` on a given element ID, and from which call sites? The only reliable diagnostic is a complete render-site inventory.

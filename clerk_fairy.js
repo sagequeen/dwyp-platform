@@ -2,20 +2,15 @@
 /**
  * DWYP Operations Platform — Clerk Fairy
  * File: clerk_fairy.gs
- * Version: 1.0 | March 2026
+ * Version: 1.1 | June 2026
  *
  * Clerk owns doPost() exclusively. It receives incoming webhook payloads,
  * reads the 'type' field, and dispatches to the correct fairy.
  * No business logic lives here — Clerk only routes.
  *
- * Routes:
- *   type: "invite"  → scribeLetSchedule(contactId, episodeUid)
- *
- * Expected payload shape (JSON body):
- *   { "type": "invite", "contactId": "uuid", "episodeUid": "EP-250321-1400" }
+ * Routes: none active — full rebuild queued (AD #24).
  *
  * Dependencies:
- *   scribeLetSchedule()  — scribe_fairy.gs
  *   logToAuditTrail()    — fairy_circle.gs
  */
 
@@ -38,41 +33,12 @@ function doPost(e) {
   var episodeUid = payload.episodeUid || null;
   var contactId = payload.contactId || null;
 
-  // ── Route ───────────────────────────────────────────────────
-  if (type === "invite") {
-    if (!contactId || !episodeUid) {
-      logToAuditTrail(actor, "error", episodeUid, contactId,
-        "Clerk received 'invite' payload missing contactId or episodeUid.", "error");
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: "error", message: "Missing contactId or episodeUid for invite route." }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    logToAuditTrail(actor, "state_change", episodeUid, contactId,
-      "Clerk dispatching to scribeLetSchedule for contact: " + contactId, "info");
-
-    try {
-      scribeLetSchedule(contactId, episodeUid);
-    } catch (err) {
-      logToAuditTrail(actor, "error", episodeUid, contactId,
-        "scribeLetSchedule threw after Clerk dispatch: " + err.message, "error");
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: "error", message: "Scribe Let's Schedule failed: " + err.message }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: "ok", route: "invite", contactId: contactId, episodeUid: episodeUid }))
-      .setMimeType(ContentService.MimeType.JSON);
-
-  } else {
-    // ── Unknown route ─────────────────────────────────────────
-    logToAuditTrail(actor, "error", episodeUid, contactId,
-      "Clerk received unknown payload type: " + type, "error");
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: "error", message: "Unknown route type: " + type }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  // ── No active routes — Clerk rebuild queued ─────────────────
+  logToAuditTrail(actor, "error", episodeUid, contactId,
+    "Clerk received payload type '" + type + "' — no active routes (Clerk rebuild queued, AD #24)", "error");
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: "error", message: "No active routes. Clerk rebuild pending." }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 

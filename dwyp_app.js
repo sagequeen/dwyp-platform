@@ -101,9 +101,11 @@ var EPISODE_LOG_COLS = {
   Entry_Type:      5,
   Asset_Type:      6,
   Body:            7,
-  Resolved:        8,
+  Resolved:        8,   // comment status: blank/false = open | resolved | declined | withdrawn
   Visible_To:      9,
-  Revision_Round:  10
+  Revision_Round:  10,
+  Resolved_At:     11,  // timestamp of the status write (resolve/decline/withdraw)
+  Resolution_Note: 12   // one-cell decline reason; JT reads it in the rail
 };
 
 // Social_Assets tab column map (13 columns — scheduling + Make integration only)
@@ -193,6 +195,7 @@ var EPISODES_COLS = {
   Final_Episode_ID:    12,
   Episode_URL:         13,
   Episode_Type:        14,
+  Upload_Started_At:   15,
 };
 
 
@@ -331,6 +334,11 @@ function doGet(e) {
   var gemsUrl       = cleanUrl(govMap["IMAGE_WORKSHOP_GEM"]);
   var notebooklmUrl = cleanUrl(govMap["NOTEBOOKLM_LINK"]);
   var ownerEmail    = Session.getEffectiveUser().getEmail();
+  // Producer identity from governance — same vocabulary as the User Registry /
+  // task assignment. Session.getEffectiveUser() is a Google-session value and
+  // does not reliably match PIN-login registry emails (client isOwner() bug,
+  // found 2026-06-12).
+  var producerEmail = cleanUrl(govMap["ASSIGNEE_PRODUCER"]);
 
   // User Registry — header-driven read for per-user bucket and default-bucket data.
   // Buckets and Default_Bucket columns are Audra hand-edits; may not exist yet.
@@ -365,6 +373,7 @@ function doGet(e) {
   template.gemsUrl       = gemsUrl;
   template.notebooklmUrl = notebooklmUrl;
   template.ownerEmail    = ownerEmail;
+  template.producerEmail = producerEmail;
   template.userRegistry  = JSON.stringify(userRegistry);
 
   return template.evaluate()
@@ -387,10 +396,17 @@ function getEpisodes() {
   var data    = sheet.getDataRange().getValues();
 
   var episodes = [];
+  var uploadStaleMs = _uploadStaleThresholdMs();
+  var nowMs         = Date.now();
   for (var i = 1; i < data.length; i++) {
     var row    = data[i];
     var status = row[EPISODES_COLS.Status - 1];
     if (status === "archived") continue;
+
+    var uploadStartedRaw = row[EPISODES_COLS.Upload_Started_At - 1];
+    var uploadStartedAt  = uploadStartedRaw ? String(uploadStartedRaw) : "";
+    var uploadStale      = uploadStartedAt
+      ? (nowMs - new Date(uploadStartedAt).getTime() > uploadStaleMs) : false;
 
     episodes.push({
       _rowIndex:            i + 1,
@@ -405,7 +421,9 @@ function getEpisodes() {
       Video_Status:         row[EPISODES_COLS.Video_Status - 1],
       Final_Episode_ID:     row[EPISODES_COLS.Final_Episode_ID - 1],
       Episode_URL:          row[EPISODES_COLS.Episode_URL - 1],
-      Episode_Type:         row[EPISODES_COLS.Episode_Type - 1]
+      Episode_Type:         row[EPISODES_COLS.Episode_Type - 1],
+      Upload_Started_At:    uploadStartedAt,
+      Upload_Stale:         uploadStale
     });
   }
 
@@ -462,12 +480,13 @@ function getTasks() {
  * @param {number} rowIndex - 1-based sheet row number (_rowIndex from task object)
  * @returns {object} { success: true } or { success: false, error: string }
  */
-function writeTaskComplete(rowIndex) {
+function writeTaskComplete(rowIndex, taskId) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
     var sheet   = ss.getSheetByName("Tasks");
 
+    rowIndex = _resolveTaskRow_(sheet, rowIndex, taskId);
     sheet.getRange(rowIndex, TASKS_COLS.Status).setValue("complete");
     sheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue(new Date());
     bumpVersion("tasks", "writeTaskComplete");
@@ -478,17 +497,49 @@ function writeTaskComplete(rowIndex) {
 }
 
 /**
+ * Resolves the true sheet row for a task before a row-addressed write.
+ * Guards completion-class writes against stale _rowIndex: rows shift when a
+ * row above is deleted, or when the client's task list has aged while
+ * fairies or the other user changed the sheet. Without this, a stale index
+ * silently strikes the wrong row.
+ *
+ * taskId is optional for back-compat: when absent, the raw rowIndex passes
+ * through unverified (legacy behavior). When present: verify the Task_ID at
+ * rowIndex; on mismatch, relocate by scanning the Task_ID column; if the
+ * task no longer exists, throw (callers surface the error, no write lands).
+ */
+function _resolveTaskRow_(sheet, rowIndex, taskId) {
+  if (!taskId) return rowIndex;
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error("Task " + taskId + " not found - Tasks tab is empty.");
+  var idColVals = sheet.getRange(1, TASKS_COLS.Task_ID, lastRow, 1).getValues();
+  if (rowIndex >= 2 && rowIndex <= lastRow &&
+      String(idColVals[rowIndex - 1][0]).trim() === String(taskId).trim()) {
+    return rowIndex;
+  }
+  for (var i = 1; i < idColVals.length; i++) {
+    if (String(idColVals[i][0]).trim() === String(taskId).trim()) {
+      logToAuditTrail("Tasks_Surface", "state_change", "", "",
+        "[INFO] Stale _rowIndex " + rowIndex + " for " + taskId + " relocated to row " + (i + 1) + ".", "INFO");
+      return i + 1;
+    }
+  }
+  throw new Error("Task " + taskId + " not found - it may have been deleted. Refresh and retry.");
+}
+
+/**
  * Deletes a task row. Manual tasks only — client enforces the gate before calling.
  * Called by Delete button (after client-side confirmation dialog).
  *
  * @param {number} rowIndex - 1-based sheet row number (_rowIndex from task object)
  * @returns {object} { success: true } or { success: false, error: string }
  */
-function deleteTaskRow(rowIndex) {
+function deleteTaskRow(rowIndex, taskId) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
     var sheet   = ss.getSheetByName("Tasks");
+    rowIndex = _resolveTaskRow_(sheet, rowIndex, taskId);
     sheet.deleteRow(rowIndex);
     bumpVersion("tasks", "deleteTaskRow");
     return { success: true };
@@ -651,6 +702,20 @@ function approveEpisodeForRelease(episodeUid) {
     var tEpCol    = tHeaders.indexOf("Episode_UID");
     var tWfCol    = tHeaders.indexOf("Workflow_Step");
     var tStCol    = tHeaders.indexOf("Status");
+    var tCaCol    = tHeaders.indexOf("Completed_At");
+
+    // Approve closes JT's review (AD #130c): complete any open Review_Episode row(s).
+    var nowApprove = new Date();
+    var closedReview = false;
+    for (var rv = 1; rv < tData.length; rv++) {
+      if (String(tData[rv][tEpCol]) !== String(episodeUid)) continue;
+      if (String(tData[rv][tWfCol]) !== "Review_Episode")   continue;
+      if (String(tData[rv][tStCol]) === "complete")         continue;
+      taskSheet.getRange(rv + 1, tStCol + 1).setValue("complete");
+      if (tCaCol !== -1) taskSheet.getRange(rv + 1, tCaCol + 1).setValue(nowApprove);
+      closedReview = true;
+    }
+    if (closedReview) bumpVersion("tasks", "approveEpisodeForRelease");
 
     for (var t = 1; t < tData.length; t++) {
       if (String(tData[t][tEpCol]) !== String(episodeUid))       continue;
@@ -1031,6 +1096,8 @@ function unscheduleAsset(episodeUid, slotId) {
     }
 
     bumpVersion("asset_library", "unscheduleAsset");
+    // #17 audit (2026-06-12): the SA row delete above mutates social_assets.
+    bumpVersion("social_assets", "unscheduleAsset");
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
@@ -1057,6 +1124,7 @@ function getAssetLibraryRow(assetId) {
       _rowNum:       i + 1,
       Asset_ID:      String(row[ASSET_LIBRARY_COLS.Asset_ID      - 1]),
       Episode_UID:   String(row[ASSET_LIBRARY_COLS.Episode_UID   - 1]),
+      Asset_Type:    String(row[ASSET_LIBRARY_COLS.Asset_Type    - 1] || ''),
       Drive_File_ID: String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1] || ''),
       Status:        String(row[ASSET_LIBRARY_COLS.Status        - 1]),
       Availability:  String(row[ASSET_LIBRARY_COLS.Availability  - 1]),
@@ -1086,6 +1154,10 @@ function patchAssetLibraryRow(assetId, fields) {
       var colIdx = ASSET_LIBRARY_COLS[colName];
       if (colIdx) alSheet.getRange(rowNum, colIdx).setValue(fields[colName]);
     });
+    // #17 audit (2026-06-12): helper owns its domain bump so no caller can
+    // forget it. Some callers also bump - double bumps are harmless
+    // (monotonic counter); a missed bump is the failure mode this prevents.
+    bumpVersion("asset_library", "patchAssetLibraryRow");
     break;
   }
 }
@@ -1115,6 +1187,8 @@ function deleteSocialAssetByAssetLibraryId(assetId) {
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]) !== String(assetId)) continue;
     saSheet.deleteRow(i + 1);
+    // #17 audit (2026-06-12): Social_Assets mutation must bump its own domain.
+    bumpVersion("social_assets", "deleteSocialAssetByAssetLibraryId");
     break;
   }
 }
@@ -1167,29 +1241,130 @@ function unscheduleAssetById(assetId) {
 }
 
 /**
- * Stub — logs to Audit_Trail and returns success.
- * Real Marcom trigger wired in Marcom spoke.
- * @param {string} episodeUid
- * @returns {{ success: boolean, error?: string }}
+ * Slot-occupancy guard (locked 2026-06-10, SPOKE Asset Deletion).
+ * An asset "occupies a slot" iff a Social_Assets row references its
+ * Asset_Library_ID with a non-empty Slot. Availability is deliberately NOT
+ * consulted: swipe placements never set it, so it is unreliable by construction.
+ * Shared by deleteReelPermanent (§1) and removeFromPool (§2) — both surface
+ * "unschedule first" rather than cascade through removeAssetFromSchedule.
+ * @param {string} assetId
+ * @returns {boolean}
  */
-function getOwnerEmail() {
-  return Session.getEffectiveUser().getEmail();
+function _assetOccupiesSlot_(assetId) {
+  var sheetId = getMasterSheetId();
+  var ss      = SpreadsheetApp.openById(sheetId);
+  var saName  = getGovernance("SOCIAL_ASSETS_TAB_NAME") || "Social_Assets";
+  var saSheet = ss.getSheetByName(saName);
+  if (!saSheet) return false;
+  var data = saSheet.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]) !== String(assetId)) continue;
+    if (String(data[i][SOCIAL_ASSETS_COLS.Slot - 1] || '').trim() !== '') return true;
+  }
+  return false;
 }
 
-function runMarcomForEpisode(episodeUid) {
+/**
+ * §1 — Reels surface permanent delete (locked SPOKE Asset Deletion, 2026-06-10).
+ * Available to both JT and Audra. Slot-blocked via the shared guard. Tombstones
+ * the AL row (Status -> rejected) and moves the MP4 to the episode's Reels/Delete
+ * subfolder so row + file survive until the purge job (§4) for eyeball-QA.
+ * This is a hard delete by intent — it does NOT go to Bank.
+ * @param {string} episodeUid
+ * @param {string} assetId
+ * @returns {{ ok: boolean, blocked?: boolean, error?: string }}
+ */
+function deleteReelPermanent(episodeUid, assetId) {
+  var agentName = 'Reel_Delete';
   try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    try {
-      var audit = ss.getSheetByName("Audit_Trail");
-      if (audit) {
-        audit.appendRow([new Date(), "DWYP_App", "runMarcomForEpisode", episodeUid]);
+    var alRow = getAssetLibraryRow(assetId);
+    if (!alRow) return { ok: false, error: 'Asset not found: ' + assetId };
+
+    // Shared slot-block guard — never cascade; require explicit unschedule first.
+    if (_assetOccupiesSlot_(assetId)) {
+      return { ok: false, blocked: true,
+        error: 'This reel is scheduled. Unschedule it first, then delete.' };
+    }
+
+    // Move the MP4 to Reels/Delete (survives until purge). Non-fatal: a Drive
+    // hiccup must not strand the tombstone. Get-or-create mirrors closeReelRevision.
+    if (alRow.Drive_File_ID) {
+      try {
+        var stagingId     = getStagingFolderIdByUid(episodeUid);
+        var stagingFolder = DriveApp.getFolderById(stagingId);
+        var reelsIt       = stagingFolder.getFoldersByName('Reels');
+        if (reelsIt.hasNext()) {
+          var reelsFolder = reelsIt.next();
+          var delIt       = reelsFolder.getFoldersByName('Delete');
+          var delFolder   = delIt.hasNext() ? delIt.next() : reelsFolder.createFolder('Delete');
+          DriveApp.getFileById(alRow.Drive_File_ID).moveTo(delFolder);
+        }
+      } catch (moveErr) {
+        logToAuditTrail(agentName, 'error', episodeUid, '',
+          '[WARNING] Could not move reel ' + alRow.Drive_File_ID +
+          ' to Reels/Delete: ' + moveErr.message, 'WARNING');
       }
-    } catch (logErr) { /* non-fatal — Audit_Trail may not exist yet */ }
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
+    }
+
+    patchAssetLibraryRow(assetId, { Status: 'rejected' });
+    bumpVersion('asset_library', agentName);
+    logToAuditTrail(agentName, 'human_action', episodeUid, '',
+      'Reel permanently deleted (tombstoned): Asset_ID=' + assetId +
+      ' file=' + (alRow.Drive_File_ID || 'none') + ' -> Reels/Delete', 'INFO');
+
+    return { ok: true };
+  } catch (e) {
+    logToAuditTrail(agentName, 'error', episodeUid, '',
+      'DELETE_FAILED for ' + assetId + ': ' + e.message, 'ERROR');
+    return { ok: false, error: e.message };
   }
+}
+
+/**
+ * §2 — Schedule surface "remove from pool" (locked SPOKE Asset Deletion, 2026-06-10).
+ * Available to both JT and Audra. Slot-blocked via the shared guard: never
+ * cascades through removeAssetFromSchedule — surfaces "unschedule first" instead.
+ *   Reel:          demote schedule -> candidate (returns to Reels surface; no Drive change).
+ *   Quote graphic: reject -> rejected tombstone (rendered file, if any, untouched until purge).
+ * Only asset_library is bumped — slot-blocked means no Social_Assets row is touched.
+ * @param {string} episodeUid
+ * @param {string} assetId
+ * @returns {{ ok: boolean, action?: string, blocked?: boolean, error?: string }}
+ */
+function removeFromPool(episodeUid, assetId) {
+  var agentName = 'Schedule_RemovePool';
+  try {
+    var alRow = getAssetLibraryRow(assetId);
+    if (!alRow) return { ok: false, error: 'Asset not found: ' + assetId };
+
+    if (_assetOccupiesSlot_(assetId)) {
+      return { ok: false, blocked: true,
+        error: 'This asset occupies a slot. Unschedule it first, then remove.' };
+    }
+
+    var isReel = String(alRow.Asset_Type || '').toLowerCase() === 'reel';
+    if (isReel) {
+      patchAssetLibraryRow(assetId, { Status: 'candidate', Availability: 'available' });
+      bumpVersion('asset_library', agentName);
+      logToAuditTrail(agentName, 'human_action', episodeUid, '',
+        'Reel demoted schedule->candidate (removed from pool): Asset_ID=' + assetId, 'INFO');
+      return { ok: true, action: 'demoted' };
+    }
+
+    patchAssetLibraryRow(assetId, { Status: 'rejected' });
+    bumpVersion('asset_library', agentName);
+    logToAuditTrail(agentName, 'human_action', episodeUid, '',
+      'Quote graphic rejected (removed from pool): Asset_ID=' + assetId, 'INFO');
+    return { ok: true, action: 'rejected' };
+  } catch (e) {
+    logToAuditTrail(agentName, 'error', episodeUid, '',
+      'REMOVE_FROM_POOL_FAILED for ' + assetId + ': ' + e.message, 'ERROR');
+    return { ok: false, error: e.message };
+  }
+}
+
+function getOwnerEmail() {
+  return Session.getEffectiveUser().getEmail();
 }
 
 /**
@@ -1868,29 +2043,6 @@ function saveImageToStaging(episodeUid, base64Data) {
 // ── REVIEW TASKS ─────────────────────────────────────────────────────────────
 
 /**
- * Returns the Drive file ID of the proxy video in the episode's Staging root.
- * Returns null if no file with a "proxy_" prefix is found.
- * @param {string} episodeUid
- * @returns {string|null}
- */
-function getProxyFileId(episodeUid) {
-  try {
-    var folderId = getStagingFolderIdByUid(episodeUid);
-    if (!folderId) return null;
-    var episodeFolderIt = DriveApp.getFolderById(folderId).getFoldersByName("Episode");
-    if (!episodeFolderIt.hasNext()) return null;
-    var files = episodeFolderIt.next().getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      if (file.getName().indexOf("proxy_") === 0) return file.getId();
-    }
-    return null;
-  } catch (err) {
-    throw new Error("getProxyFileId failed for " + episodeUid + ": " + err.message);
-  }
-}
-
-/**
  * Lists files in the root of Staging/[type]/ (Images or Reels).
  * DriveApp.getFiles() is non-recursive — Approved/Save/Delete subfolders are never traversed.
  * @param {string} episodeUid
@@ -1961,58 +2113,6 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
     return { success: true };
   } catch (err) {
     throw new Error("moveReviewFile failed for " + fileId + ": " + err.message);
-  }
-}
-
-/**
- * Returns proxy file ID, Video_Status, hasReviewTask flag, and any existing
- * Revise_Episode revision notes — one call for the Publish Episode accordion.
- * @param {string} episodeUid
- * @returns {{ proxyFileId, videoStatus, hasReviewTask, revisionNotes }}
- */
-function getEpisodeReviewContext(episodeUid) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-
-    // Video_Status from Episodes tab
-    var epSheet  = ss.getSheetByName("Episodes");
-    var epData   = epSheet.getDataRange().getValues();
-    var videoStatus = '';
-    for (var i = 1; i < epData.length; i++) {
-      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
-        videoStatus = String(epData[i][EPISODES_COLS.Video_Status - 1] || '');
-        break;
-      }
-    }
-
-    // Check Tasks: Review_Episode (open) + Revise_Episode notes
-    var tSheet = ss.getSheetByName("Tasks");
-    var tData  = tSheet.getDataRange().getValues();
-    var hasReviewTask = false;
-    var revisionNotes = '';
-    for (var j = 1; j < tData.length; j++) {
-      var row = tData[j];
-      if (String(row[TASKS_COLS.Episode_UID  - 1]) !== String(episodeUid)) continue;
-      var step   = String(row[TASKS_COLS.Workflow_Step - 1]);
-      var status = String(row[TASKS_COLS.Status        - 1]);
-      if (step === 'Review_Episode' && status !== 'complete') hasReviewTask = true;
-      if (step === 'Revise_Episode' && status !== 'complete') {
-        var notes = String(row[TASKS_COLS.Revision_Notes - 1] || '');
-        if (notes) revisionNotes = notes;
-      }
-    }
-
-    var proxyFileId = getProxyFileId(episodeUid);
-
-    return {
-      proxyFileId:   proxyFileId,
-      videoStatus:   videoStatus,
-      hasReviewTask: hasReviewTask,
-      revisionNotes: revisionNotes
-    };
-  } catch (err) {
-    return { proxyFileId: null, videoStatus: '', hasReviewTask: false, revisionNotes: '' };
   }
 }
 
@@ -2144,31 +2244,13 @@ function submitEpisodeComments(episodeUid, comments, sessionDate) {
  * @param {string} episodeUid
  * @returns {{ url: string, error?: string }}
  */
+/**
+ * Episode review playback URL. GCS is the sole proxy backend (AD #130a): this delegates
+ * to the V4-signed GCS path used by Studio so mobile/dashboard review streams the same
+ * episodes/{EUID}/proxy.mp4 object. The former Drive Episode/-folder scan is retired.
+ */
 function getProxyStreamUrl(episodeUid) {
-  try {
-    var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { url: '', error: 'Staging folder not found.' };
-    var epFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Episode');
-    if (!epFolderIt.hasNext()) return { url: '', error: 'Episode/ subfolder not found.' };
-    var epFolder = epFolderIt.next();
-    var files = epFolder.getFiles();
-    var proxyFile = null, anyVideoFile = null;
-    while (files.hasNext()) {
-      var f = files.next();
-      if (f.getName().indexOf('proxy_') === 0) { proxyFile = f; break; }
-      if (!anyVideoFile && f.getMimeType().indexOf('video/') === 0) anyVideoFile = f;
-    }
-    var target = proxyFile || anyVideoFile;
-    if (!target) return { url: '', error: 'No video file found in Episode/ folder.' };
-    target.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    var fileId = target.getId();
-    return {
-      url:        'https://drive.google.com/uc?id=' + fileId,
-      previewUrl: 'https://drive.google.com/file/d/' + fileId + '/preview'
-    };
-  } catch (e) {
-    return { url: '', error: e.message };
-  }
+  return getEpisodeStreamUrl(episodeUid);
 }
 
 /**
@@ -2254,6 +2336,53 @@ function getEpisodeStreamUrl(episodeUid) {
 }
 
 /**
+ * Upload-in-progress staleness threshold in ms (AD #130e). Governance key
+ * UPLOAD_STALE_MINUTES; defaults to 30 minutes if unset.
+ */
+function _uploadStaleThresholdMs() {
+  return (parseInt(getGovernance('UPLOAD_STALE_MINUTES') || '30', 10) || 30) * 60000;
+}
+
+/**
+ * Sets the durable upload-in-progress marker (Episodes col Upload_Started_At, ISO-8601)
+ * at upload session start, and flips an open Upload_Produced_Episode / Revise_Episode task
+ * to in_progress as a UI echo (AD #130e). Episode-scoped — getEpisodeUploadUrl is the single
+ * mint point for all three upload paths, so this covers them atomically. Non-fatal: never
+ * blocks the URL mint. Re-stamps on a self-heal re-upload, which is intended.
+ */
+function _markEpisodeUploadStarted(episodeUid) {
+  try {
+    patchEpisodes(episodeUid, { Upload_Started_At: new Date().toISOString() });
+    var taskSheet = SpreadsheetApp.openById(getMasterSheetId()).getSheetByName('Tasks');
+    var flipped = false;
+    if (taskSheet) {
+      var tData = taskSheet.getDataRange().getValues();
+      for (var r = 1; r < tData.length; r++) {
+        if (String(tData[r][TASKS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var ws = String(tData[r][TASKS_COLS.Workflow_Step - 1]);
+        if (ws !== 'Upload_Produced_Episode' && ws !== 'Revise_Episode') continue;
+        if (String(tData[r][TASKS_COLS.Status - 1]) !== 'open') continue;
+        taskSheet.getRange(r + 1, TASKS_COLS.Status).setValue('in_progress');
+        flipped = true;
+      }
+    }
+    bumpVersion('episodes', 'markEpisodeUploadStarted');
+    if (flipped) bumpVersion('tasks', 'markEpisodeUploadStarted');
+  } catch (e) {
+    logToAuditTrail('markEpisodeUploadStarted', 'error', episodeUid, '',
+      '[WARNING] Could not set upload-in-progress marker: ' + e.message, 'WARNING');
+  }
+}
+
+/**
+ * Clears the durable upload-in-progress marker (Upload_Started_At). Caller is
+ * responsible for bumpVersion('episodes', ...). Used by all upload completers and cancel.
+ */
+function _clearEpisodeUploadMarker(episodeUid) {
+  patchEpisodes(episodeUid, { Upload_Started_At: '' });
+}
+
+/**
  * Mints a V4-signed GCS POST URL for initiating a resumable upload of the episode proxy.
  * x-goog-resumable:start is included in signed headers — client must send it in the POST.
  * Config keys: REVIEW_GCS_BUCKET, GCS_SIGNER_SA, GCS_UPLOAD_EXPIRY_SECONDS (default 3600 = 1h).
@@ -2264,8 +2393,11 @@ function getEpisodeUploadUrl(episodeUid) {
     var signerSa  = getGovernance('GCS_SIGNER_SA');
     var expirySec = parseInt(getGovernance('GCS_UPLOAD_EXPIRY_SECONDS') || '3600', 10);
     if (!bucket || !signerSa) return { error: 'REVIEW_GCS_BUCKET or GCS_SIGNER_SA not configured.' };
-    return { url: _signV4('POST', 'episodes/' + episodeUid + '/proxy.mp4', expirySec, bucket, signerSa,
-                          { 'x-goog-resumable': 'start' }) };
+    var url = _signV4('POST', 'episodes/' + episodeUid + '/proxy.mp4', expirySec, bucket, signerSa,
+                      { 'x-goog-resumable': 'start' });
+    // Durable upload-in-progress marker — set at session start for all three upload paths.
+    _markEpisodeUploadStarted(episodeUid);
+    return { url: url };
   } catch (e) {
     return { error: e.message };
   }
@@ -2296,8 +2428,53 @@ function checkEpisodeProxyExists(episodeUid) {
 }
 
 /**
+ * Spawns a Review_Episode task for the host only when no open Review_Episode row exists
+ * for the episode (AD #130d spawn gate). Returns true if a new task was spawned.
+ * Shared by completeUploadEpisode and the unified revise completion.
+ */
+function _spawnReviewEpisodeIfNone(episodeUid, guestName, contactId) {
+  var taskSheet = SpreadsheetApp.openById(getMasterSheetId()).getSheetByName('Tasks');
+  if (taskSheet) {
+    var tData = taskSheet.getDataRange().getValues();
+    for (var r = 1; r < tData.length; r++) {
+      if (String(tData[r][TASKS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      if (String(tData[r][TASKS_COLS.Workflow_Step - 1]) !== 'Review_Episode') continue;
+      if (String(tData[r][TASKS_COLS.Status - 1]) !== 'complete') return false; // already open
+    }
+  }
+  spawnTask({
+    episodeUid:       episodeUid,
+    contactId:        contactId,
+    workflowStep:     'Review_Episode',
+    actionTitle:      'Review episode: ' + guestName,
+    assignee:         getGovernance('ASSIGNEE_HOST'),
+    assignedBy:       'The Fairy Team',
+    status:           'open',
+    priority:         'normal',
+    executiveSummary: 'The episode proxy for ' + guestName + ' is ready for your review.'
+  }, true);
+  return true;
+}
+
+/**
+ * Returns the Task_ID of an open (non-complete) Revise_Episode task for the episode, or ''.
+ */
+function _findOpenReviseEpisodeTaskId(episodeUid) {
+  var taskSheet = SpreadsheetApp.openById(getMasterSheetId()).getSheetByName('Tasks');
+  if (!taskSheet) return '';
+  var tData = taskSheet.getDataRange().getValues();
+  for (var r = 1; r < tData.length; r++) {
+    if (String(tData[r][TASKS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+    if (String(tData[r][TASKS_COLS.Workflow_Step - 1]) !== 'Revise_Episode') continue;
+    if (String(tData[r][TASKS_COLS.Status - 1]) === 'complete') continue;
+    return String(tData[r][TASKS_COLS.Task_ID - 1] || '');
+  }
+  return '';
+}
+
+/**
  * Completes the Upload_Produced_Episode task, flips Video_Status to 'review',
- * and spawns the Review_Episode task for the host.
+ * and spawns the Review_Episode task for the host (gated on no open Review_Episode).
  * @param {number} rowIndex  1-based Tasks sheet row
  * @param {string} episodeUid
  * @returns {{ success: boolean, error?: string }}
@@ -2321,26 +2498,73 @@ function completeUploadEpisode(rowIndex, episodeUid) {
       epSheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue('review');
       break;
     }
-    patchEpisodes(episodeUid, { Status: 'review' });
+    // Clear the durable upload-in-progress marker (AD #130e) alongside the status flip.
+    patchEpisodes(episodeUid, { Status: 'review', Upload_Started_At: '' });
 
     bumpVersion('episodes', 'completeUploadEpisode');
     bumpVersion('tasks',    'completeUploadEpisode');
 
-    spawnTask({
-      episodeUid:       episodeUid,
-      contactId:        contactId,
-      workflowStep:     'Review_Episode',
-      actionTitle:      'Review episode: ' + guestName,
-      assignee:         getGovernance('ASSIGNEE_HOST'),
-      assignedBy:       'The Fairy Team',
-      status:           'open',
-      priority:         'normal',
-      executiveSummary: 'The episode proxy for ' + guestName + ' is ready for your review.'
-    }, true);
+    // Spawn gate (AD #130d): only spawn Review_Episode if none is already open.
+    _spawnReviewEpisodeIfNone(episodeUid, guestName, contactId);
 
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Completes a proxy-slot replace upload (startProxyReplace path, A5 site #4). Routes
+ * through the unified revise completion when an open Revise_Episode exists — the slot
+ * replace IS the revised proxy, so it returns to JT (review + gated Review_Episode).
+ * Outside a revise cycle it just clears the marker, bumps, and logs.
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function completeProxyReplace(episodeUid) {
+  try {
+    var openReviseTaskId = _findOpenReviseEpisodeTaskId(episodeUid);
+    if (openReviseTaskId) {
+      return completeEpisodeRevision(episodeUid, openReviseTaskId);
+    }
+    _clearEpisodeUploadMarker(episodeUid);
+    bumpVersion('episodes', 'completeProxyReplace');
+    logToAuditTrail('completeProxyReplace', 'state_change', episodeUid, '',
+      '[INFO] Proxy replaced via slot (no open revise). Upload marker cleared.', 'INFO');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Cancels an in-flight episode upload (AD #130e). Clears the durable upload-in-progress
+ * marker and reverts any in_progress Upload_Produced_Episode / Revise_Episode task for the
+ * episode back to open. The abandoned GCS resumable session expires server-side — no delete.
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function cancelEpisodeUpload(episodeUid) {
+  try {
+    _clearEpisodeUploadMarker(episodeUid);
+    var taskSheet = SpreadsheetApp.openById(getMasterSheetId()).getSheetByName('Tasks');
+    var reverted = false;
+    if (taskSheet) {
+      var tData = taskSheet.getDataRange().getValues();
+      for (var r = 1; r < tData.length; r++) {
+        if (String(tData[r][TASKS_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        var ws = String(tData[r][TASKS_COLS.Workflow_Step - 1]);
+        if (ws !== 'Upload_Produced_Episode' && ws !== 'Revise_Episode') continue;
+        if (String(tData[r][TASKS_COLS.Status - 1]) !== 'in_progress') continue;
+        taskSheet.getRange(r + 1, TASKS_COLS.Status).setValue('open');
+        reverted = true;
+      }
+    }
+    bumpVersion('episodes', 'cancelEpisodeUpload');
+    if (reverted) bumpVersion('tasks', 'cancelEpisodeUpload');
+    logToAuditTrail('cancelEpisodeUpload', 'state_change', episodeUid, '',
+      '[INFO] Upload cancelled. Marker cleared' + (reverted ? '; task reverted to open.' : '.'), 'INFO');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
   }
 }
 
@@ -2644,10 +2868,56 @@ function reconcileFinalEpisodeSlot(episodeUid) {
 }
 
 /**
+ * Reads the revision cycle state from the episode manifest (the Jason Protocol
+ * file). cycle = current video version — tags Revision_Round on new comments and
+ * groups the rail into cycles. finalized = JT has committed the current cycle's
+ * comment set; locks new top-level comments + withdraw until a re-upload resets it.
+ * Fails safe to { cycle: 1, finalized: false } on any manifest read error so a
+ * missing or unreadable manifest never hard-blocks the compose loop.
+ * @param {string} stagingFolderId
+ * @returns {{ cycle: number, finalized: boolean }}
+ */
+function _readRevisionCycleState(stagingFolderId) {
+  if (!stagingFolderId) return { cycle: 1, finalized: false };
+  try {
+    var m = getManifest(stagingFolderId);
+    if (!m) return { cycle: 1, finalized: false };
+    var cycle = Number(m.revision_cycle);
+    if (!cycle || cycle < 1) cycle = 1;
+    return { cycle: cycle, finalized: m.revision_finalized === true };
+  } catch (e) {
+    return { cycle: 1, finalized: false };
+  }
+}
+
+/**
+ * Computes the finalize-deadline countdown for an episode.
+ * Deadline = Release_Date - REVISION_FINALIZE_LEAD_DAYS (Governance_Config, 0 at
+ * launch). No Release_Date => null (no countdown). days is a whole-day delta from
+ * the start of today; it can go negative past T-0 (surface renders red/urgent at
+ * days <= 0). One anchor per episode — later cycles inherit the same Release_Date.
+ * @param {Date|string} releaseDate
+ * @returns {{ deadline: string, days: number } | null}
+ */
+function _computeRevisionTMinus(releaseDate) {
+  if (!releaseDate) return null;
+  var rd = (releaseDate instanceof Date) ? releaseDate : new Date(releaseDate);
+  if (isNaN(rd.getTime())) return null;
+  var leadDays = Number(getGovernance('REVISION_FINALIZE_LEAD_DAYS')) || 0;
+  var deadline = new Date(rd.getTime() - leadDays * 86400000);
+  var startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  var days = Math.ceil((deadline.getTime() - startOfToday.getTime()) / 86400000);
+  return { deadline: deadline.toISOString(), days: days };
+}
+
+/**
  * Returns the Episode_Log revision history for the episode review rail, plus
- * the current video state and staging folder URL for the deep-link payload.
+ * the current video state, manifest cycle state, T-minus countdown, and staging
+ * folder URL for the deep-link payload. Withdrawn rows (tombstones) are filtered
+ * out — never rendered.
  * @param {string} episodeUid
- * @returns {{ ok, videoStatus, rows, stagingFolderUrl }}
+ * @returns {{ ok, videoStatus, rows, stagingFolderUrl, cycle, finalized, tMinus }}
  */
 function getEpisodeRevisionHistory(episodeUid) {
   try {
@@ -2656,13 +2926,17 @@ function getEpisodeRevisionHistory(episodeUid) {
 
     var epSheet = ss.getSheetByName('Episodes');
     var epData  = epSheet.getDataRange().getValues();
-    var videoStatus = 'pending', stagingFolderId = '';
+    var videoStatus = 'pending', stagingFolderId = '', uploadStartedAt = '', releaseDate = '';
     for (var i = 1; i < epData.length; i++) {
       if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
       videoStatus     = String(epData[i][EPISODES_COLS.Video_Status        - 1] || 'pending');
       stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
+      uploadStartedAt = String(epData[i][EPISODES_COLS.Upload_Started_At    - 1] || '');
+      releaseDate     = epData[i][EPISODES_COLS.Release_Date - 1] || '';
       break;
     }
+    var uploadStale = uploadStartedAt
+      ? (Date.now() - new Date(uploadStartedAt).getTime() > _uploadStaleThresholdMs()) : false;
 
     var rows = [];
     var logSheet = ss.getSheetByName('Episode_Log');
@@ -2673,13 +2947,27 @@ function getEpisodeRevisionHistory(episodeUid) {
         if (String(r[EPISODE_LOG_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
         if (String(r[EPISODE_LOG_COLS.Entry_Type  - 1]) !== 'revision')         continue;
         if (String(r[EPISODE_LOG_COLS.Asset_Type  - 1]) !== 'video')             continue;
+        var rawStatus = String(r[EPISODE_LOG_COLS.Resolved - 1] || '').trim().toLowerCase();
+        var status    = (rawStatus === '' || rawStatus === 'false') ? 'open' : rawStatus;
+        if (status === 'withdrawn') continue;  // tombstone — kept in sheet, never rendered
         var rr = r[EPISODE_LOG_COLS.Revision_Round - 1];
+        var rawResolvedAt = r[EPISODE_LOG_COLS.Resolved_At - 1];
+        var resolvedAtIso = '';
+        if (rawResolvedAt) {
+          var dRes = (rawResolvedAt instanceof Date) ? rawResolvedAt : new Date(rawResolvedAt);
+          if (!isNaN(dRes.getTime())) resolvedAtIso = dRes.toISOString();
+        }
         rows.push({
-          logId:         String(r[EPISODE_LOG_COLS.Log_ID    - 1]),
-          timestamp:     r[EPISODE_LOG_COLS.Timestamp - 1]
+          rowIndex:       j + 1,  // sheet row — primary address for status writes (body = verify key)
+          logId:          String(r[EPISODE_LOG_COLS.Log_ID    - 1]),
+          timestamp:      r[EPISODE_LOG_COLS.Timestamp - 1]
             ? new Date(r[EPISODE_LOG_COLS.Timestamp - 1]).toISOString() : '',
-          body:          String(r[EPISODE_LOG_COLS.Body       - 1]),
-          revisionRound: (rr !== '' && rr != null) ? Number(rr) : null
+          author:         String(r[EPISODE_LOG_COLS.Author - 1] || ''),
+          body:           String(r[EPISODE_LOG_COLS.Body       - 1]),
+          revisionRound:  (rr !== '' && rr != null) ? Number(rr) : null,
+          status:         status,
+          resolutionNote: String(r[EPISODE_LOG_COLS.Resolution_Note - 1] || ''),
+          resolvedAt:     resolvedAtIso
         });
       }
     }
@@ -2687,7 +2975,12 @@ function getEpisodeRevisionHistory(episodeUid) {
     var stagingFolderUrl = stagingFolderId
       ? 'https://drive.google.com/drive/folders/' + stagingFolderId : '';
 
-    return { ok: true, videoStatus: videoStatus, rows: rows, stagingFolderUrl: stagingFolderUrl };
+    var cycleState = _readRevisionCycleState(stagingFolderId);
+    var tMinus     = _computeRevisionTMinus(releaseDate);
+
+    return { ok: true, videoStatus: videoStatus, rows: rows, stagingFolderUrl: stagingFolderUrl,
+             uploadStartedAt: uploadStartedAt, uploadStale: uploadStale,
+             cycle: cycleState.cycle, finalized: cycleState.finalized, tMinus: tMinus };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -2705,61 +2998,260 @@ function getEpisodeRevisionHistory(episodeUid) {
  */
 function submitEpisodeCommentRow(episodeUid, timecode, body, revisionRound, authorEmail) {
   try {
-    if (!body || !body.trim()) return { ok: false, error: 'Empty comment.' };
-    var formattedBody = timecode ? '[' + timecode + '] ' + body.trim() : body.trim();
+    if (!body || !String(body).trim()) return { ok: false, error: 'Empty comment.' };
+    var formattedBody = timecode ? '[' + timecode + '] ' + String(body).trim() : String(body).trim();
+
+    // Cycle state is server-authoritative: the manifest revision_cycle tags the
+    // comment's round (not the client's value), and a finalized cycle hard-blocks
+    // new top-level comments — timestamp anchoring, the late comment would be
+    // stale against the next cut.
+    var stagingFolderId = getStagingFolderIdByUid(episodeUid);
+    var cycleState      = _readRevisionCycleState(stagingFolderId);
+    if (cycleState.finalized) return { ok: false, error: 'finalized', finalized: true };
+    var round = cycleState.cycle;
+
     var res = appendEpisodeLogEntry(
-      episodeUid, 'revision', 'video', formattedBody, 'both', authorEmail, revisionRound
+      episodeUid, 'revision', 'video', formattedBody, 'both', authorEmail, round
     );
     if (res && res.success === false) return { ok: false, error: res.error };
-    return { ok: true };
+
+    // First comment of a cycle spawns Audra's awareness task (self-guarded —
+    // one open awareness task per cycle; finalize consumes it).
+    _spawnRevisionAwarenessIfNone(episodeUid);
+
+    return { ok: true, round: round };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 }
 
 /**
- * Hard-seals the current revision round: spawns or appends to an open Revise_Episode
- * task (with staging folder deep-link) and sets Video_Status = 'revision_requested'.
+ * Spawns the "JT has begun revisions" awareness task for the producer, unless an
+ * open one already exists for this episode. Idempotent — one awareness per active
+ * cycle; finalize completes it. Awareness only (no upload slot); the actionable
+ * Revise_Episode task is spawned at finalize.
+ */
+function _spawnRevisionAwarenessIfNone(episodeUid) {
+  var ss        = SpreadsheetApp.openById(getMasterSheetId());
+  var taskSheet = ss.getSheetByName('Tasks');
+  if (taskSheet) {
+    var tData = taskSheet.getDataRange().getValues();
+    for (var r = 1; r < tData.length; r++) {
+      if (String(tData[r][TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid))   continue;
+      if (String(tData[r][TASKS_COLS.Workflow_Step - 1]) !== 'Revision_Awareness') continue;
+      if (String(tData[r][TASKS_COLS.Status        - 1]) === 'complete')           continue;
+      return false; // already open
+    }
+  }
+  var epData    = ss.getSheetByName('Episodes').getDataRange().getValues();
+  var guestName = episodeUid, contactId = '';
+  for (var i = 1; i < epData.length; i++) {
+    if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+    guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+    contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
+    break;
+  }
+  spawnTask({
+    episodeUid:       episodeUid,
+    contactId:        contactId,
+    workflowStep:     'Revision_Awareness',
+    actionTitle:      'JT has begun revisions — ' + guestName,
+    assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+    assignedBy:       'The Fairy Team',
+    status:           'open',
+    priority:         'normal',
+    executiveSummary: 'JT has started leaving revision notes on ' + guestName +
+                      '. You can begin addressing them now; she will Finalize when the set is complete.'
+  });
+  return true;
+}
+
+/**
+ * Writes a comment's status in Episode_Log col 8 (resolved | declined | withdrawn).
+ * Row addressing mirrors _resolveTaskRow_: verify the row at rowIndex matches the
+ * expected Body for a revision/video row of this episode; on mismatch relocate by a
+ * unique Body match; refuse (throw) on zero or ambiguous matches — the write must
+ * never land on a guessed row.
+ *
+ * resolved/declined are Audra-only (enforced on the surface); declined carries a
+ * one-cell Resolution_Note. withdrawn is JT's pre-finalize gesture — blocked once
+ * the cycle is finalized.
+ *
+ * @param {string} episodeUid
+ * @param {number} rowIndex     1-based Episode_Log sheet row (from the rail render)
+ * @param {string} expectedBody stored Body string to verify against (stale-row guard)
+ * @param {string} status       'resolved' | 'declined' | 'withdrawn'
+ * @param {string} note         decline reason (declined only; ignored otherwise)
+ * @param {string} authorEmail
+ * @returns {{ ok: boolean, rowIndex?: number, error?: string }}
+ */
+function setEpisodeCommentStatus(episodeUid, rowIndex, expectedBody, status, note, authorEmail) {
+  try {
+    var ALLOWED = { resolved: true, declined: true, withdrawn: true };
+    status = String(status || '').trim().toLowerCase();
+    if (!ALLOWED[status]) return { ok: false, error: 'Invalid status: ' + status };
+
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Episode_Log');
+    if (!sheet) return { ok: false, error: 'Episode_Log tab not found.' };
+
+    // Withdraw is pre-finalize only — finalize anchors the committed set.
+    if (status === 'withdrawn') {
+      var cs = _readRevisionCycleState(getStagingFolderIdByUid(episodeUid));
+      if (cs.finalized) return { ok: false, error: 'Cannot withdraw after the cycle is finalized.' };
+    }
+
+    var targetRow = _resolveEpisodeCommentRow_(sheet, rowIndex, episodeUid, expectedBody);
+
+    sheet.getRange(targetRow, EPISODE_LOG_COLS.Resolved).setValue(status);
+    sheet.getRange(targetRow, EPISODE_LOG_COLS.Resolved_At).setValue(new Date());
+    sheet.getRange(targetRow, EPISODE_LOG_COLS.Resolution_Note)
+      .setValue(status === 'declined' ? String(note || '') : '');
+
+    bumpVersion('episodes', 'setEpisodeCommentStatus');
+    logToAuditTrail('setEpisodeCommentStatus', 'human_action', episodeUid, '',
+      '[INFO] Comment row ' + targetRow + ' -> ' + status + ' by ' + (authorEmail || 'Audra') + '.', 'INFO');
+
+    return { ok: true, rowIndex: targetRow };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Edits a revision comment's body. Author-only, open status only, blocked once
+ * the cycle is finalized. Same row addressing as status writes (rowIndex
+ * primary, body verify). Audra request 2026-06-12.
+ */
+function editEpisodeCommentBody(episodeUid, rowIndex, expectedBody, newBody, authorEmail) {
+  try {
+    if (!newBody || !String(newBody).trim()) return { ok: false, error: 'Empty comment.' };
+    var stagingFolderId = getStagingFolderIdByUid(episodeUid);
+    if (_readRevisionCycleState(stagingFolderId).finalized) {
+      return { ok: false, error: 'Cycle is finalized - comments are locked.' };
+    }
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Episode_Log');
+    if (!sheet) return { ok: false, error: 'Episode_Log tab not found' };
+    var targetRow = _resolveEpisodeCommentRow_(sheet, rowIndex, episodeUid, expectedBody);
+    var rowAuthor = String(sheet.getRange(targetRow, EPISODE_LOG_COLS.Author).getValue() || '');
+    if (rowAuthor.toLowerCase() !== String(authorEmail || '').toLowerCase()) {
+      return { ok: false, error: 'Only the comment author can edit it.' };
+    }
+    var rawStatus = String(sheet.getRange(targetRow, EPISODE_LOG_COLS.Resolved).getValue() || '').trim().toLowerCase();
+    if (!(rawStatus === '' || rawStatus === 'false' || rawStatus === 'open')) {
+      return { ok: false, error: 'Only open comments can be edited.' };
+    }
+    sheet.getRange(targetRow, EPISODE_LOG_COLS.Body).setValue(String(newBody).trim());
+    bumpVersion('episodes', 'editEpisodeCommentBody');
+    logToAuditTrail('editEpisodeCommentBody', 'human_action', episodeUid, '',
+      'Revision comment edited (row ' + targetRow + ')', 'INFO');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
+ * Resolves the true Episode_Log row for a status write. No Comment_ID exists, so
+ * the stored Body is the verify key (mirror of _resolveTaskRow_). Verifies the
+ * row at rowIndex is a revision/video row of this episode whose Body equals
+ * expectedBody; on mismatch scans for a unique Body match and relocates (logged).
+ * Throws when missing (no match) or ambiguous (multiple matches).
+ * @returns {number} 1-based sheet row to write
+ */
+function _resolveEpisodeCommentRow_(sheet, rowIndex, episodeUid, expectedBody) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('Episode_Log is empty — comment not found.');
+  var data = sheet.getRange(1, 1, lastRow, EPISODE_LOG_COLS.Body).getValues();
+  function isMatch(rowVals) {
+    return String(rowVals[EPISODE_LOG_COLS.Episode_UID - 1]) === String(episodeUid) &&
+           String(rowVals[EPISODE_LOG_COLS.Entry_Type  - 1]) === 'revision' &&
+           String(rowVals[EPISODE_LOG_COLS.Asset_Type  - 1]) === 'video' &&
+           String(rowVals[EPISODE_LOG_COLS.Body        - 1]) === String(expectedBody);
+  }
+  if (rowIndex >= 2 && rowIndex <= lastRow && isMatch(data[rowIndex - 1])) {
+    return rowIndex;
+  }
+  var found = -1;
+  for (var i = 1; i < data.length; i++) {
+    if (isMatch(data[i])) {
+      if (found !== -1) throw new Error('Comment text is ambiguous — refresh and retry.');
+      found = i + 1;
+    }
+  }
+  if (found === -1) throw new Error('Comment not found — it may have been edited or removed. Refresh and retry.');
+  logToAuditTrail('Episode_Log', 'state_change', episodeUid, '',
+    '[INFO] Stale comment rowIndex ' + rowIndex + ' relocated to row ' + found + '.', 'INFO');
+  return found;
+}
+
+/**
+ * Finalize — JT's commitment that the current cycle's comment set is complete
+ * (re-semanticized from the retired round-seal). Persists the finalized flag in
+ * the manifest (cycle-state authority), consumes the awareness task, spawns or
+ * appends the actionable Revise_Episode task with the upload deep-link, closes
+ * JT's Review_Episode, and writes Video_Status = 'revision_requested'.
+ *
+ * A corrupt or missing manifest aborts before any task write — the finalized lock
+ * is load-bearing (post-finalize comment/withdraw blocks read it).
  * @param {string} episodeUid
  * @param {string} authorEmail
- * @returns {{ ok: boolean, round: number, error?: string }}
+ * @returns {{ ok: boolean, round: number, cycle: number, finalized: boolean, itemCount: number, error?: string }}
  */
 function requestEpisodeRevisions(episodeUid, authorEmail) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
 
-    // Determine sealed round: max Revision_Round in Episode_Log for this episode
-    var logSheet = ss.getSheetByName('Episode_Log');
-    var maxRound = 0;
-    if (logSheet) {
-      var logData = logSheet.getDataRange().getValues();
-      for (var j = 1; j < logData.length; j++) {
-        if (String(logData[j][EPISODE_LOG_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-        if (String(logData[j][EPISODE_LOG_COLS.Entry_Type  - 1]) !== 'revision')         continue;
-        var rr = logData[j][EPISODE_LOG_COLS.Revision_Round - 1];
-        if (rr && Number(rr) > maxRound) maxRound = Number(rr);
-      }
-    }
-    var round = maxRound || 1;
-
-    // Staging folder URL for Payload_Link
+    // Episode context: staging folder (manifest + upload link), guest, contact.
     var epSheet = ss.getSheetByName('Episodes');
     var epData  = epSheet.getDataRange().getValues();
-    var stagingFolderId = '', guestName = episodeUid;
+    var stagingFolderId = '', guestName = episodeUid, contactId = '';
     for (var i = 1; i < epData.length; i++) {
       if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
       stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
-      guestName       = String(epData[i][EPISODES_COLS.Guest_Name            - 1] || episodeUid);
+      guestName       = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      contactId       = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
       break;
     }
-    var folderUrl = stagingFolderId
-      ? 'https://drive.google.com/drive/folders/' + stagingFolderId : '';
+    if (!stagingFolderId) {
+      return { ok: false, error: 'No production folder for this episode — cannot finalize.' };
+    }
 
-    // Spawn or append to open Revise_Episode task
-    var taskSheet     = ss.getSheetByName('Tasks');
-    var producerEmail = getGovernance('ASSIGNEE_PRODUCER');
-    var foundTask     = false;
+    // Cycle is server-authoritative; finalize locks the current cycle's set.
+    var round = _readRevisionCycleState(stagingFolderId).cycle;
+
+    // Count the committed (non-withdrawn) comment items in this cycle.
+    var logSheet  = ss.getSheetByName('Episode_Log');
+    var itemCount = 0;
+    if (logSheet) {
+      var logData = logSheet.getDataRange().getValues();
+      for (var j = 1; j < logData.length; j++) {
+        var lr = logData[j];
+        if (String(lr[EPISODE_LOG_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+        if (String(lr[EPISODE_LOG_COLS.Entry_Type  - 1]) !== 'revision')          continue;
+        if (String(lr[EPISODE_LOG_COLS.Asset_Type  - 1]) !== 'video')             continue;
+        if (Number(lr[EPISODE_LOG_COLS.Revision_Round - 1]) !== round)            continue;
+        if (String(lr[EPISODE_LOG_COLS.Resolved - 1] || '').trim().toLowerCase() === 'withdrawn') continue;
+        itemCount++;
+      }
+    }
+
+    // Persist the finalized flag (cycle-state authority). Corrupt/missing manifest
+    // throws here — finalize aborts before any task write.
+    patchManifest(stagingFolderId, { revision_cycle: round, revision_finalized: true });
+
+    var folderUrl = 'https://drive.google.com/drive/folders/' + stagingFolderId;
+    var plural    = (itemCount === 1) ? '' : 's';
+    var itemLabel = 'Revise episode: ' + itemCount + ' item' + plural;
+    var noteLine  = 'Cycle ' + round + ' finalized — ' + itemCount + ' item' + plural + '.';
+
+    // Revise_Episode (append or spawn), consume awareness, close Review_Episode.
+    var taskSheet = ss.getSheetByName('Tasks');
+    var foundTask = false;
     if (taskSheet) {
       var tData = taskSheet.getDataRange().getValues();
       for (var r = 1; r < tData.length; r++) {
@@ -2767,14 +3259,22 @@ function requestEpisodeRevisions(episodeUid, authorEmail) {
         if (String(tData[r][TASKS_COLS.Workflow_Step - 1]) !== 'Revise_Episode')    continue;
         if (String(tData[r][TASKS_COLS.Status        - 1]) === 'complete')          continue;
         var existing = String(tData[r][TASKS_COLS.Revision_Notes - 1] || '');
-        var note     = 'Round ' + round + ' sealed.';
         taskSheet.getRange(r + 1, TASKS_COLS.Revision_Notes).setValue(
-          existing ? existing + '\n' + note : note
+          existing ? existing + '\n' + noteLine : noteLine
         );
         foundTask = true;
         break;
       }
-      // Auto-complete the open Review_Episode task — JT is done reviewing
+      // Consume the awareness task — finalize hands Audra the actionable revise card.
+      for (var a = 1; a < tData.length; a++) {
+        if (String(tData[a][TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid))    continue;
+        if (String(tData[a][TASKS_COLS.Workflow_Step - 1]) !== 'Revision_Awareness')  continue;
+        if (String(tData[a][TASKS_COLS.Status        - 1]) === 'complete')            continue;
+        taskSheet.getRange(a + 1, TASKS_COLS.Status).setValue('complete');
+        taskSheet.getRange(a + 1, TASKS_COLS.Completed_At).setValue(new Date());
+        break;
+      }
+      // Auto-complete the open Review_Episode task — JT is done reviewing this cycle.
       for (var t = 1; t < tData.length; t++) {
         if (String(tData[t][TASKS_COLS.Episode_UID   - 1]) !== String(episodeUid)) continue;
         if (String(tData[t][TASKS_COLS.Workflow_Step - 1]) !== 'Review_Episode')   continue;
@@ -2786,73 +3286,86 @@ function requestEpisodeRevisions(episodeUid, authorEmail) {
     }
     if (!foundTask) {
       spawnTask({
-        actionTitle:      'Episode Revisions — ' + guestName,
-        assignee:         producerEmail,
+        actionTitle:      itemLabel + ' — ' + guestName,
+        assignee:         getGovernance('ASSIGNEE_PRODUCER'),
         assignedBy:       'The Fairy Team',
         status:           'open',
         priority:         'normal',
         episodeUid:       episodeUid,
+        contactId:        contactId,
         workflowStep:     'Revise_Episode',
         payloadLink:      folderUrl,
-        revisionNotes:    'Round ' + round + ' sealed.',
-        executiveSummary: 'JT requested episode revisions. Open the Drive folder below, ' +
-                          'move the old video to Archive/, drop v2, then click Complete.'
+        revisionNotes:    noteLine,
+        executiveSummary: 'JT finalized her revision notes for ' + guestName + ' (' + itemCount +
+                          ' item' + plural + '). Address them, then re-export the proxy and upload it ' +
+                          '(Upload Proxy on the episode, or Replace proxy on the review slot); ' +
+                          'the revised cut returns to JT for review automatically.'
       });
     }
 
     writeVideoStatus(episodeUid, 'revision_requested');
     bumpVersion('episodes', 'requestEpisodeRevisions');
+    bumpVersion('tasks',    'requestEpisodeRevisions');
 
-    logToAuditTrail('requestEpisodeRevisions', 'human_action', episodeUid, '',
-      '[INFO] Episode revision round ' + round + ' sealed by ' + (authorEmail || 'JT') + '.', 'INFO');
+    logToAuditTrail('requestEpisodeRevisions', 'human_action', episodeUid, contactId,
+      '[INFO] Revision cycle ' + round + ' finalized by ' + (authorEmail || 'JT') +
+      ' (' + itemCount + ' item' + plural + ').', 'INFO');
 
-    return { ok: true, round: round };
+    return { ok: true, round: round, cycle: round, finalized: true, itemCount: itemCount };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 }
 
 /**
- * Complete handler for Revise_Episode tasks. Validates that exactly one video
- * file exists in the Episode/ subfolder before completing. Resets Video_Status
- * to 'pending' so JT can compose round N+1.
+ * Unified revise completion (AD #130a/b). Validates the revised proxy exists in GCS
+ * (sole proxy backend — no Drive folder scan), then always returns the episode to JT:
+ * Video_Status = review + Review_Episode spawn gated on no open Review_Episode. The
+ * former Drive-scan validation and the '-> pending' end state are retired. Both the
+ * dashboard Revise_Episode "Complete" and the proxy-slot replace converge here.
  * @param {string} episodeUid
- * @param {string} taskId       — TASK-... ID of the Revise_Episode task
+ * @param {string} taskId       — TASK-... ID of the Revise_Episode task (optional)
  * @returns {{ ok: boolean, error?: string }}
  */
 function completeEpisodeRevision(episodeUid, taskId) {
   try {
-    var stagingId = getStagingFolderIdByUid(episodeUid);
-    if (!stagingId) return { ok: false, error: 'Episode staging folder not found.' };
+    var exists = checkEpisodeProxyExists(episodeUid);
+    if (exists.error)   return { ok: false, error: exists.error };
+    if (!exists.exists) return { ok: false, error: 'No revised proxy found in GCS. Upload the proxy first.' };
 
-    var epFolderIt = DriveApp.getFolderById(stagingId).getFoldersByName('Episode');
-    if (!epFolderIt.hasNext()) return { ok: false, error: 'Episode/ subfolder not found.' };
-    var epFolder = epFolderIt.next();
-
-    var videoFiles = [];
-    var allFiles = epFolder.getFiles();
-    while (allFiles.hasNext()) {
-      var f = allFiles.next();
-      if (f.getMimeType().indexOf('video/') === 0) videoFiles.push(f);
+    var epData    = SpreadsheetApp.openById(getMasterSheetId()).getSheetByName('Episodes').getDataRange().getValues();
+    var guestName = episodeUid, contactId = '';
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
+      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
+      break;
     }
 
-    if (videoFiles.length === 0) {
-      return { ok: false, error: 'Drop the revised video first.' };
-    }
-    if (videoFiles.length > 1) {
-      return { ok: false, error: 'More than one video found. Move the old one to Archive/ first.' };
+    // Revised proxy accepted -> back to JT's court.
+    writeVideoStatus(episodeUid, 'review');     // bumps episodes
+    _clearEpisodeUploadMarker(episodeUid);
+
+    // Re-upload opens the next revision cycle: bump the manifest cycle + clear the
+    // finalized flag so JT can comment against the new cut. Fail-safe — a manifest
+    // hiccup must not block the proxy from returning to review.
+    try {
+      var stagingFolderId = getStagingFolderIdByUid(episodeUid);
+      if (stagingFolderId) {
+        var nextCycle = _readRevisionCycleState(stagingFolderId).cycle + 1;
+        patchManifest(stagingFolderId, { revision_cycle: nextCycle, revision_finalized: false });
+      }
+    } catch (cycleErr) {
+      logToAuditTrail('completeEpisodeRevision', 'error', episodeUid, '',
+        '[WARN] Revision cycle bump failed: ' + cycleErr.message, 'WARN');
     }
 
-    // Exactly 1 video — reset episode state to ready-for-review
-    writeVideoStatus(episodeUid, 'pending');
-
-    // Complete the Revise_Episode task
     if (taskId) updateTaskStatus(taskId, 'complete');
+    _spawnReviewEpisodeIfNone(episodeUid, guestName, contactId);
 
-    bumpVersion('episodes', 'completeEpisodeRevision');
-    logToAuditTrail('completeEpisodeRevision', 'state_change', episodeUid, '',
-      '[INFO] Episode v2 accepted. File: ' + videoFiles[0].getId() +
-      '. Video_Status reset to pending.', 'INFO');
+    bumpVersion('tasks', 'completeEpisodeRevision');
+    logToAuditTrail('completeEpisodeRevision', 'state_change', episodeUid, contactId,
+      '[INFO] Revised proxy accepted. Video_Status -> review, Review_Episode (re)spawned if none open.', 'INFO');
 
     return { ok: true };
   } catch (err) {
@@ -3203,7 +3716,27 @@ function _companionBuildUserPrompt(surface, workspaceState, userMessage) {
 // ── CONTACTS ─────────────────────────────────────────────────────────────────
 
 // Fields the front end is allowed to write. Everything else is schema-protected.
-var CONTACTS_WRITABLE = { Tags: true, Personal_Note: true, Influence_Tier: true };
+// Expanded for the Contacts surface (Phase 1): all JT-editable fields per spoke.
+// System-written fields (Contact_ID, Source, Created_At, Last_Activity,
+// Bio_Summary, Headshot_URL, Contact_Library_Folder_ID) stay protected.
+var CONTACTS_WRITABLE = {
+  Display_Name:      true,
+  Influence_Tier:    true,
+  Email:             true,
+  Phone:             true,
+  Website:           true,
+  Social_Instagram:  true,
+  Social_YouTube:    true,
+  Social_Podcast:    true,
+  Social_LinkedIn:   true,
+  Social_X:          true,
+  Social_Other:      true,
+  Organization:      true,
+  Referred_By:       true,
+  Personal_Note:     true,
+  Tags:              true,
+  Relationship_Type: true
+};
 
 function getContacts() {
   try {
@@ -3241,7 +3774,107 @@ function getContacts() {
   }
 }
 
-function updateContactField(rowIndex, field, value) {
+/**
+ * Deletes a contact row (backlog #16, Contacts Surface Phase 2).
+ * Hard delete is for junk/duplicate rows only - referenced contacts are
+ * protected: any episode referencing the Contact_ID blocks deletion (guests
+ * with history get a Relationship_Type flip per AD #31, never deletion), as
+ * does any open/in_progress task. Contact Library Drive folder is left
+ * untouched (manual cleanup). Row resolved via _resolveContactRow_ guard.
+ */
+function deleteContactRow(rowIndex, contactId) {
+  try {
+    if (!contactId) throw new Error("contactId required.");
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+
+    // Block: episodes referencing this contact
+    var epSheet = ss.getSheetByName("Episodes");
+    if (epSheet) {
+      var epData = epSheet.getDataRange().getValues();
+      var epHead = epData[0];
+      var epCid  = epHead.indexOf("Contact_ID");
+      var epUid  = epHead.indexOf("Episode_UID");
+      if (epCid !== -1) {
+        for (var i = 1; i < epData.length; i++) {
+          if (String(epData[i][epCid]).trim() === String(contactId).trim()) {
+            return { success: false, blocked: "episode",
+                     error: "Contact is linked to episode " +
+                            (epUid !== -1 ? epData[i][epUid] : "(unknown)") +
+                            " - flip Relationship_Type instead of deleting." };
+          }
+        }
+      }
+    }
+
+    // Block: open/in_progress tasks referencing this contact
+    var tSheet = ss.getSheetByName("Tasks");
+    if (tSheet) {
+      var tData = tSheet.getDataRange().getValues();
+      var tHead = tData[0];
+      var tCid  = tHead.indexOf("Contact_ID");
+      var tStat = tHead.indexOf("Status");
+      if (tCid !== -1 && tStat !== -1) {
+        for (var j = 1; j < tData.length; j++) {
+          var st = String(tData[j][tStat]).trim();
+          if ((st === "open" || st === "in_progress") &&
+              String(tData[j][tCid]).trim() === String(contactId).trim()) {
+            return { success: false, blocked: "task",
+                     error: "Contact has an open task - complete or delete it first." };
+          }
+        }
+      }
+    }
+
+    var sheet   = ss.getSheetByName("Contacts");
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    rowIndex = _resolveContactRow_(sheet, headers, rowIndex, contactId);
+    sheet.deleteRow(rowIndex);
+    bumpVersion("contacts", "deleteContactRow");
+    logToAuditTrail("Contacts_Surface", "human_action", "", contactId,
+      "[INFO] Contact row deleted from Contacts surface.", "INFO");
+    return { success: true };
+  } catch(e) {
+    return { success: false, error: e.message };
+  }
+}
+
+/**
+ * Returns a single contact row by Contact_ID, in the same shape as a
+ * getContacts() element (string-coerced fields + _rowIndex), or null.
+ * Used by the Contacts surface for partial card refresh after Enrich.
+ */
+function getContactRow(contactId) {
+  try {
+    if (!contactId) return null;
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Contacts");
+    var data    = sheet.getDataRange().getValues();
+    if (data.length < 2) return null;
+
+    var headers = data[0];
+    var idIdx   = headers.indexOf("Contact_ID");
+    if (idIdx === -1) return null;
+
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][idIdx]).trim() !== String(contactId).trim()) continue;
+      var row     = data[i];
+      var contact = {};
+      headers.forEach(function(h, idx) {
+        var v = row[idx];
+        contact[h] = (v !== null && v !== undefined) ? String(v) : "";
+      });
+      contact._rowIndex = i + 1;
+      return contact;
+    }
+    return null;
+  } catch(e) {
+    throw new Error("getContactRow failed: " + e.message);
+  }
+}
+
+function updateContactField(rowIndex, field, value, contactId) {
   if (!CONTACTS_WRITABLE[field]) throw new Error("Field not writable from front end: " + field);
   try {
     var sheetId = getMasterSheetId();
@@ -3250,12 +3883,157 @@ function updateContactField(rowIndex, field, value) {
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     var col     = headers.indexOf(field);
     if (col === -1) throw new Error("Column not found in Contacts sheet: " + field);
+    rowIndex = _resolveContactRow_(sheet, headers, rowIndex, contactId);
     sheet.getRange(rowIndex, col + 1).setValue(value);
+    // Any front-end edit counts as activity (Contacts surface spoke).
+    var laCol = headers.indexOf("Last_Activity");
+    if (laCol !== -1) sheet.getRange(rowIndex, laCol + 1).setValue(new Date());
     bumpVersion("contacts", "updateContactField");
     return { success: true };
   } catch(e) {
     throw new Error("updateContactField failed: " + e.message);
   }
+}
+
+/**
+ * Resolves the true sheet row for a contact before a row-addressed write.
+ * Same guard pattern as _resolveTaskRow_ (Tasks): verify Contact_ID at the
+ * claimed row; on mismatch relocate by scanning the Contact_ID column; if
+ * the contact no longer exists, throw (no write lands on the wrong row).
+ * contactId optional for back-compat: absent = legacy unverified passthrough.
+ * Prerequisite for contact deletion (#16) - row deletes shift every row below.
+ */
+function _resolveContactRow_(sheet, headers, rowIndex, contactId) {
+  if (!contactId) return rowIndex;
+  var idCol = headers.indexOf("Contact_ID");
+  if (idCol === -1) throw new Error("Contact_ID column not found in Contacts tab.");
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error("Contact " + contactId + " not found - Contacts tab is empty.");
+  var idColVals = sheet.getRange(1, idCol + 1, lastRow, 1).getValues();
+  if (rowIndex >= 2 && rowIndex <= lastRow &&
+      String(idColVals[rowIndex - 1][0]).trim() === String(contactId).trim()) {
+    return rowIndex;
+  }
+  for (var i = 1; i < idColVals.length; i++) {
+    if (String(idColVals[i][0]).trim() === String(contactId).trim()) {
+      logToAuditTrail("Contacts_Surface", "state_change", "", contactId,
+        "[INFO] Stale _rowIndex " + rowIndex + " relocated to row " + (i + 1) + ".", "INFO");
+      return i + 1;
+    }
+  }
+  throw new Error("Contact " + contactId + " not found - it may have been deleted. Refresh and retry.");
+}
+
+/**
+ * Creates a Contacts row from the Contacts surface.
+ * source: "manual" (desktop Add overlay) | "quick_add" (mobile Quick Add).
+ * fields: whitelisted via CONTACTS_WRITABLE; everything else system-set here.
+ * Returns the created contact object (header-keyed) with _rowIndex.
+ */
+function createContactFromApp(fields, source) {
+  try {
+    fields = fields || {};
+    source = (source === "quick_add") ? "quick_add" : "manual";
+
+    // Whitelist incoming fields
+    var clean = {};
+    Object.keys(fields).forEach(function(k) {
+      if (CONTACTS_WRITABLE[k] && fields[k] !== null && fields[k] !== undefined) {
+        clean[k] = String(fields[k]);
+      }
+    });
+
+    if (source === "manual" && !(clean.Display_Name || "").trim()) {
+      throw new Error("Display_Name is required.");
+    }
+    var hasAny = Object.keys(clean).some(function(k) { return String(clean[k]).trim() !== ""; });
+    if (!hasAny) throw new Error("At least one field is required.");
+
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName("Contacts");
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+    var contactId = generateContactId();
+    var now       = new Date();
+    var system    = {
+      Contact_ID:    contactId,
+      Source:        source,
+      Created_At:    now,
+      Last_Activity: now
+    };
+
+    var row = headers.map(function(h) {
+      if (system[h] !== undefined) return system[h];
+      if (clean[h]  !== undefined) return clean[h];
+      return "";
+    });
+    sheet.appendRow(row);
+    var rowIndex = sheet.getLastRow();
+
+    bumpVersion("contacts", "createContactFromApp");
+    logToAuditTrail("Contacts_Surface", "human_action", "", contactId,
+      "[INFO] Contact created via " + source + ": " + (clean.Display_Name || "(no name)"), "INFO");
+
+    var contact = {};
+    headers.forEach(function(h, idx) {
+      var v = row[idx];
+      contact[h] = (v !== null && v !== undefined) ? String(v) : "";
+    });
+    contact._rowIndex = rowIndex;
+    return contact;
+  } catch(e) {
+    throw new Error("createContactFromApp failed: " + e.message);
+  }
+}
+
+/**
+ * Re-runs Herald contact-level research + Bio_Summary rewrite for one contact.
+ * Called async from the Contacts surface (Quick Add auto-enrich when an anchor
+ * is present; per-card Enrich button). runHeraldBio reads all populated contact
+ * fields itself — no signature change to Herald entry points.
+ * If the contact has an episode in an active status, the guest brief for that
+ * episode is additionally regenerated via the existing Herald brief path.
+ */
+function enrichContactFromApp(contactId) {
+  try {
+    if (!contactId) throw new Error("contactId required.");
+    logToAuditTrail("Contacts_Surface", "human_action", "", contactId,
+      "[INFO] Enrich triggered from Contacts surface.", "INFO");
+    var bioResult = runHeraldBio(contactId) || {};
+
+    var ep = _findActiveEpisodeForContact_(contactId);
+    if (ep) {
+      logToAuditTrail("Contacts_Surface", "state_change", ep.Episode_UID, contactId,
+        "[INFO] Active episode found (Status: " + ep.Status + ") - regenerating guest brief.", "INFO");
+      runHeraldBrief(contactId, ep.Episode_UID);
+      return { success: true, briefRegenerated: true, episodeUid: ep.Episode_UID, bio: bioResult };
+    }
+    return { success: true, briefRegenerated: false, bio: bioResult };
+  } catch(e) {
+    logToAuditTrail("Contacts_Surface", "error", "", contactId,
+      "[ERROR] Contacts surface enrich failed: " + e.message, "ERROR");
+    throw new Error("enrichContactFromApp failed: " + e.message);
+  }
+}
+
+/**
+ * Returns the contact's episode in an active status
+ * (upcoming | in_production | review | ready_to_release), or null.
+ * Multiple matches: most recent Recording_Date wins (undated last).
+ */
+function _findActiveEpisodeForContact_(contactId) {
+  var ACTIVE = { upcoming: true, in_production: true, review: true, ready_to_release: true };
+  var candidates = getEpisodes().filter(function(ep) {
+    return ep.Contact_ID === contactId && ACTIVE[ep.Status];
+  });
+  if (!candidates.length) return null;
+  candidates.sort(function(a, b) {
+    var da = a.Recording_Date ? new Date(a.Recording_Date).getTime() : 0;
+    var db = b.Recording_Date ? new Date(b.Recording_Date).getTime() : 0;
+    return db - da;
+  });
+  return candidates[0];
 }
 
 // ── QUICK CAPTION ─────────────────────────────────────────────
@@ -3556,8 +4334,15 @@ function getShowNotesForEdit(episodeUid) {
     var allText = body.getText();
     var lines   = allText.split('\n');
 
+    // Colon optional: tolerant of docs written before header normalization
+    // (_normalizeShowNotesHeaders_ in vert_fairy.js) existed.
     function isSectionHeader(line) {
-      return /^[A-Z][A-Z\s]{2,}:\s*$/.test(line.trim());
+      return /^[A-Z][A-Z\s]{2,}:?\s*$/.test(line.trim());
+    }
+    // Canonical "HEADER:" form — typed-section checks compare against it.
+    function canonHeader(line) {
+      var h = line.trim();
+      return /:$/.test(h) ? h : h + ':';
     }
 
     // Locate first section header — everything before it is preamble
@@ -3580,7 +4365,7 @@ function getShowNotesForEdit(episodeUid) {
         if (curHeader !== null) {
           rawSections.push({ header: curHeader, content: curLines.join('\n').replace(/^\n+|\n+$/g, '') });
         }
-        curHeader = line.trim();
+        curHeader = canonHeader(line);
         curLines  = [];
       } else {
         curLines.push(line);
@@ -3590,16 +4375,32 @@ function getShowNotesForEdit(episodeUid) {
       rawSections.push({ header: curHeader, content: curLines.join('\n').replace(/^\n+|\n+$/g, '') });
     }
 
+    // Fold INSIGHT BULLETS into EPISODE DESCRIPTION at parse time — single editable region
+    var descIdx = -1, bullIdx = -1;
+    for (var fi = 0; fi < rawSections.length; fi++) {
+      if (descIdx < 0 && /EPISODE DESCRIPTION/i.test(rawSections[fi].header)) descIdx = fi;
+      if (bullIdx < 0 && /INSIGHT BULLETS/i.test(rawSections[fi].header))      bullIdx = fi;
+    }
+    if (bullIdx >= 0) {
+      var bullContent = rawSections[bullIdx].content;
+      if (descIdx >= 0) {
+        rawSections[descIdx].content += (rawSections[descIdx].content ? '\n\n' : '') + bullContent;
+      } else {
+        rawSections[bullIdx].header = 'EPISODE DESCRIPTION:';
+      }
+      rawSections.splice(bullIdx, 1);
+    }
+
     // Type each section
     var sections = rawSections.map(function(s) {
       if (s.header === 'HOOKS:') {
-        var hRe      = new RegExp('^HOOK\\s+\\d+:\\s*(.+)$', 'gm');
+        var hRe      = /^\s*\d+\.\s*(.+)$/gm;
         var hMatches = Array.from(s.content.matchAll(hRe));
         var hItems;
         if (hMatches.length > 0) {
           hItems = hMatches.map(function(hm) { return hm[1].trim(); });
         } else {
-          // Fallback: plain paragraphs — one per hook, strip list prefixes if any
+          // Fallback: plain paragraphs — strip any list prefixes
           hItems = s.content.split('\n')
             .map(function(l) { return l.replace(/^\d+[.)]\s*|^[-•]\s*/g, '').trim(); })
             .filter(function(l) { return l.length > 0; });
@@ -3632,11 +4433,37 @@ function getShowNotesForEdit(episodeUid) {
 
 
 /**
+ * Serializes a typed show-notes section to the canonical text form used for
+ * provenance baseline comparison. Must match the format _vertBuildSectionProvenance_
+ * stores so the diff is byte-stable on an unchanged section.
+ */
+function _sectionToBaselineText_(s) {
+  if (s.type === 'hooks') {
+    return (s.items || []).map(function(t, i) { return (i + 1) + '. ' + t; }).join('\n');
+  }
+  if (s.type === 'quotes') {
+    return (s.items || []).map(function(item, i) {
+      return 'QUOTE ' + (i + 1) + ': ' + item.quoteText + '\nATTRIBUTION: ' + (item.attribution || '');
+    }).join('\n');
+  }
+  return (s.content || '').trim();
+}
+
+function _normalizeForBaselineDiff_(text) {
+  return (text || '').split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; }).join('\n');
+}
+
+
+/**
  * Writes the card editor's structured sections back to the show-notes doc.
  * Full-body rewrite (matches runEditorialPass write pattern).
  * Standard sections: header + content lines.
- * Hooks: HOOK N: [text] per item.
+ * Hooks: N. [text] per item (numbered list).
  * Quotes: QUOTE N: [text]\nATTRIBUTION: [attribution] per item.
+ *
+ * After saving, diffs each submitted section against its vert-generated baseline
+ * in manifest.show_notes_sections. Sections that changed → source:'jt'. Patches
+ * manifest and bumps manifests version. Provenance errors never fail the core save.
  */
 function saveShowNotes(episodeUid, sections, preamble) {
   try {
@@ -3679,6 +4506,54 @@ function saveShowNotes(episodeUid, sections, preamble) {
     doc.saveAndClose();
     logToAuditTrail('Show_Notes_Editor', 'state_change', episodeUid, null,
       'SHOW_NOTES_SAVED_BY_JT: docId=' + docId, 'info');
+
+    // Provenance diff — non-fatal; doc is already saved before this runs
+    try {
+      var stagingFolderId = getStagingFolderIdByUid(episodeUid);
+      if (stagingFolderId) {
+        var existingSections = manifest.show_notes_sections || {};
+        var updatedSections  = {};
+        var changed          = false;
+        var ts               = new Date().toISOString();
+
+        (sections || []).forEach(function(s) {
+          var key       = s.header.trim().replace(/:$/, '').toLowerCase().replace(/\s+/g, '_');
+          var submitted = _normalizeForBaselineDiff_(_sectionToBaselineText_(s));
+          var rec       = existingSections[key];
+
+          if (!rec) {
+            // Section not in vert baseline — JT-authored
+            var cnt = (s.type === 'hooks' || s.type === 'quotes')
+              ? (s.items || []).length
+              : (s.content || '').split('\n').filter(function(l) { return l.trim(); }).length;
+            updatedSections[key] = { source: 'jt', status: 'ok', itemCount: cnt, baseline: null, at: ts };
+            changed = true;
+          } else if (submitted !== _normalizeForBaselineDiff_(rec.baseline)) {
+            // Content changed from vert baseline
+            var cnt2 = (s.type === 'hooks' || s.type === 'quotes')
+              ? (s.items || []).length
+              : (s.content || '').split('\n').filter(function(l) { return l.trim(); }).length;
+            updatedSections[key] = { source: 'jt', status: rec.status, itemCount: cnt2, baseline: rec.baseline, at: ts };
+            changed = true;
+          }
+          // unchanged: leave existing record, no write needed
+        });
+
+        if (changed) {
+          var merged = {};
+          var eKeys  = Object.keys(existingSections);
+          for (var ei = 0; ei < eKeys.length; ei++) { merged[eKeys[ei]] = existingSections[eKeys[ei]]; }
+          var uKeys  = Object.keys(updatedSections);
+          for (var ui = 0; ui < uKeys.length; ui++) { merged[uKeys[ui]] = updatedSections[uKeys[ui]]; }
+          patchManifest(stagingFolderId, { show_notes_sections: merged });
+          bumpVersion('manifests', 'saveShowNotes');
+        }
+      }
+    } catch (provenanceErr) {
+      logToAuditTrail('Show_Notes_Editor', 'error', episodeUid, null,
+        'PROVENANCE_PATCH_FAILED: ' + provenanceErr.message, 'warning');
+    }
+
     return { ok: true };
   } catch(e) {
     return { ok: false, error: e.message };
@@ -3713,56 +4588,6 @@ function normalizeQuoteText(str) {
     .replace(/’/g, "'")
     .replace(/“/g, '"')
     .replace(/”/g, '"');
-}
-
-/**
- * Appends a new slot to Posting_Schedule and returns the slot object.
- * Called when JT adds a custom slot via the platform picker popup.
- * @param {string} day       - 'Monday' | 'Tuesday' | ...
- * @param {string} platform  - 'Instagram Story' | 'Instagram Feed' | 'Reel' | etc.
- * @param {string} assetType - 'quote_graphic' | 'reel' | etc.
- * @returns {{ success: boolean, slot?: object, error?: string }}
- */
-function addPostingSlot(day, platform, assetType) {
-  try {
-    var sheetId   = getMasterSheetId();
-    var ss        = SpreadsheetApp.openById(sheetId);
-    var schedSheet = ss.getSheetByName("Posting_Schedule");
-    if (!schedSheet) return { success: false, error: "Posting_Schedule tab not found" };
-
-    var existingData = schedSheet.getDataRange().getValues();
-    var maxSort = 0;
-    for (var i = 1; i < existingData.length; i++) {
-      var s = Number(existingData[i][POSTING_SCHEDULE_COLS.Sort_Order - 1]) || 0;
-      if (s > maxSort) maxSort = s;
-    }
-
-    var slotId   = "CUSTOM-" + day.toUpperCase().slice(0, 3) + "-" + Date.now();
-    var sortOrder = maxSort + 10;
-    var newRow   = new Array(Object.keys(POSTING_SCHEDULE_COLS).length).fill("");
-    newRow[POSTING_SCHEDULE_COLS.Slot_ID    - 1] = slotId;
-    newRow[POSTING_SCHEDULE_COLS.Day        - 1] = day;
-    newRow[POSTING_SCHEDULE_COLS.Asset_Type - 1] = assetType || "quote_graphic";
-    newRow[POSTING_SCHEDULE_COLS.Platform   - 1] = platform  || "";
-    newRow[POSTING_SCHEDULE_COLS.Why        - 1] = "Custom slot";
-    newRow[POSTING_SCHEDULE_COLS.Sort_Order - 1] = sortOrder;
-    schedSheet.appendRow(newRow);
-
-    return {
-      success: true,
-      slot: {
-        slotId:    slotId,
-        assetType: assetType || "quote_graphic",
-        platform:  platform  || "",
-        why:       "Custom slot",
-        sortOrder: sortOrder,
-        isPlaybook: false,
-        filled:    null
-      }
-    };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
 }
 
 
@@ -4449,39 +5274,6 @@ function completeReelRevision(episodeUid, assetId) {
 }
 
 /**
- * Creates a revision request row in the Revision_Requests sheet.
- * payload: { episodeUid, assetId, assetType, reelName, requestText }
- */
-function submitRevisionRequest(payload) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var tabName = getGovernance("REVISION_REQUESTS_TAB_NAME") || "Revision_Requests";
-    var sheet   = ss.getSheetByName(tabName);
-    if (!sheet) {
-      sheet = ss.insertSheet(tabName);
-      sheet.appendRow(['Request_ID','Episode_UID','Asset_ID','Asset_Type','Reel_Name','Request_Text','Status','Created_At','Created_By']);
-      sheet.setFrozenRows(1);
-    }
-    var requestId = 'REV-' + new Date().getTime();
-    sheet.appendRow([
-      requestId,
-      payload.episodeUid  || '',
-      payload.assetId     || '',
-      payload.assetType   || 'Reel',
-      payload.reelName    || '',
-      payload.requestText || '',
-      'open',
-      new Date().toISOString(),
-      'JT'
-    ]);
-    return { success: true, requestId: requestId };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-/**
  * Releases a scheduled reel back to the library.
  * Sets Asset_Library Status → candidate, Availability → available.
  * Sets Social_Assets Scheduler_Status → cancelled for pending rows matching assetId.
@@ -4506,17 +5298,21 @@ function unscheduleReel(assetId) {
       }
     }
 
+    var saTouched = false;
     if (saSheet) {
       var saData = saSheet.getDataRange().getValues();
       for (var j = 1; j < saData.length; j++) {
         if (String(saData[j][SOCIAL_ASSETS_COLS.Asset_Library_ID - 1]) === String(assetId) &&
             String(saData[j][SOCIAL_ASSETS_COLS.Scheduler_Status - 1]).toLowerCase() === 'pending') {
           saSheet.getRange(j + 1, SOCIAL_ASSETS_COLS.Scheduler_Status).setValue('cancelled');
+          saTouched = true;
         }
       }
     }
 
     bumpVersion("asset_library", "unscheduleReel");
+    // #17 audit (2026-06-12): SA status flips mutate social_assets.
+    if (saTouched) bumpVersion("social_assets", "unscheduleReel");
     return { success: true };
   } catch (e) {
     return { success: false, error: e.message };
@@ -4649,6 +5445,8 @@ function placeAssetSchedule(episodeUid, assetId, slotId, caption) {
         for (var i = 1; i < alData.length; i++) {
           if (String(alData[i][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
           alSheet.getRange(i + 1, ASSET_LIBRARY_COLS.Availability).setValue("placed");
+          // #17 audit (2026-06-12): Availability flip mutates asset_library.
+          bumpVersion("asset_library", "placeAssetSchedule");
           break;
         }
       }
@@ -4695,6 +5493,8 @@ function removeAssetFromSchedule(episodeUid, assetId, slotId) {
         for (var j = 1; j < alData.length; j++) {
           if (String(alData[j][ASSET_LIBRARY_COLS.Asset_ID - 1]) !== String(assetId)) continue;
           alSheet.getRange(j + 1, ASSET_LIBRARY_COLS.Availability).setValue("available");
+          // #17 audit (2026-06-12): Availability flip mutates asset_library.
+          bumpVersion("asset_library", "removeAssetFromSchedule");
           break;
         }
       }
@@ -5033,14 +5833,73 @@ function getEpisodeCompletedTasks(episodeUid) {
 }
 
 /**
+ * Recently completed tasks for the Buckets workspace Completed band
+ * (backlog #11). Window: last 7 days by Completed_At. Excludes projected-cue
+ * steps (parity with getEpisodeCompletedTasks SKIP_STEPS). Returns getTasks
+ * row shape incl. _rowIndex; assignee filtering happens client-side.
+ */
+function getRecentCompletedTasks() {
+  try {
+    var sheetId = getMasterSheetId();
+    var ss      = SpreadsheetApp.openById(sheetId);
+    var sheet   = ss.getSheetByName('Tasks');
+    if (!sheet) return [];
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var cols    = {};
+    headers.forEach(function(h, i) { cols[h] = i; });
+    if (cols.Status === undefined || cols.Completed_At === undefined) return [];
+
+    var SKIP_STEPS = ['Recording_Reminder', 'Release_Reminder', 'Runway', 'Release_Day'];
+    var cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 7);
+
+    var tasks = [];
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][cols.Status]) !== 'complete') continue;
+      var done = data[i][cols.Completed_At] ? new Date(data[i][cols.Completed_At]) : null;
+      if (!done || isNaN(done.getTime()) || done < cutoff) continue;
+      var ws = String(data[i][cols.Workflow_Step] || '');
+      if (SKIP_STEPS.indexOf(ws) !== -1) continue;
+      tasks.push({
+        _rowIndex:     i + 1,
+        Task_ID:       data[i][cols.Task_ID],
+        Action_Title:  data[i][cols.Action_Title],
+        Assignee:      sanitizeEmail(data[i][cols.Assignee]),
+        Assigned_By:   data[i][cols.Assigned_By],
+        Status:        'complete',
+        Priority:      data[i][cols.Priority],
+        Due_Date:      data[i][cols.Due_Date] ? String(data[i][cols.Due_Date]) : '',
+        Contact_ID:    data[i][cols.Contact_ID],
+        Episode_UID:   data[i][cols.Episode_UID],
+        Workflow_Step: ws,
+        Executive_Summary: data[i][cols.Executive_Summary],
+        Payload_Link:  data[i][cols.Payload_Link],
+        Asset_ID:      String(data[i][cols.Asset_ID] || ''),
+        Bucket:        cols.Bucket !== undefined ? String(data[i][cols.Bucket] || '') : '',
+        Completed_At:  String(data[i][cols.Completed_At])
+      });
+    }
+    // Most recently completed first
+    tasks.sort(function(a, b) {
+      return new Date(b.Completed_At).getTime() - new Date(a.Completed_At).getTime();
+    });
+    return tasks;
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
  * Flips a completed task back to open. Human-reversible; no system cascade.
  */
-function uncompleteTask(rowIndex) {
+function uncompleteTask(rowIndex, taskId) {
   try {
     var sheetId = getMasterSheetId();
     var ss      = SpreadsheetApp.openById(sheetId);
     var sheet   = ss.getSheetByName('Tasks');
     if (!sheet) return { ok: false, error: 'Tasks tab not found' };
+    rowIndex = _resolveTaskRow_(sheet, rowIndex, taskId);
     sheet.getRange(rowIndex, TASKS_COLS.Status).setValue('open');
     sheet.getRange(rowIndex, TASKS_COLS.Completed_At).setValue('');
     bumpVersion('tasks', 'uncompleteTask');

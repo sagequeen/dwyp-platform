@@ -239,6 +239,14 @@ function runHerald(contactId, episodeUid) {
 function runHeraldBio(contactId, identityResult) {
   const actor = "Herald";
 
+  // Result flags (Enrich cluster, June 2026) — additive return so the
+  // Contacts surface can report what actually landed instead of a blanket
+  // "Enrichment complete." Existing callers ignore the return value.
+  const bioResult = {
+    bioUpdated: false, socialUpdated: false, orgUpdated: false,
+    socialParseFailed: false, transcriptUsed: false
+  };
+
   // --- Step 1: Read Contact record ---
   let contact;
   try {
@@ -246,13 +254,13 @@ function runHeraldBio(contactId, identityResult) {
   } catch (e) {
     logToAuditTrail(actor, "error", null, contactId,
       `Failed to read contact record: ${e.message}`, "ERROR");
-    return;
+    return bioResult;
   }
 
   if (!contact) {
     logToAuditTrail(actor, "error", null, contactId,
       `No contact record found for ID: ${contactId}`, "ERROR");
-    return;
+    return bioResult;
   }
 
   const displayName  = contact.Display_Name  || "Unknown";
@@ -260,17 +268,6 @@ function runHeraldBio(contactId, identityResult) {
   const website      = contact.Website       || "";
   const personalNote = contact.Personal_Note || "";
   const existingBio  = contact.Bio_Summary   || "";
-
-  // FIX 14 — Social_Handle retired. Read first populated platform-specific
-  // social field as the research lead signal.
-  // Priority: Instagram → X → LinkedIn → YouTube → Podcast → Other.
-  const socialSignal = contact.Social_Instagram
-    || contact.Social_X
-    || contact.Social_LinkedIn
-    || contact.Social_YouTube
-    || contact.Social_Podcast
-    || contact.Social_Other
-    || "";
 
   // --- Step 2: Ensure Contact Library subfolder exists ---
   let contactFolderId = contact.Contact_Library_Folder_ID || "";
@@ -325,13 +322,13 @@ function runHeraldBio(contactId, identityResult) {
       logToAuditTrail(actor, "error", null, contactId,
         `[WARNING] Failed to write Enrichment Pending to Bio_Summary: ${e.message}`, "WARNING");
     }
-    return;
+    return bioResult;
   }
 
   // --- Step 3: Research contact via Gemini (grounded) ---
   // FIX 5  — Context block prepended; template appended.
   // FIX 7  — formContext injected as Priority 1 when available.
-  // FIX 14 — socialSignal replaces stale Social_Handle read.
+  // All populated contact fields ride as breadcrumbs; anchors lead.
   // existingBio intentionally excluded: research step finds fresh verified
   // information. Anchoring to existing bio risks confirming prior errors.
   let researchOutput = "";
@@ -346,12 +343,33 @@ function runHeraldBio(contactId, identityResult) {
       if (formContext) {
         researchContextParts.push(`FORM SUBMISSION FROM GUEST (Priority 1 — highest trust):\n${formContext}`);
       }
+      // All populated contact fields ride as research breadcrumbs;
+      // URL/email anchors lead the context (Contacts surface spoke).
+      const anchorLines = [];
+      if (email)   anchorLines.push(`EMAIL: ${email}`);
+      if (website) anchorLines.push(`WEBSITE: ${website}`);
+      [["Social_Instagram", "INSTAGRAM"], ["Social_YouTube", "YOUTUBE"],
+       ["Social_Podcast", "PODCAST"], ["Social_LinkedIn", "LINKEDIN"],
+       ["Social_X", "X"], ["Social_Other", "OTHER SOCIAL"]].forEach(function(pair) {
+        if (contact[pair[0]]) anchorLines.push(`${pair[1]}: ${contact[pair[0]]}`);
+      });
       researchContextParts.push(
-        `PERSONAL NOTE FROM JENNIFER (supplementary lead — treat as a lead, not a fact): ${personalNote || "(none)"}`,
-        `EMAIL: ${email || "(not provided)"}`,
-        `SOCIAL: ${socialSignal || "(not provided)"}`,
-        `WEBSITE: ${website || "(not provided)"}`
+        `KNOWN PROFILES AND CONTACT POINTS (anchors — research these directly):\n${anchorLines.length ? anchorLines.join("\n") : "(none on record)"}`,
+        `PERSONAL NOTE FROM JENNIFER (supplementary lead — treat as a lead, not a fact): ${personalNote || "(none)"}`
       );
+      const breadcrumbLines = [];
+      if (contact.Organization) breadcrumbLines.push(`ORGANIZATION ON RECORD: ${contact.Organization}`);
+      if (contact.Referred_By)  breadcrumbLines.push(`REFERRED BY: ${contact.Referred_By}`);
+      if (contact.Tags)         breadcrumbLines.push(`TAGS: ${contact.Tags}`);
+      if (breadcrumbLines.length) researchContextParts.push(breadcrumbLines.join("\n"));
+      // Enrich cluster (June 2026): if a transcript exists for any of this
+      // contact's episodes, the guest's own words ride as a research anchor.
+      const transcriptForResearch = _heraldFindTranscriptForContact_(contactId);
+      if (transcriptForResearch) {
+        bioResult.transcriptUsed = true;
+        researchContextParts.push(
+          `EPISODE TRANSCRIPT (the guest's own words on the show - high-trust signal for who they are, what they do, and links or organizations they mention):\n${transcriptForResearch}`);
+      }
       const researchPrompt = researchContextParts.join("\n\n") + "\n\n" + researchPromptTemplate;
 
       const systemInstruction = "You are Herald, a research assistant for the DWYP podcast. Your job is to find accurate, public information about this person to inform their Bio_Summary.";
@@ -392,9 +410,11 @@ ${researchOutput}`;
 
       if (socialData && !socialData.error) {
         writeSocialFields(contactId, socialData);
+        bioResult.socialUpdated = true;
         logToAuditTrail(actor, "state_change", null, contactId,
           `[INFO] Social fields extracted and written for ${displayName}.`, "INFO");
       } else {
+        bioResult.socialParseFailed = true;
         logToAuditTrail(actor, "error", null, contactId,
           `[WARNING] Social field extraction returned unparseable JSON for ${displayName}. Social fields not updated.`, "WARNING");
       }
@@ -433,6 +453,7 @@ ${researchOutput}`;
 
       if (orgData && !orgData.error && orgData.Organization) {
         writeOrganization(contactId, orgData.Organization);
+        bioResult.orgUpdated = true;
         logToAuditTrail(actor, "state_change", null, contactId,
           `[INFO] Organization extracted and written for ${displayName}: "${orgData.Organization}"`, "INFO");
       } else {
@@ -498,11 +519,13 @@ ${researchOutput}`;
   } catch (e) {
     logToAuditTrail(actor, "error", null, contactId,
       `Failed to write Bio_Summary: ${e.message}`, "ERROR");
-    return;
+    return bioResult;
   }
+  bioResult.bioUpdated = (newBio !== existingBio);
 
   logToAuditTrail(actor, "state_change", null, contactId,
     `Bio_Summary updated for ${displayName}.`, "INFO");
+  return bioResult;
 }
 
 
@@ -769,6 +792,13 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
       briefContextParts.push(`FORM SUBMISSION FROM GUEST (Priority 1 — highest trust):\n${formContext}`);
     }
     briefContextParts.push(`BIO SUMMARY: ${bioSummary || "(none)"}`);
+    // Enrich cluster (June 2026): post-recording re-briefs get the guest's
+    // own words. Pre-recording episodes have no transcript - soft no-op.
+    const transcriptForBrief = _heraldFindTranscriptForEpisode_(episodeUid);
+    if (transcriptForBrief) {
+      briefContextParts.push(
+        `EPISODE TRANSCRIPT (recording already happened - ground the brief in what was actually said):\n${transcriptForBrief}`);
+    }
 
     const briefPrompt = briefContextParts.join("\n\n") + "\n\n" + briefPromptTemplate.replace("${brandVoice}", brandContext);
 
@@ -817,14 +847,14 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
   // trigger spawnGuestBriefReviewForJT() which sends the brief task to JT (#3).
   const confidenceLevel = identityResult?.possibleMatches?.[0]?.confidence || "not checked";
   spawnTask({
-    actionTitle:      `Review guest brief: ${displayName}`,
+    actionTitle:      `Enrich guest brief: ${displayName}`,
     assignee:         getGovernance("ASSIGNEE_PRODUCER"),
     assignedBy:       "The Fairy Team",
     status:           "open",
     priority:         "normal",
     contactId:        contactId,
     episodeUid:       episodeUid,
-    workflowStep:     "Review_Guest_Brief",
+    workflowStep:     "Guest_Brief_Enrich",
     payloadLink:      briefDocUrl,
     executiveSummary: `Herald has generated the guest brief for ${displayName} (confidence: ${confidenceLevel}). Review it, add any missing handles or websites using the Enrich button, then approve to send it to JT.`
   });
@@ -841,6 +871,15 @@ function runHeraldBrief(contactId, episodeUid, identityResult) {
 // =============================================================================
 
 function spawnGuestBriefReviewForJT(episodeUid, displayName) {
+  // Idempotency gate (AD #131): never spawn a second open JT review for the same
+  // episode. The shared Approve handler used to net a new Review_Guest_Brief on
+  // every approval — this is the backstop against that loop re-forming.
+  if (hasOpenReviewGuestBrief(episodeUid)) {
+    logToAuditTrail("Herald", "state_change", episodeUid, "",
+      `[INFO] JT guest-brief review spawn skipped — open Review_Guest_Brief already exists for ${episodeUid}.`, "INFO");
+    return;
+  }
+
   spawnTask({
     actionTitle:      `Review guest brief: ${displayName}`,
     assignee:         getGovernance("ASSIGNEE_HOST"),
@@ -851,6 +890,33 @@ function spawnGuestBriefReviewForJT(episodeUid, displayName) {
     workflowStep:     "Review_Guest_Brief",
     executiveSummary: `The guest brief for ${displayName} is ready for your review. Tap to open it.`
   });
+}
+
+/**
+ * True if an open or in_progress Review_Guest_Brief task already exists for the
+ * given episode. Header-driven read — immune to column reorder.
+ */
+function hasOpenReviewGuestBrief(episodeUid) {
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
+  const sheet = ss.getSheetByName("Tasks");
+  if (!sheet) return false;
+
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const uidCol  = headers.indexOf("Episode_UID");
+  const wsCol   = headers.indexOf("Workflow_Step");
+  const stCol   = headers.indexOf("Status");
+  if (uidCol === -1 || wsCol === -1 || stCol === -1) return false;
+
+  for (let i = 1; i < data.length; i++) {
+    const status = String(data[i][stCol]).trim();
+    if (String(data[i][uidCol]).trim() === String(episodeUid).trim() &&
+        String(data[i][wsCol]).trim() === "Review_Guest_Brief" &&
+        (status === "open" || status === "in_progress")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 
@@ -1043,6 +1109,92 @@ function truncateTo75Words(bioText, displayName, actor) {
     `[WARNING] Bio_Summary for ${displayName} exceeded 75 words (${words.length} words). Truncated to 75.`, "WARNING");
 
   return words.slice(0, 75).join(" ");
+}
+
+
+// =============================================================================
+// HELPERS — Transcript lookup (Enrich cluster, June 2026)
+// If a transcript already exists for a guest's episode, Herald uses it as a
+// research anchor: the guest's own words are the highest-quality signal for
+// bio, social, and brief passes. Soft-fail throughout — Herald never blocks
+// on transcript absence (pre-recording contacts have none by design).
+// findTranscriptInFolder() is owned by vert_fairy.js (GAS global scope);
+// promotion to fairy_circle per AD #35 is a flagged janitorial candidate.
+// =============================================================================
+
+var HERALD_TRANSCRIPT_CHAR_CAP = 50000;
+
+/**
+ * Finds a transcript for a specific episode: Episode/ subfolder first,
+ * Staging root fallback. Returns capped text or "" (never throws).
+ */
+function _heraldFindTranscriptForEpisode_(episodeUid) {
+  try {
+    const stagingFolderId = getStagingFolderIdByUid(episodeUid);
+    if (!stagingFolderId) return "";
+    const stagingFolder = DriveApp.getFolderById(stagingFolderId);
+
+    let found = null;
+    const episodeFolderIt = stagingFolder.getFoldersByName("Episode");
+    if (episodeFolderIt.hasNext()) {
+      found = findTranscriptInFolder(episodeFolderIt.next(), "Herald", episodeUid, "Episode/");
+    }
+    if (!found) {
+      found = findTranscriptInFolder(stagingFolder, "Herald", episodeUid, "Staging root");
+    }
+    if (!found || !found.text) return "";
+
+    let text = found.text;
+    if (text.length > HERALD_TRANSCRIPT_CHAR_CAP) {
+      text = text.substring(0, HERALD_TRANSCRIPT_CHAR_CAP);
+      logToAuditTrail("Herald", "state_change", episodeUid, "",
+        `[INFO] Transcript truncated to ${HERALD_TRANSCRIPT_CHAR_CAP} chars for Herald context.`, "INFO");
+    }
+    return text;
+  } catch (e) {
+    logToAuditTrail("Herald", "error", episodeUid, "",
+      `[WARNING] Transcript lookup failed for ${episodeUid}: ${e.message}. Proceeding without transcript.`, "WARNING");
+    return "";
+  }
+}
+
+/**
+ * Finds the most recent transcript across a contact's episodes
+ * (Recording_Date desc, undated last). Returns capped text or "".
+ */
+function _heraldFindTranscriptForContact_(contactId) {
+  try {
+    const ss    = SpreadsheetApp.openById(getMasterSheetId());
+    const sheet = ss.getSheetByName("Episodes");
+    if (!sheet) return "";
+
+    const data    = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const cidCol  = headers.indexOf("Contact_ID");
+    const uidCol  = headers.indexOf("Episode_UID");
+    const rdCol   = headers.indexOf("Recording_Date");
+    if (cidCol === -1 || uidCol === -1) return "";
+
+    const candidates = [];
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][cidCol]).trim() !== String(contactId).trim()) continue;
+      candidates.push({
+        uid: String(data[i][uidCol]).trim(),
+        rd:  (rdCol !== -1 && data[i][rdCol]) ? new Date(data[i][rdCol]).getTime() : 0
+      });
+    }
+    candidates.sort(function(a, b) { return b.rd - a.rd; });
+
+    for (let j = 0; j < candidates.length; j++) {
+      const text = _heraldFindTranscriptForEpisode_(candidates[j].uid);
+      if (text) return text;
+    }
+    return "";
+  } catch (e) {
+    logToAuditTrail("Herald", "error", null, contactId,
+      `[WARNING] Contact transcript lookup failed: ${e.message}. Proceeding without transcript.`, "WARNING");
+    return "";
+  }
 }
 
 

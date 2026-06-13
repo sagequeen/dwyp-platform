@@ -825,18 +825,13 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
   }
 
 
-  // Spawn enrichment task if new stub with thin data
+  // Thin new stub (no email): no eager task. Herald's identity check (Fix 20,
+  // herald_fairy.js) is the sole gate — it spawns Verify_Guest_Identity only
+  // when it cannot confirm identity with enough confidence to write the brief.
+  // Handoff failure is covered by the "Herald failed to run" recovery task below.
   if (isNew && !guestEmail) {
-    spawnTask({
-      actionTitle:      `New guest detected — verify identity: ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "urgent",
-      contactId:        contactId,
-      workflowStep:     "Intake",
-      executiveSummary: `A calendar event was detected for "${guestName}" but no existing contact record was found and no email was available from the calendar event. A stub contact has been created. Please enrich the contact record before Herald runs.`
-    });
+    logToAuditTrail(agentName, "state_change", "", contactId,
+      `[INFO] New stub contact for "${guestName}" with no email. Deferring identity verification to Herald.`, "INFO");
   }
 
 
@@ -892,39 +887,6 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
     `[INFO] Asset subfolders created in Staging: Episode, Images/Approved, Images/Save, Images/Delete, Thumbnails, Reels/Approved, Reels/Save, Reels/Delete.`, "INFO");
 
 
-  // Create Production Notes shell doc in Raw folder
-  // Doc ID stored in manifest so Safety Fairy can find it without a folder scan.
-  let productionNotesId = "";
-  try {
-    const productionNotesName = `ProductionNotes_${episodeUid}`;
-    const productionNotesDoc  = DocumentApp.create(productionNotesName);
-    const productionNotesFile = DriveApp.getFileById(productionNotesDoc.getId());
-    DriveApp.getFolderById(rawFolderId).addFile(productionNotesFile);
-    DriveApp.getRootFolder().removeFile(productionNotesFile);
-    productionNotesDoc.saveAndClose();
-    productionNotesId = productionNotesDoc.getId();
-
-
-    logToAuditTrail(agentName, "state_change", episodeUid, contactId,
-      `[INFO] Production Notes shell created in Raw folder: ${productionNotesId}`, "INFO");
-  } catch (err) {
-    logToAuditTrail(agentName, "error", episodeUid, contactId,
-      `[ERROR] Production Notes shell creation failed: ${err.message}`, "ERROR");
-    spawnTask({
-      actionTitle:      `Secretary: Production Notes doc creation failed — ${guestName}`,
-      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-      assignedBy:       "The Fairy Team",
-      status:           "open",
-      priority:         "urgent",
-      contactId:        contactId,
-      episodeUid:       episodeUid,
-      workflowStep:     "Intake",
-      executiveSummary: `Secretary could not create the Production Notes doc in the Raw folder for ${guestName} / ${episodeUid}. Create it manually, add its ID to the manifest under asset_ids.production_notes, and re-run Safety Fairy.`
-    });
-    // Non-fatal — pipeline continues without Production Notes. Safety Fairy will flag the gap.
-  }
-
-
   // Write initial manifest to Staging folder
   writeManifest(stagingFolderId, {
     episode_uid:           episodeUid,
@@ -937,9 +899,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
     phase:                 "1_Intake",
     created_at:            new Date().toISOString(),
     herald_form_data:      false,
-    asset_ids: {
-      production_notes:    productionNotesId
-    }
+    asset_ids:             {}
   });
 
 
@@ -951,6 +911,30 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
 
   logToAuditTrail(agentName, "state_change", episodeUid, contactId,
     `[INFO] Episode record created for "${guestName}". Episode_UID: ${episodeUid}.`, "INFO");
+
+  // New-interview notification (backlog #15, 2026-06-12). Audra attends
+  // recordings - a completable task carries the date AND time. Workflow_Step
+  // "Scheduling" is generic-completable on all surfaces; one spawn per
+  // episode creation, so naturally idempotent. Non-fatal on failure.
+  try {
+    const recWhen = Utilities.formatDate(
+      recordingDate, Session.getScriptTimeZone(), "EEEE, MMM d 'at' h:mm a");
+    spawnTask({
+      actionTitle:      `New Interview Scheduled: ${guestName} - ${recWhen}`,
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "normal",
+      dueDate:          recordingDate,
+      contactId:        contactId,
+      episodeUid:       episodeUid,
+      workflowStep:     "Scheduling",
+      executiveSummary: `Secretary picked up a new calendar event for "${guestName}" - recording ${recWhen}. Complete this once it's on your radar.`
+    });
+  } catch (err) {
+    logToAuditTrail(agentName, "error", episodeUid, contactId,
+      `[WARNING] New-interview notification task spawn failed: ${err.message}`, "WARNING");
+  }
 
   // --- Herald handoff ---
   // Check manifest for herald_form_data: true before firing Herald.
@@ -1081,17 +1065,24 @@ function handlePotentialReschedule(existingEpisode, event, guestName, agentName)
   });
 
 
-  // Spawn notification task
-  spawnTask({
-    actionTitle:      `Recording date changed — ${guestName}`,
-    assignee:         getGovernance("ASSIGNEE_HOST"),
-    assignedBy:       "The Fairy Team",
-    status:           "open",
-    priority:         "urgent",
-    contactId:        contactId,
-    episodeUid:       episodeUid,
-    workflowStep:     "Scheduling",
-    executiveSummary: `The calendar event for "${guestName}" has been moved. Recording date updated to ${newDate.toDateString()}. Please confirm all downstream deadlines are still accurate.`
+  // Spawn notification tasks (date AND time - backlog #15, 2026-06-12).
+  // Both users attend recordings: one task each (Audra decision 2026-06-12),
+  // independently completable. Security filter scopes JT to her own row.
+  const newWhen = Utilities.formatDate(
+    newDate, Session.getScriptTimeZone(), "EEEE, MMM d 'at' h:mm a");
+  [getGovernance("ASSIGNEE_HOST"), getGovernance("ASSIGNEE_PRODUCER")].forEach(function(who) {
+    spawnTask({
+      actionTitle:      `Recording date changed: ${guestName} - ${newWhen}`,
+      assignee:         who,
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "urgent",
+      dueDate:          newDate,
+      contactId:        contactId,
+      episodeUid:       episodeUid,
+      workflowStep:     "Scheduling",
+      executiveSummary: `The calendar event for "${guestName}" has been moved. Recording is now ${newWhen}. Please confirm all downstream deadlines are still accurate.`
+    });
   });
 
 

@@ -1,5 +1,5 @@
 ﻿# DWYP Operations Platform — Platform Reference
-**Version: 3.6 | May 2026**
+**Version: 3.7 | June 2026**
 **Type: Stable reference — append only. Decisions and history do not change once locked.**
 **Companion: DWYP_Platform_State.md (active working state)**
 
@@ -35,12 +35,12 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 20. **`createEpisodeFolder()` is private to `secretary_fairy`.** Not promoted to `fairy_circle`.
 21. **Initial manifest shape locked.** Fields: `episode_uid, contact_id, guest_name, recording_date, raw_folder_id, staging_folder_id, status, phase, created_at, herald_form_data`.
 22. **Approval state authority is Episodes tab.** `Video_Status` and `Images_Status` written by web app on JT action. GAS does not independently verify.
-23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Upload_Produced_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card`
+23. **`Workflow_Step` is system-written.** GAS sets this field; no locked Enum list governs writes. Known values: `Review_Guest_Brief` | `Review_Episode` | `Review_Images` | `Review_Host_Graphics` | `Review_Guest_Graphics` | `Review_Thumbnails` | `Review_Reels` | `Revise_Reels` | `Revise_Episode` | `Filing` | `Produce_Episode` | `Upload_Produced_Episode` | `Custom_Images` | `Review_Social_Assets` | `Post_Social` | `Review_Episode_Card` | `Guest_Brief_Enrich`
 24. **`clerk_fairy.gs` owns `doPost()`.** Route: `invite` → `scribeLetSchedule()`. ⚠️ *`invite → scribeLetSchedule()` route is dead — Scribe Fairy retired (AD #111). Update when Clerk Fairy rebuild opens.*
 25. **Scribe Fairy is a new file, not a port.** Five defined touchpoints. No `doPost()`.
 26. **Filing and Scribe stay separate files.**
 27. **Webhook actions use POST + JSON body.** `doGet()` / query string pattern retired.
-28. **Episode_Sequence and Release_Date are plain values.** GAS never writes either column. Manually managed. Load-bearing constraint.
+28. **Episode_Sequence and Release_Date are plain values.** GAS never writes either column. Manually managed. Load-bearing constraint. *Correction (2026-06-07, SPOKE_Episode_Arrange): `saveArrangeOrder()` now writes `Release_Date` — full rewrite by arrange position on Save, cleared on drag-back; live/archived rows never touched. `Episode_Sequence` remains never-written by GAS; display rank is computed from release order (see Arrange section in Platform State).*
 29. **App-triggered invite creates Gmail draft only.** JT creates calendar event manually. Secretary fires when recording date appears on calendar.
 30. **Three Scribe T1 template variants.** `SCRIBE_LETS_SCHEDULE_LINK_KEY`, `SCRIBE_LETS_SCHEDULE_SUGGESTED_KEY`, `SCRIBE_LETS_SCHEDULE_MANUAL_KEY`.
 31. **Guest denial path: web app only.** `Relationship_Type` update. No GAS required. Contact record and history preserved.
@@ -71,8 +71,8 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 72. **Frame.io retired entirely. In-app review replaces all Frame.io workflows.** Frame.io removed from the stack. All review workflows (episodes, reels, images) handled natively in the DWYP web app. Make.com Frame.io scenario deprecated. Clerk Fairy webhook receiver not built. `Frameio_Project_ID` column on Episodes tab is retired.
 73. **Episode review uses a proxy video on GCS.** Audra exports a proxy from DaVinci Resolve and uploads it to GCS bucket `dwyp-review-playback` at path `episodes/{EUID}/proxy.mp4`. One proxy per episode; a new upload overwrites the old. Player is native `<video>` fed by a V4-signed GCS GET URL (8h expiry, re-minted on every open). Drive `Staging/Episode/` subfolder still receives the finished transcript; no proxy file is placed there.
 74. **Episode detection is task-completion based.** Audra marks the `Upload_Produced_Episode` task complete after uploading to GCS. `completeUploadEpisode()` in `dwyp_app.js` handles: mark task complete, flip `Video_Status → review`, spawn `Review_Episode` task, bump `episodes` + `tasks` versions. Drive folder-watch (Loop A) is retired. `Upload_Produced_Episode` task carries `Payload_Link` = GCS bucket console deep-link.
-75. **`Proxy_File_ID` column (Episodes col 15) — dormant.** Was written by the retired Loop A drive-watch. GAS no longer writes it; review player resolves video from GCS path by EUID alone. Column stays in sheet — no destructive column removal without explicit decision.
-76. **In-app Episode Review gate.** Review_Episode task stays open until Filing Fairy closes the episode. Timestamped comments sent by JT create or append to a Revise task for Audra. Request Revisions spawns revision task for Audra, task remains open.
+75. **`Proxy_File_ID` column (Episodes col 15) — dormant.** Was written by the retired Loop A drive-watch. GAS no longer writes it; review player resolves video from GCS path by EUID alone. Column stays in sheet — no destructive column removal without explicit decision. *Correction (2026-06-05): the live sheet is 14 columns — there is no col 15 and no `Proxy_File_ID` column. It is not present in the sheet.*
+76. **In-app Episode Review gate.** Review_Episode task stays open until Filing Fairy closes the episode. Timestamped comments sent by JT create or append to a Revise task for Audra. Request Revisions spawns revision task for Audra, task remains open. *Correction (2026-06-11, upload-lifecycle verification): two clauses were wrong vs. code. `requestEpisodeRevisions` auto-completes the open `Review_Episode` task before spawning `Revise_Episode`. Filing Fairy contains no Review_Episode logic — the terminal closer is the REVIEW_STEPS sweep in `completeFinalEpisodeUpload`. Completion semantics now governed by AD #130.*
 77. **Social_Assets loop in Daily Pulse: queued.** Candidate row creation on file detection — not yet built.
 78. **GCS signing — signBlob path (locked).** `getEpisodeStreamUrl()` uses IAM signBlob API (`https://iam.googleapis.com/v1/projects/-/serviceAccounts/{SA}:signBlob`). Signer: `309883149140-compute@developer.gserviceaccount.com`. Auth: owner's `ScriptApp.getOAuthToken()` (`cloud-platform` scope in manifest). V4 canonical request: `UNSIGNED-PAYLOAD`, `host` signed-headers only, credential scope `{date}/auto/storage/goog4_request`. No stored JSON key. Prerequisite: `iamcredentials.googleapis.com` API enabled in GCP Console.
 89. **Vert Fairy / Vertex AI RAG Engine replaces Marcom Fairy entirely.** Marcom Fairy retired. Vert Fairy: automated pipeline, Show Notes → Artist Fairy handoff, triggered by Daily Pulse on finished transcript. Social Vert and Librarian Vert as named sub-roles were subsequently retired (AD #97) — superseded by Vert (retrieval) + Claude (generation) model. Herald stays on Gemini API permanently — web search is a hard requirement for guest research. See AI Layer Architecture section.
@@ -85,7 +85,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 96. **Image Workshop fully retired.** Replaced by the Publish canvas in Studio. Social Vert retired with it. No bones carried forward. Code removed in Spoke 1 spring clean.
 97. **AI layer simplified: Vert retrieves, Claude generates.** Vert (Vertex AI RAG) is the retrieval layer only — it queries the corpus and delivers chunks to Drive docs or Claude. Claude API is the generation layer for all human-facing copy. GAS orchestrates. Gemini handles image generation (GenGem) and Herald web search permanently. `Social Vert` and `Librarian Vert` as named personas are retired — the roles are now just Vert (retrieval) and Claude (generation). Claude introduces itself as Claude in Studio chat.
 98. **Single governance key for all Claude text generation: `STUDIO_LLM_MODE = claude`.** Replaces `PUBLISH_LLM_MODE`. Code-level Gemini fallback on Claude API failure — automatic, logged to Audit_Trail. No manual toggle.
-99. **Asset Library is the single source of truth for all content assets.** `Social_Assets` tab handles scheduling and Make integration only. Asset Library stores: asset metadata, content text, Drive file ID, canvas state JSON (Fabric.js serialization for 1:1 reconstruction), background reference, captions, reel summaries. One row per asset. Permanent — rows are never deleted.
+99. **Asset Library is the single source of truth for all content assets.** `Social_Assets` tab handles scheduling and Make integration only. Asset Library stores: asset metadata, content text, Drive file ID, canvas state JSON (Fabric.js serialization for 1:1 reconstruction), background reference, captions, reel summaries. One row per asset. Permanent — rows are never deleted, except `rejected` rows swept by the purge job per AD #128.
 100. **Canvas state serialized to Asset Library on Add to Week.** `canvas.toJSON()` stored in `Canvas_State` column. `canvas.loadFromJSON()` rebuilds exact editable state on slot re-entry. Enables 1:1 reconstruction and episode switching without loss.
 101. **Preservation Mandate replaced with intentional deletion policy.** Original mandate ("never simplify, rename, or thin any function") was a guardrail against Gemini's aggressive pruning. Replaced with: nothing gets removed without an explicit decision. Renames and dead code removal require explicit approval. Active function behavior is never changed without a confirmed design decision.
 102. **Studio tab structure (updated May 2026).** Four tabs: Design / Write / Outreach / Ideas. Publish tab retired — Design is the sole landing route. Old mode list (Show Notes, Episode Copy, Interview Prep, Social Media, Newsletter, Brainstorm) retired — replaced by tab structure. ~7,000 lines of `pb*` code removed. See AD #116. Episode Index data model: see § AI Layer Architecture in this doc.
@@ -101,7 +101,7 @@ Stable half of the platform documentation. Locked architectural decisions, autho
 112. **Quote attribution schema (QUOTE blocks).** Guest-quote blocks in Master Template `# Show Notes` section carry attribution on a dedicated `ATTRIBUTION:` line, not inline with the quote text. Block format: `QUOTE N: "[quote text]"` / `ATTRIBUTION: [Guest First Name Last Name]` / `SLOT_TAGS: [tags]` / `QUALITY_SCORE: [1-5]`. `_bridgeParseRankedItems_` (vert_fairy.js) reads the `ATTRIBUTION:` line and reconstructs `Quote_Text` as `"[quote text]" — [Name]` — this is the canonical downstream format; no downstream caller changed. Missing `ATTRIBUTION:` logs WARNING to Audit_Trail and passes bare quote text through — no hard fail. HOOK blocks have no `ATTRIBUTION:` line and parse unchanged. `materializeQuoteGraphicAssets` consumes `Quote_Text` by field name.
 113. **Master Template voice injection: in-template sections, not external docs.** Brand-voice and show-philosophy content lives in keyed sections of the Master Template and is composed into prompts at call time via `extractPrompt("# Section Name")`. `BRAND_VOICE_ID`, `CAPTION_VOICE_SUPPLEMENT_ID`, and `DELIVERABLES_VOICE_SPEC_ID` governance keys are retired (all blanked 2026-05-19). `extractPrompt` matches on literal section-key text as plain text lines beginning with `# `; not dependent on Google Docs heading styling. Call-site composition: Guest Brief (herald_fairy.js) — `# Show Philosophy`, `# Pillars`, `# Peer Shows` assembled into `brandContext`, substituted for `${brandVoice}` token. Editorial pass (vert_fairy.js `runEditorialPass`) — `# Host Voice`, `# Voice Prohibitions`, `# Caption Mechanics`, `# Ranking Schema`, `# Show Notes`. Soft-fail contract: empty `extractPrompt` return logged per-section to Audit_Trail, generation continues — a voiceless prompt that silently succeeds is the failure mode this guards against; `test_extractPromptSmokeTest` is the verification gate. `buildEpisodeIndexV2` has no injection point (pure Vertex RAG retrieval, no Claude calls). `_buildEditorialPassSystemInstruction_` signature: `(masterTemplateStructure)`; retains hardcoded voice-prohibitions block as redundant safeguard.
 114. **Transcript-as-source-of-truth (locked hub decision 2026-05-22).** The finished transcript placed in `Staging/Episode/` is the single source of truth for all copy passes. Track A (`buildEpisodeIndexV2`) and Track B (`runEditorialPass`) both read the transcript directly via `gatherVertContext()`. Neither route through Vertex RAG for transcript content — Vertex RAG provides cross-episode context only, and is not in the critical path for either track.
-115. **Caption field consolidation (Spoke 0, May 2026).** `Caption_Draft` and `Caption_Final` columns on Asset_Library renamed to `Caption_Host` and `Caption_Guest` respectively. Semantics preserved: `Caption_Host` (col 10) is Claude-generated and frozen after write; `Caption_Guest` (col 11) is JT-edited and the source of truth for card render and Make.com post. All GAS write paths updated. Schema v2.0.
+115. **Caption field consolidation (Spoke 0, May 2026).** `Caption_Draft` and `Caption_Final` columns on Asset_Library renamed to `Caption_Host` and `Caption_Guest` respectively. Semantics preserved: `Caption_Host` (col 10) is Claude-generated and frozen after write; `Caption_Guest` (col 11) is JT-edited and the source of truth for card render and Make.com post. All GAS write paths updated. Schema v2.0. *Correction (2026-06-05): the source-of-truth above is inverted vs. code — `Caption_Host` (col 10) is the sole source of truth for card render and schedule (Claude-generated on creation, may be edited); `Caption_Guest` (col 11) is reserved for the Guest Package builder and is not written by the caption paths. Downstream posting is currently parked (no Make-specific pull claim).*
 116. **Publish tab retired (May 2026). Design is the sole landing route.** Studio tab structure reduced from five tabs to four (Design / Write / Outreach / Ideas). ~7,000 lines of `pb*` code removed from `dwyp_app.gs` and `dwyp_ui.html`. AD #102 updated.
 117. **Staging-first deployment cadence retired (May 2026).** Code pushes directly to production. `STAGING_DEPLOYMENT_URL` blanked in Governance_Config — `isStaging()` returns false everywhere. Staging deployment exists but is not an active step in the release workflow. `getMasterSheetId()` always resolves the production sheet.
 118. **Reel revision §4 atomic close — `Reels/Superseded/` subfolder.** `closeReelRevision()` creates `Reels/Superseded/` inside the episode Staging folder on first use. Superseded reel file moves here, evacuating it from Loop C's watched root (`Reels/`). Revised file lands in `Reels/` root → next Daily Pulse re-spawns `Review_Reels`. AL row `Drive_File_ID` updated in-place by `Asset_ID` (no new row). Open `Revise_Reels` task auto-completed on close. `bumpVersion` fires for both `asset_library` and `tasks` domains.
@@ -148,7 +148,13 @@ attempts a target, never gates on it.
    2. **308 Resume Incomplete kills XHR.** Browsers fire `onerror` (status 0) on a 308 with no `Location` header — they treat it as a failed redirect. Use `fetch(redirect:'manual')` instead; a 308 resolves as `response.type === 'opaqueredirect'`.
    3. **Do not set `Content-Length`.** It is a forbidden request header in browsers. The browser computes it from the body. Attempting to set it throws a console error and may abort the request.
 
-123. **Episode Status: six-state lifecycle model.** `upcoming` (Secretary on creation) → `in_production` (Loop D on transcript detect) → `ready_to_release` (`triggerReadyForRelease()` on assets approved) → `live` (manual — Audra sets at release) → `archived` (nightly housekeeping, Sunday after release). `archived` is the sole terminal gate: all loop skip checks are `status === "archived"`; all "active" filters are `status !== "archived"`. Prior-appearance count in Herald: `ready_to_release` OR `live` OR `archived` (a released episode is public — don't wait for archive). Housekeeping processes `in_production`, `ready_to_release`, and `live` — `upcoming` has no transcript. `active` and `complete` are retired Enum values; existing rows carry `active` until Audra's in-sheet relabel. **AD #22 partial note:** `Images_Status` has no active write path (web app never implemented it) — column is inert, left in sheet pending Filing redesign.
+123. **Episode Status: six-state lifecycle model.** `upcoming` (Secretary on creation) → `in_production` (Loop D on transcript detect) → `ready_to_release` (`triggerReadyForRelease()` on assets approved) → `live` (manual — Audra sets at release) → `archived` (nightly housekeeping, Sunday after release). `archived` is the sole terminal gate: all loop skip checks are `status === "archived"`; all "active" filters are `status !== "archived"`. Prior-appearance count in Herald: `ready_to_release` OR `live` OR `archived` (a released episode is public — don't wait for archive). Housekeeping processes `in_production`, `ready_to_release`, and `live` — `upcoming` has no transcript. `active` and `complete` are retired Enum values; existing rows carry `active` until Audra's in-sheet relabel. **AD #22 partial note:** `Images_Status` has no active write path (web app never implemented it) — column is inert, left in sheet pending Filing redesign. *Correction (2026-06-05): `Images_Status` is not in the live sheet — Episodes col 12 is now `Final_Episode_ID`. The column was removed, not left inert.*
+
+124. **Mending Fairy — `mend_ledger` manifest schema (locked).** `manifest.mend_ledger` is an object map keyed by `issueKey` strings. Issue key formats: `'I4:{pngDriveFileId}'` (per-PNG caption gap), `'I1:{fieldName}'` (per-field manifest/Episodes mismatch — `'I1:guest_name'`, `'I1:contact_id'`), `'O1:{contactId}'` (per-contact bio enrichment). Each entry: `{ attempts: Number, lastAttempt: ISO-string, status: 'open' | 'healed' | 'task_spawned' }`. `_mendDecide(ledger, key, maxAttempts)` returns `'run'` / `'skip'` / `'escalate'` — reads the backoff axis. `_mendUpdate(ledger, key, status, bumpAttempts)` writes or upserts an entry. Ledger committed as a single `patchManifest({ mend_ledger: ledger })` call per `runMendingFairy` invocation — never written mid-op. `task_spawned` status stops nightly re-spawn permanently. `healed` marks successful self-repair. `MEND_MAX_ATTEMPTS = 3` is the global ceiling.
+
+126. **Task Projection model (live 2026-06-07).** Task existence splits two ways — no third class. **(a) Date-calculated tasks are projected cues**, computed on read, never stored: Recording Reminder (`Recording_Date`, D−1/D−0), Runway (`Release_Date`, D−7..D−1), Release Day Tomorrow / Release Day (`Release_Date`, D−1/D−0). Rendered client-side by `stGetEpCues()`; window math (`0 ≤ diff ≤ N`), never exact-match, so a closer-in reschedule self-heals. No `Release_Date` → cues don't resolve. The two date axes are independent — dragging `Release_Date` never moves the Recording cue. `_pulse_recordingReminders` / `_pulse_releaseReminders` are permanent no-ops. **(b) Everything else is a durable row** — state-advancing tasks, Revise tasks (payload-bearing), human-spawned tasks. Never projected, never demoted. **Completion semantics:** completion is system-durable, human-reversible — no automatic process (reschedule, re-derivation, pulse re-run) ever flips a completion; `uncompleteTask()` is the sole deliberate human path. **Routing Principle:** if it can't be answered by the app, it belongs in human tasks; if it should be answered by the app but isn't, fix the source — don't absorb it into a task comment. System tasks (date-cues, state-gates) carry no comments; payload lives only on durable rows. **Held:** dematerializing state-gates into card affordances — only after projection is proven live over time.
+
+125. **Mending Fairy — `Mending` audit actor and tiered autonomy model.** `logToAuditTrail('Mending', ...)` is the audit actor for all Mending Fairy writes. Every op logs at minimum: issue key, decision (run/skip/escalate), and outcome. Run-start and run-complete are INFO-level markers. **Tiered autonomy (two axes):** Axis 1 (backoff): `_mendDecide`/`_mendUpdate` — shared across all ops. Axis 2 (tier): per-op logic — T1 (additive/reversible) → auto+log; T2 (content regen, fill-when-absent) → auto+log, task if ambiguous/conflict; T3 (destructive) → always task. I4 = T1. I1 = T2 (fill path) with immediate-task conflict path (no backoff on conflict — conflict is not transient). O1 = T2. Mending never touches `live`, `complete`, or `archived` episodes — pre-release guard in `runMendingFairy` is the enforcement point.
 
 ---
 
@@ -177,29 +183,29 @@ attempts a target, never gates on it.
 | 15 | O | Personal_Note | LongText | JT-only. Never system-written. Simple overwrite. Herald uses as research anchor. |
 | 16 | P | Bio_Summary | LongText | Herald-written. 75-word hard limit. |
 | 17 | Q | Tags | Multi-value | Freeform. JT-managed. Post-episode only. No automation writes Tags. |
-| 18 | R | Relationship_Type | EnumList | Multi-value. Values include: Guest, Sponsor, Donor, Roundtable, Prospect, Denied. |
-| 19 | S | Source | Enum: form \| manual | How contact entered the system. |
-| 20 | T | Headshot_URL | URL | Herald-written. Drive direct-access URL. |
-| 21 | U | Contact_Library_Folder_ID | String | Drive folder ID for this contact's library assets. Hard required for Guest Brief. |
-| 22 | V | Created_At | Timestamp | System-set on creation. |
-| 23 | W | Last_Activity | Timestamp | Written by `updateLastActivity()`. Updated by secretary_fairy.gs (contact stub creation) and herald_fairy.gs (enrichment, brief). Used to sort Contacts list desc. Added Phase 1.3. |
+| 18 | R | Source | Enum: form \| manual | How contact entered the system. |
+| 19 | S | Created_At | Timestamp | System-set on creation. |
+| 20 | T | Last_Activity | Timestamp | Written by `updateLastActivity()`. Updated by secretary_fairy.gs (contact stub creation) and herald_fairy.gs (enrichment, brief). Used to sort Contacts list desc. Added Phase 1.3. |
+| 21 | U | Headshot_URL | URL | Herald-written. Drive direct-access URL. |
+| 22 | V | Contact_Library_Folder_ID | String | Drive folder ID for this contact's library assets. Hard required for Guest Brief. |
+| 23 | W | Relationship_Type | EnumList | Multi-value. Values include: Guest, Sponsor, Donor, Roundtable, Prospect, Denied. |
 
 ### Episodes (14 columns)
 
 | # | Col | Field | Type | Notes |
 |---|---|---|---|---|
 | 1 | A | Episode_Sequence | Integer | Manually managed. GAS never writes. AD #28. |
-| 2 | B | Release_Date | Date | Manually managed. GAS never writes. AD #28. |
+| 2 | B | Release_Date | Date | Written by `saveArrangeOrder()` (Arrange Save / drag-back) and manually. AD #28 (corrected). |
 | 3 | C | Episode_UID | String | Primary key. Format: `EP-YYMMDD-HHmm`. |
 | 4 | D | Contact_ID | String | Foreign key → Contacts. |
 | 5 | E | Guest_Name | String | Denormalized display name. Free text for Roundtable. |
-| 6 | F | Status | Enum: upcoming \| in_production \| ready_to_release \| archived | Secretary writes `upcoming` on creation. `archived` is the sole terminal gate. `active`/`complete` are legacy values — in-sheet relabel pending. See AD #123. |
+| 6 | F | Status | Enum: upcoming \| in_production \| review \| ready_to_release \| live \| archived | Secretary writes `upcoming` on creation. `archived` is the sole terminal gate. `active`/`complete` are legacy values — in-sheet relabel pending. See AD #123, #129. |
 | 7 | G | Raw_Folder_ID | String | Drive folder ID of the episode subfolder inside `02_RAW_PRODUCTION`. Secretary writes. |
 | 8 | H | Production_Folder_ID | String | Drive folder ID of the episode subfolder inside `03_STAGING_DRAFTS`. Secretary writes. |
 | 9 | I | Recording_Date | Date | Secretary writes on calendar match. |
 | 10 | J | Calendar_Event_ID | String | Google Calendar event ID. Secretary writes on calendar match. |
 | 11 | K | Video_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. AD #22. |
-| 12 | L | Images_Status | Enum: pending \| approved \| revision_requested | Web app writes on JT action. AD #22. |
+| 12 | L | Final_Episode_ID | String | Drive file ID of the final mastered episode. Written by `completeFinalEpisodeUpload()`. |
 | 13 | M | Episode_URL | URL | Podcast episode URL. Manually managed. |
 | 14 | N | Episode_Type | Enum | Episode type (e.g., guest \| roundtable \| solo). Manually managed. |
 
@@ -226,7 +232,7 @@ attempts a target, never gates on it.
 | 17 | Q | Asset_ID | String | FK → Asset_Library.Asset_ID. Set on revision tasks (`Revise_Reels`, `edit_vids`). Empty for all other task types. |
 | 18 | R | Bucket | String | User bucket name. Set on Buckets workspace tasks. Sourced from User Registry. Empty for episode tasks and system-spawned tasks. Audra hand-sets column header + data validation on Tasks tab. |
 
-### Episode_Log (9 columns)
+### Episode_Log (10 columns)
 
 | # | Field | Type | Notes |
 |---|---|---|---|
@@ -239,10 +245,11 @@ attempts a target, never gates on it.
 | 7 | Body | LongText | For video feedback: `[MM:SS] comment text` format. |
 | 8 | Resolved | Boolean | FALSE on creation. TRUE when Filing Fairy closes episode, or manually. |
 | 9 | Visible_To | Enum: both \| audra_only \| jt_only | Defaults to both. |
+| 10 | Revision_Round | Integer | Revision round number. Added for revision-flow rail grouping. |
 
-### Asset_Library (20 columns)
+### Asset_Library (18 columns)
 
-Single source of truth for all content assets. One row per asset. Permanent — rows are never deleted. Canvas state stored for 1:1 reconstruction.
+Single source of truth for all content assets. One row per asset. Permanent — rows are never deleted, except `rejected` rows swept by the purge job (AD #128). Canvas state stored for 1:1 reconstruction.
 
 | # | Field | Type | Notes |
 |---|---|---|---|
@@ -253,19 +260,19 @@ Single source of truth for all content assets. One row per asset. Permanent — 
 | 5 | Display_Name | String | Human-readable name. Editable by JT (Reels). |
 | 6 | Slide_Index | Integer | Content identity key for pairing. Quote_Graphic only. |
 | 7 | Quote_Text | LongText | Hook or quote text placed on canvas. Quote_Graphic only. |
-| 8 | Reel_Summary | LongText | Gemini-generated context description. Reels only. Used by caption generation. |
-| 9 | Image_Prompt | LongText | Prompt used to generate background. Quote_Graphic only. |
-| 10 | Caption_Host | LongText | Claude-generated caption. Frozen after AI write — never overwritten. (Formerly Caption_Draft — AD #115.) |
-| 11 | Caption_Guest | LongText | JT-approved/edited caption. Source of truth for card render and Make.com post. (Formerly Caption_Final — AD #115.) |
+| 8 | Reel_Transcript | LongText | Gemini verbatim audio transcription. Reels only. `hasSummary` idempotency gate in `syncReelAssets` checks this field. |
+| 9 | Reel_Summary | LongText | Gemini audio gloss — scannable summary for caption generation. Reels only. Must be non-empty before caption generates. |
+| 10 | Caption_Host | LongText | Working caption — sole source of truth for card render and schedule. Claude-generated on creation; may be edited. (Formerly Caption_Draft — AD #115.) |
+| 11 | Caption_Guest | LongText | Reserved for the Guest Package builder; not written by the caption paths. (Formerly Caption_Final — AD #115.) |
 | 12 | Notes | LongText | JT scratchpad. Not posted. |
 | 13 | Background_ID | String | Drive file ID of background image from `IMAGE_BACKGROUND_LIBRARY_ID`. Quote_Graphic only. |
 | 14 | Canvas_State | LongText | Fabric.js `canvas.toJSON()` serialization. Enables 1:1 reconstruction on slot re-entry. Quote_Graphic only. |
-| 15 | Status | Enum: candidate \| scheduled \| bank \| rejected | |
+| 15 | Status | Enum: candidate \| schedule \| bank \| rejected | |
 | 16 | Availability | Enum: available \| placed \| paired | Controls candidate panel visibility. |
 | 17 | Created_At | Timestamp | |
 | 18 | Created_By | String | `system` for GAS rows. User email for manual rows. |
-| 19 | Quality_Score | Integer (1–5) | Vestigial ranking artifact. Pipeline writes; rankings UI retired. Column retained — writes are by index. |
-| 20 | Slot_Tags | String | Vestigial ranking artifact. Comma-separated Posting_Schedule Slot_IDs. Rankings UI retired. Column retained — writes are by index. |
+
+Last column is `Created_By` (18). Former cols 19 (`Quality_Score`) and 20 (`Slot_Tags`) dropped: code (`ASSET_LIBRARY_COLS` + writers) 2026-06-05, sheet columns deleted by Audra 2026-06-09 (rankings retired). Do not re-add by index.
 
 ### Social_Assets (13 columns)
 
@@ -319,15 +326,16 @@ Append-only event log. All mutating operations, AI calls, and gate transitions w
 
 **Write path:** `logToAuditTrail(category, eventType, foreignKey, level, detail)`. Help Desk Companion reads a recent slice (configurable window, default 7 days).
 
-### User_Registry (5 columns)
+### User_Registry (6 columns)
 
 | # | Field | Notes |
 |---|---|---|
 | 1 | User_ID | Google account email. Primary key. |
 | 2 | Display_Name | Shown in task assignee display. |
 | 3 | Role | Enum: host \| producer \| admin \| contributor |
-| 4 | Buckets | Comma-delimited list of this user's bucket names. Audra hand-edits. Empty = no buckets. System never supplies values. |
-| 5 | Default_Bucket | Single value; one of this user's Buckets entries. Receives cross-assigned tasks. Audra hand-edits. |
+| 4 | PIN | Numeric login PIN. Read by `validatePin()` for PIN-based login. Audra hand-edits. |
+| 5 | Buckets | Comma-delimited list of this user's bucket names. Audra hand-edits. Empty = no buckets. System never supplies values. |
+| 6 | Default_Bucket | Single value; one of this user's Buckets entries. Receives cross-assigned tasks. Audra hand-edits. |
 
 **Live values:** `jt@wiseonewithin.com` (JT, host) | `audra@wiseonewithin.com` (Audra, producer)
 
@@ -396,7 +404,7 @@ Fields written by GAS to the episode manifest JSON file in the Staging folder.
 - Audra uploads proxy mp4 to GCS bucket `dwyp-review-playback` at `episodes/{EUID}/proxy.mp4`.
 - Audra marks `Upload_Produced_Episode` task complete → `completeUploadEpisode()` → `Video_Status → review` → `Review_Episode` task spawned for JT.
 - JT watches via native `<video>` player (GCS V4-signed URL, 8h expiry). Marks timestamps, types notes, taps Send → creates or appends Revise task for Audra.
-- Task stays open until Filing Fairy closes episode.
+- Request Revisions auto-completes `Review_Episode` and spawns/appends the `Revise_Episode` task; Approve completes it (AD #130). Backstop closer: REVIEW_STEPS sweep in `completeFinalEpisodeUpload`.
 
 ### Images / Reels Review Gate
 - Audra drops files into `Staging/Images/` or `Staging/Reels/` root.
@@ -527,16 +535,17 @@ IMAGE_BACKGROUND_LIBRARY_ID/         ← Shared background pool for Studio canva
 
 | File | Role | Entry Point | Status |
 |---|---|---|---|
-| `fairy_circle.gs` | Shared utilities, Daily Pulse orchestrator | `dailyPulse()` | ✅ Active |
-| `secretary_fairy.gs` | Episode creation, folder setup, scheduling | `runSecretary()` | ✅ Active |
-| `herald_fairy.gs` | Guest research, bio, brief generation (Gemini API) | `runHerald()` | ✅ Active |
-| `artist_fairy.gs` | Slide deck generation from Show Notes placeholders | `runArtistFairy()` | ✅ Active |
-| `filing_fairy.gs` | Episode archival, asset moves, corpus import | `runFilingFairy()` | ✅ Active |
-| `scribe_fairy.gs` | Guest communication touchpoints | `scribeLetSchedule()` et al. | ⛔ Retired (AD #111). Dead-code stub retained under intentional deletion policy. |
-| `housekeeping.gs` | Nightly utility jobs, Mending Fairy (future) | `triggerNightlyHousekeeping()` | ✅ Active |
-| `clerk_fairy.gs` | `doPost()` router | `doPost()` | 🔴 Rebuild queued |
-| `vert_fairy.gs` | Corpus retrieval, episode index (Track A), show notes/editorial pass (Track B), quote graphic asset materialization (Track C / Bridge Fairy) | `runVertFairy()` · `buildEpisodeIndexV2()` · `runEditorialPass()` · `materializeQuoteGraphicAssets()` | ✅ Active — all three pipeline tracks live |
-| `dwyp_app.gs` | Web app server, review backend, Studio backend, Contacts | `doGet()` | ✅ Active — Spoke 1 spring clean pending |
+| `fairy_circle.js` | Shared utilities, Daily Pulse orchestrator | `dailyPulse()` | ✅ Active |
+| `secretary_fairy.js` | Episode creation, folder setup, scheduling | `runSecretary()` | ✅ Active |
+| `herald_fairy.js` | Guest research, bio, brief generation (Gemini API) | `runHerald()` | ✅ Active |
+| `artist_fairy.js` | Slide deck generation from Show Notes placeholders | `runArtistFairy()` retired | ⛔ Entry point removed; images pipeline retired. Dead helper functions remain pending janitorial spoke. |
+| `filing_fairy.js` | Episode archival, asset moves, corpus import | `runFilingFairy()` | ✅ Active |
+| `scribe_fairy` | Guest communication touchpoints | — | ⛔ Retired (AD #111). File removed from repo — no stub retained. |
+| `housekeeping.js` | Nightly utility jobs, Mending Fairy (future) | `triggerNightlyHousekeeping()` | ✅ Active |
+| `dev_tools.js` | Manual test wrappers — never called by production | `ACTIVE_EP_UID` paste-point; per-stage `test_*` wrappers | ✅ Active |
+| `clerk_fairy.js` | `doPost()` router | `doPost()` | 🔴 Rebuild queued |
+| `vert_fairy.js` | Corpus retrieval, episode index (Track A), show notes/editorial pass (Track B), quote graphic asset materialization (Track C / Bridge Fairy) | `runVertFairy()` · `buildEpisodeIndexV2()` · `runEditorialPass()` · `materializeQuoteGraphicAssets()` | ✅ Active — all three pipeline tracks live |
+| `dwyp_app.js` | Web app server, review backend, Studio backend, Contacts | `doGet()` | ✅ Active — Spoke 1 spring clean pending |
 | `dwyp_ui.html` | Web app client | — | ✅ Active — Spoke 1 spring clean pending |
 | `dev_tools.gs` | Manual test wrappers only. Never called by production. | `test_*` prefix | ✅ Active |
 | `safety_fairy.gs` | **Retired.** Remove in Spoke 1 spring clean. | — | ⛔ Retired |
@@ -712,6 +721,8 @@ Locked principles for prompts targeting Claude. Apply across all generation work
 | Podcast · People · Personal loose-task grouping | Retired May 2026 (SPOKE_Tasks_3). AppSheet-era residue. `renderDashboardLoose` removed from `renderDashboard()`. Replaced by Buckets workspace (AD #125). |
 | Tasks schema 17-column count | Superseded by 18-column schema — `Bucket` (col R/18) added SPOKE_Tasks_3. See AD #125. |
 | Three-axis task taxonomy (Origin · Scope · Destination) | Origin and Scope obsoleted by Episodes/Buckets workspace split. Only Destination survives, deferred. See AD #121 (corrected). |
+| `callGeminiVideoAnalysis_` / `runReelEditorialPass` / `_parseReelEditorialOutput_` | Retired June 2026. Video-based Gemini reel analysis replaced by `callGeminiAudioAnalysis_` + `_parseReelAudioResponse_` (dual-output: `TRANSCRIPT:` / `GLOSS:`). `syncReelAssets` writes directly. |
+| `Reel_Summary_Clean` (Asset_Library col 9) | Renamed `Reel_Summary` June 2026. Former `Reel_Summary` (col 8) renamed `Reel_Transcript`. Schema v2.1. |
 
 124. **Per-asset card icon model (locked target, May 2026 — not yet fully built).** Three states applied to each per-asset icon (headphones / film / calendar) on episode cards. Color = whose action is next; reading is identical on every screen, with no per-viewer computation.
    - **Muted** — nothing pending for this asset.
@@ -726,9 +737,29 @@ Locked principles for prompts targeting Claude. Apply across all generation work
    
    Cross-assignment routing: when Assignee ≠ creator, the task is written to the assignee's `Default_Bucket`. The `Tasks.Bucket` column (col R/18) records the bucket on the task row. No data-validation dropdown required on the Tasks tab — the in-app dropdown enforces valid values; the column is plain text. `bumpVersion("tasks")` fires on all bucket-task write paths.
 
+127. **System tasks surface via projection, never via `Bucket` writes (locked 2026-06-09).** Corollary to AD #125 and #126. Multi-context task visibility is achieved by render-time filters over task rows, not by writing tasks into containers. The Buckets workspace "Podcast" band is the first instance: current user's open/in-progress/blocked episode-linked tasks, grouped by episode, due-date sorted — computed in `stRenderBucketsView()`, no schema change, no User Registry entry, no spawn-path change. `Bucket` stays empty on system-spawned tasks; "Bucket empty = system task" remains a valid invariant. **Completion-path rule:** workflow-step tasks whose completion machinery lives on a specific surface (`Upload_Produced_Episode`, `Produce_Episode`, `Revise_Episode`, `Revise_Reels`, `Upload_Final_Episode`, `release` — enumerated in `BK_POD_SPECIAL_STEPS`, `dwyp_ui.html`) must never complete via generic `writeTaskComplete` from a projection band; projection bands render a jump to the owning surface instead. Generic tasks complete in place — same row, same write, from any view. Future multi-context views (e.g., a "Today" band mixing origins) follow this pattern: filter, don't store.
+
+128. **Asset deletion lifecycle (locked 2026-06-10).** Narrows AD #99: Asset_Library rows are never deleted **except** `Status = rejected` rows swept by the purge job (`_pulse_purgeRejectedAssets`, Daily Pulse Stage 7) ≥ 30 days after the episode's `Release_Date`; no `Release_Date` → never purged. Purge trashes Drive files by `Drive_File_ID` (folder location is cosmetic), bumps `asset_library`, logs per row to Audit_Trail. **Tombstone semantics:** deletion anywhere in the UI sets `Status = rejected` — row and file survive until purge for QA review. **Slot-block guard:** any destructive or demoting action on an asset is blocked while a Social_Assets row references its `Asset_Library_ID` with a non-empty Slot ("unschedule first"); guard never consults `Availability` (swipe placements don't set it). **Operation model:** unschedule = slot → pool (Status stays `schedule`); demote = pool → Reels surface (`schedule → candidate`, reels only); delete = tombstone (Reels surface for reels, Schedule pool for quote graphics). Bank (future) sources from unscheduled/unpromoted assets — `rejected` assets are Bank-ineligible. **Quote replenishment:** `materializeQuoteGraphicAssets` tops up to floor (10 hooks / 6 quotes) counting non-rejected rows only, gated to episode Status ∈ {`in_production`, `review`, `ready_to_release`}; text-dedup against active + live-rejected rows — rejected texts are never resurrected; no LLM top-up step (manual generation covers gaps).
+
+129. **Episodes Status enum is six-state (corrected 2026-06-10).** `upcoming | in_production | review | ready_to_release | live | archived`. Supersedes the four-state list in AD #123 — `review` and `live` were live in production (Episodes_Writer writes `Status=review` during episode review cycles) but absent from the documented enum. `archived` remains the sole terminal gate. Sheet validation confirmed by Audra 2026-06-10.
+
+130. **Episode review task lifecycle + single proxy backend (locked 2026-06-11).** Hub decisions from the upload-lifecycle verification spoke. (a) **GCS is the sole proxy backend.** All episode review playback (Studio and mobile/dashboard) streams `episodes/{EUID}/proxy.mp4`; `getProxyStreamUrl`'s Drive path retires (explicit deletion decision); `completeEpisodeRevision` validation repoints from Drive folder to GCS object presence. (b) **A revised proxy always returns to JT's court.** Canonical re-upload end state: `Video_Status = review` + `Review_Episode` spawn. `completeEpisodeRevision`'s `→ pending` end state retires; both `Revise_Episode` completers converge on the unified path. (c) **`Review_Episode` completion points:** auto-completed by `requestEpisodeRevisions` (existing) and by `approveEpisodeForRelease` (new); REVIEW_STEPS sweep in `completeFinalEpisodeUpload` remains the backstop. (d) **`Review_Episode` spawn is gated:** spawn only when no open `Review_Episode` row exists for the episode. (e) **Durable upload-in-progress marker required.** Episode-scoped, written at upload session start on every upload path, cleared on completion; upload task flipped `Status = in_progress` as UI echo. Transfer state and approval state are separate axes — the marker never extends the `Video_Status` enum (precedent: Asset_Library `Status`/`Availability` separation). Marker mechanism decided at implementation checkpoint; this AD locks the requirement. *Addendum (2026-06-11, Checkpoint 1): mechanism locked — Episodes col 15 `Upload_Started_At` (ISO-8601 string). Presence = upload in progress; value feeds "started <time>" display and staleness derivation (`now − started > UPLOAD_STALE_MINUTES`) — staleness is derived, never stored. Cleared to empty on completion or cancel. Set/clear are Episodes writes that bump `episodes`; both players pick the marker up free via the row scan they already perform. Schema table updates when the column lands in the live sheet.*
+
+131. **Guest brief task vocabulary split (locked 2026-06-11).** `Guest_Brief_Enrich` becomes a real `Workflow_Step` value for Audra's enrich task (spawned by `runHeraldBrief`); `Review_Guest_Brief` is reserved for JT's review task (spawned by `spawnGuestBriefReviewForJT`). Approve semantics: `Guest_Brief_Enrich` approval completes the task and spawns JT's `Review_Guest_Brief`; `Review_Guest_Brief` approval completes only — terminal, no respawn. `spawnGuestBriefReviewForJT` gains an open-row idempotency gate. Root cause being fixed: both task types shared `Review_Guest_Brief`, and the shared approve handler completed-and-respawned unconditionally — an unbounded loop (verified 2026-06-11). Aligns code to the Approval Gate design in this doc, which already named `Guest_Brief_Enrich`.
+
 ---
 
 ## Build History
+
+### v3.6 → v3.7 (June 2026)
+
+- **Task Projection model locked (AD #126).** Date-cues demoted from spawned rows to read-time projections; durable-row class and completion semantics defined.
+- **Reel audio analysis pipeline.** `callGeminiVideoAnalysis_` retired; replaced by `callGeminiAudioAnalysis_` + `_parseReelAudioResponse_`. Gemini call returns dual-output (`TRANSCRIPT:` / `GLOSS:`) written to Asset_Library cols 8/9 directly by `syncReelAssets`. Server-side chunked resumable upload via Drive byte-range fetch handles files > 50 MB (chunk governed by `REEL_UPLOAD_CHUNK_BYTES`, default 40 MB). `runReelEditorialPass` and `_parseReelEditorialOutput_` retired from `vert_fairy.js`; `_pulse_reelChain` calls `syncReelAssets` only.
+- **Asset_Library schema cols 8/9 renamed (v2.1).** `Reel_Summary` (col 8) → `Reel_Transcript` (verbatim transcription). `Reel_Summary_Clean` (col 9) → `Reel_Summary` (scannable gloss). `hasSummary` idempotency gate checks `Reel_Transcript` (col 8). Audra renamed column headers in sheet.
+- **`Upload_Produced_Episode` task spawn added.** `_pulse_spawnUploadTask` in `fairy_circle.js` spawns task when `Status === in_production` and no `open` / `in_progress` `Upload_Produced_Episode` task exists. Called from Stage 1 transcript-detect path and Stage 2 `in_production` block.
+- **Governance keys added.** `REEL_ANALYSIS_PROMPT_KEY` — Master Template section key for dual-output audio prompt. `REEL_UPLOAD_CHUNK_BYTES` — optional tuning (40 MB default). Old `# Reel Editorial` template section and its key retired.
+
+---
 
 ### v3.5 → v3.6 (May 2026)
 

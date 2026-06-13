@@ -369,7 +369,7 @@ Every surface answers to exactly one role. If a surface wants to do two things, 
 
 ### Two Rhythms (JT)
 - **Daily, mobile** — "What needs me?" Small bites. Triage + review + edit-and-react.
-- **Weekly, desktop** — "Get the week scheduled." One sitting. Publish surface.
+- **Weekly, desktop** — "Get the week scheduled." One sitting. Schedule surface.
 - **Occasional, desktop** — Specific creative work. Writer or Design.
 
 Audra: same rhythms + pipeline ops (filing, herald, debug) via role-filtered icons on the same left rail.
@@ -486,7 +486,7 @@ Cost note: image generation per slot × options × episodes is a real API spend 
 
 ### Slot Recipe Table *(new, S4)*
 - Columns: `Slot_ID · Day · Asset_Type · Platform · Why · Sort_Order · Ratio`
-- Read at pre-compose time (Vert Fairy Pass 2) and at week-view render time (Publish surface)
+- Read at pre-compose time (Vert Fairy Pass 2) and at week-view render time (Schedule surface)
 - Authority on what a week looks like per episode
 - Storage location Q14
 
@@ -547,7 +547,7 @@ Listed explicitly so future sessions don't drift into assuming any of these:
 - The desktop chrome details beyond the four-pane structure + left rail shape (Phase 2.4)
 - The schedule panel visual design (Phase 3.3)
 - The Writer canvas chooser visual (Phase 3.x)
-- ~~Whether the schedule view is per-project, global, or both (Q11)~~ **Resolved** — global surface, grouped by guest/week
+- ~~Whether the schedule view is per-project, global, or both (Q11)~~ **Resolved** — per-guest, sub-item under each guest's nav root. Not a global surface.
 - Project_Types registry, multi-project routing, generic data model — **do not build until a second project appears**
 - Slot-type recipes for non-social types — **do not build until those slot types ship**
 - Bank_Clip pool (flagged S4 as deferred; future feature, architecture already supports it via nullable Episode_UID)
@@ -563,7 +563,7 @@ In addition to the three foundation principles (Surface, Performance, Cognitive 
 
 **AI's context = user's surface.** *(v1.1)* The assistant knows what the user sees, not what's in the database. Corpus is always available; foreground is the current surface only.
 
-**Mode follows task.** *(v1.1)* The user does not choose between Publish, Writer, and Design. The task they tap determines which surface assembles.
+**Mode follows task.** *(v1.1)* The user does not choose between Schedule, Writer, and Design. The task they tap determines which surface assembles. (Publish was the original third mode; retired May 2026, replaced by Schedule.)
 
 **Pinning is a folder convention.** *(v1.1)* Drive folder structure is the contract. The UI reads it. There is no pin state to manage.
 

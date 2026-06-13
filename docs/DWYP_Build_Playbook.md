@@ -77,7 +77,7 @@ Both run simultaneously. They converge at Phase 3.
 - **Done:** 40 write paths retrofitted across fairy_circle.js (8), secretary_fairy.js (2), herald_fairy.js (4), dwyp_app.js (22). `suppressBump` param on `spawnTask()`/`updateTaskStatus()` — dailyPulse() suppresses per-row bumps and fires two unconditional bumps at end of run. audit_trail recursion guard in `bumpVersion()`.
 - **Surface back:** Audit table for review before any code changes. Any write path with ambiguous domain.
 - **Depends on:** 1.2.
-- **Status:** All 11 domains verified via Phase 1 Test Protocol on staging. Production deploy pending (manual step).
+- **Status:** All 11 domains verified. Live in production (staging cadence retired May 2026; code pushes direct to prod).
 
 ### 1.4 Frontend Version-Aware Loader ✅ Done
 - **Owner:** Claude Code, autonomous
@@ -91,7 +91,7 @@ Both run simultaneously. They converge at Phase 3.
 - **Done:** Tasks screen task list, episode cards, and loose tasks all use version-aware loader. Tab return triggers version check, not full refetch. Verified in browser DevTools — second tab return makes one network call only when nothing changed.
 - **Surface back:** After implementation, ready for QA.
 - **Depends on:** 1.4.
-- **Status:** `loadData()` waterfall replaced with getAllVersions → getDomainsBatch cold-start. Staged + verified. Production deploy pending (batched with 1.1–1.3).
+- **Status:** `loadData()` waterfall replaced with getAllVersions → getDomainsBatch cold-start. Live in production.
 
 ### 1.6 Blurhash Thumbnail Generation
 - **Owner:** Claude Code, autonomous
@@ -153,6 +153,8 @@ Both run simultaneously. They converge at Phase 3.
 ---
 
 ## Phase 3: Application of Design System (Spoke Track)
+
+> **Reality sync (2026-06-09):** This Playbook is v5/May and lags production. Per State v7.7: Phase 3.0 (Rail Remodel), 3.1, and the Phase 4 companion are **shipped**. The companion shipped as a **single unified `companionChat`** spanning Episode/Images/Reels/Schedule — NOT the planned 4.4/4.5 two-spoke split (separate Publish Companion + Help Desk). **Help Desk companion is NOT built** (no `callHelpDesk`, no `[[NAV:...]]` parser). Schedule place/export and derivative edit (`saveDerivativeAsset`) are shipped. The `← Next` / pending markers below are stale; treat State as authoritative for what's built. Playbook re-sequence + the unprefixed-canon "exception under review" (see CLAUDE.md) remain open Hub items.
 
 **Goal:** Apply the design system to specific surfaces. Each is a propagation of the system, not a freelance redesign.
 **Sequencing note (Hub May 2026):** Remodel → AI wiring → Pretty. Phase 3.0 (Rail Remodel) ships first. Phase 4 (AI Companions) ships before Phase 3.2 (Visual Modernization) — wiring first, pretty second.
@@ -315,7 +317,7 @@ When chipping away autonomously, surface back at:
 **Was:** Queued indefinitely — autonomous email sender for pipeline communication events (guest invite, scheduling confirm, follow-ups, release announcements).
 **Cancelled:** Reframe #8. Was never deployed; seven template keys blank; Daily Pulse Loop 2 indefinitely queued.
 **What replaces it:** Pipeline email events spawn Writer email tasks that JT completes autonomously. Templates migrate to Writer Email quick-start templates (the seven blank Scribe keys finally have a home). Daily Pulse Loop 2 rewires to spawn a release reminder task rather than a Scribe send.
-**Stub:** `scribe_fairy.gs` retained as dead-code stub (joins `safety_fairy.gs`, `marcom_fairy.gs` — pre-CIM exception, explicit retention). No new GAS wiring needed — trigger logic in Secretary and Daily Pulse already knows when events should fire.
+**Stub:** none retained — `scribe_fairy` has been removed from the repo (no dead-code stub; CLAUDE.md no longer requires stubs). No new GAS wiring needed — trigger logic in Secretary and Daily Pulse already knows when events should fire.
 
 ---
 

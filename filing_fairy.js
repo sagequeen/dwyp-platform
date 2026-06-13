@@ -61,3 +61,54 @@ function runFilingFairy(epUid) {
     });
   }
 }
+
+
+/**
+ * Scans the Contact Library folder for a guest brief Google Doc.
+ * Prefers a doc whose name ends with _${epUid} (exact episode match).
+ * Falls back to the most recently updated GuestBrief doc in the folder.
+ * Returns doc text, or empty string if none found.
+ *
+ * Called by vert_fairy.gs: gatherVertContext().
+ * Docs written by herald_fairy.gs: writeGuestBriefDoc() — named GuestBrief_DisplayName_EpisodeUID.
+ */
+function findGuestBriefInContactLibrary(contactLibraryFolderId, epUid, agentName) {
+  try {
+    const folder = DriveApp.getFolderById(contactLibraryFolderId);
+    const files  = folder.getFiles();
+    let exactMatch = null;
+    let fallback   = null;
+
+    while (files.hasNext()) {
+      const file = files.next();
+      if (file.getMimeType() !== MimeType.GOOGLE_DOCS) continue;
+      const name = file.getName();
+      if (!name.startsWith("GuestBrief")) continue;
+
+      if (name.endsWith("_" + epUid)) {
+        exactMatch = file;
+        break;
+      }
+      if (!fallback || file.getLastUpdated() > fallback.getLastUpdated()) {
+        fallback = file;
+      }
+    }
+
+    const target = exactMatch || fallback;
+    if (!target) {
+      logToAuditTrail(agentName, "error", epUid, null,
+        "findGuestBriefInContactLibrary: no GuestBrief doc found in Contact Library folder.", "warning");
+      return "";
+    }
+
+    const text = DocumentApp.openById(target.getId()).getBody().getText();
+    logToAuditTrail(agentName, "state_change", epUid, null,
+      "Guest Brief loaded: " + target.getName() + " (" + text.length + " chars).", "info");
+    return text;
+
+  } catch (e) {
+    logToAuditTrail(agentName, "error", epUid, null,
+      "findGuestBriefInContactLibrary error: " + e.message, "warning");
+    return "";
+  }
+}

@@ -29,7 +29,7 @@ JT is on her phone. She's between things. She has 30 seconds. She wants to know 
 - Episode status awareness — release date, current phase, gating status
 - Asset review (images, reels) — sort, approve, comment
 - Episode review — proxy player, timecoded comments
-- Contacts — browse, read, light edits (tags, notes)
+- Contacts — full CRM-lite: browse, edit all contact fields, Quick Add capture, Email/Text actions, Enrich (people surfaces are phone-native — Boundary Call #7)
 - Ready for Release toggle
 - Manual asset download for off-platform posting
 - Notifications and quick acknowledgments
@@ -98,6 +98,16 @@ JT can open a Write Lite surface on mobile to capture ideas before they disappea
 
 **Rationale:** Capture is an ops gesture — quick action, done before the idea evaporates. The composition happens on desktop. The hard wall holds for everything else in Studio; this surface intentionally has no path to creation tools.
 
+### 7. People surfaces are phone-native (June 2026)
+
+The ops/creation test governs **production surfaces**. Surfaces about human relationships sit outside it: relationship work happens where relationships happen — on the phone. JT finds guests on social media, talks to people, captures them in the moment.
+
+**What this means for Contacts:**
+- **Mobile is the primary workspace.** Tappable, fully editable cards (all contact fields including Personal_Note), profile/website links, `Email` and `Text` actions, Enrich, and a pinned `Add Contact` button opening Quick Add (three optional fields — name, email, social URL; at least one required; soft duplicate warn). No Companion on mobile — JT is the researcher there. CRM-lite.
+- **Desktop gets parity plus the Companion.** Standard left/right rails, feed-sized cards center. The Companion (conversational research/enrichment — separate design pass) lives desktop-only, consistent with the existing Companion rule.
+
+**What this is not:** a degradation exception. It is a domain boundary. The test for future surfaces gains a first gate: *Is this surface about humans/relationships?* → phone-native, full capability. Otherwise the ops/creation test applies unchanged, hard wall included.
+
 ---
 
 ## Edge Cases Resolved
@@ -118,8 +128,10 @@ JT can open a Write Lite surface on mobile to capture ideas before they disappea
 | JT comments on a reel during review | Mobile | Decision-adjacent ops |
 | JT approves Audra's caption revision | Mobile | Approval = ops decision |
 | JT adds a loose task | Mobile | Ops decision |
-| JT browses guest contacts | Mobile | Read + light tag edits = ops |
-| JT edits a contact's organization or relationship type | Desktop | Core field edit = production |
+| JT browses guest contacts | Mobile | People surface — phone-native (Boundary Call #7) |
+| JT edits a contact's organization or relationship type | Mobile | People surface — phone-native (Boundary Call #7) |
+| JT quick-adds someone she just met, from Instagram | Mobile | Capture on a people surface — the defining case for Boundary Call #7 |
+| JT asks the Contacts Companion to find potential guests | Desktop | Companion is desktop-only; research session = sustained focus work |
 
 ---
 
@@ -153,7 +165,7 @@ The complaint that started this conversation. Resolution: episodes and tasks are
 Tabs vary in maturity (Publish detailed, Write half-built, Outreach/Ideas placeholders). The principle doesn't fix that — but the design system pass that follows should standardize tab chrome so half-built tabs at least *look* coherent with built ones, even when their content is thin.
 
 ### For future feature decisions
-When a new feature is proposed, ask the test first. "JT wants to draft outreach emails on her phone" → composition → desktop. "JT wants to forward a guest brief from her phone" → ops → mobile. The decision falls out automatically.
+When a new feature is proposed, ask the domain gate first, then the test. "Is this about humans/relationships?" → phone-native, full capability (Boundary Call #7). Otherwise: "JT wants to draft outreach emails on her phone" → composition → desktop. "JT wants to forward a guest brief from her phone" → ops → mobile. The decision falls out automatically.
 
 ---
 
@@ -199,4 +211,4 @@ All four boundary calls confirmed by Audra.
 
 ---
 
-*Captured Hub session, May 2026. Audra + Claude. Locks the foundational surface principle. Feeds component library design and all subsequent UI work. Boundary calls confirmed May 2026 — Write Lite (mobile idea capture) added as Boundary Call #6.*
+*Captured Hub session, May 2026. Audra + Claude. Locks the foundational surface principle. Feeds component library design and all subsequent UI work. Boundary calls confirmed May 2026 — Write Lite (mobile idea capture) added as Boundary Call #6. People-surfaces domain clause (Contacts phone-native) added as Boundary Call #7, June 2026.*

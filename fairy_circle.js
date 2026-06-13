@@ -567,14 +567,18 @@ function sleepInChunks(totalMs) {
 // JSON EXTRACTION — TWO-PASS PROTOCOL
 // Extracts a valid JSON object from a raw Gemini response.
 //
-// Pass 1: First-bracket / Last-bracket extraction with control character sanitization.
-// Pass 2: If Pass 1 fails, strips markdown fences and attempts largest {...} block.
-// Returns { error: "PARSE_ERROR", raw: ... } if both passes fail.
-//
-// normalizeSmartChars() applied before JSON.parse() in both passes.
-// Smart quotes and em-dashes inside string values are normalized to ASCII.
-// Prevents parse failures caused by Gemini outputting typographic punctuation
-// inside JSON string values.
+// Fence-strip + first-bracket/last-bracket isolation, then:
+// Pass 1: JSON.parse the block as-is (valid JSON, pretty-printed or compact;
+//         typographic characters inside string values are legal JSON and
+//         pass through untouched).
+// Pass 2: If Pass 1 fails, escape raw control characters INSIDE string
+//         literals only (state-machine walk), then parse. Handles Gemini
+//         emitting literal newlines/tabs inside JSON string values without
+//         corrupting the structural whitespace between tokens.
+// Pass 3: If Pass 2 fails, normalizeSmartChars() repair (curly quotes used
+//         as JSON delimiters, em-dashes), then ctrl-char escape, then parse.
+//         Last resort — may mutate typographic characters inside values.
+// Returns { error: "PARSE_ERROR", raw: ... } if all passes fail.
 // =============================================================================
 
 /**
@@ -585,48 +589,71 @@ function sleepInChunks(totalMs) {
 function extractJson(text) {
   if (!text) return { error: "PARSE_ERROR", raw: "empty response" };
 
-  // --- Pass 1: First-Bracket / Last-Bracket ---
+  const stripped = String(text)
+    .replace(/```json/gi, "")
+    .replace(/```/g,      "")
+    .trim();
+
+  const firstBracket = stripped.indexOf('{');
+  const lastBracket  = stripped.lastIndexOf('}');
+  if (firstBracket === -1 || lastBracket <= firstBracket) {
+    return { error: "PARSE_ERROR", raw: text.substring(0, 500) };
+  }
+
+  const jsonStr = stripped.substring(firstBracket, lastBracket + 1);
+
+  // --- Pass 1: parse as-is ---
   try {
-    const firstBracket = text.indexOf('{');
-    const lastBracket  = text.lastIndexOf('}');
-    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-      let jsonStr = text.substring(firstBracket, lastBracket + 1);
-      jsonStr = normalizeSmartChars(jsonStr);
-      jsonStr = jsonStr
-        .replace(/\n/g,              "\\n")
-        .replace(/\r/g,              "\\r")
-        .replace(/\t/g,              "\\t")
-        .replace(/[\x00-\x1F\x7F]/g, "");
-      return JSON.parse(jsonStr);
-    }
+    return JSON.parse(jsonStr);
   } catch (e) {
     // Fall through to Pass 2
   }
 
-  // --- Pass 2: Largest-Block Scan ---
+  // --- Pass 2: escape control chars inside string literals, then parse ---
   try {
-    const stripped = text
-      .replace(/```json/gi, "")
-      .replace(/```/g,      "")
-      .trim();
-
-    const firstBracket = stripped.indexOf('{');
-    const lastBracket  = stripped.lastIndexOf('}');
-    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-      let jsonStr = stripped.substring(firstBracket, lastBracket + 1);
-      jsonStr = normalizeSmartChars(jsonStr);
-      jsonStr = jsonStr
-        .replace(/(?<!\\)\n/g,       "\\n")
-        .replace(/(?<!\\)\r/g,       "\\r")
-        .replace(/(?<!\\)\t/g,       "\\t")
-        .replace(/[\x00-\x1F\x7F]/g, "");
-      return JSON.parse(jsonStr);
-    }
+    return JSON.parse(_escapeCtrlCharsInJsonStrings_(jsonStr));
   } catch (e) {
-    // Both passes failed
+    // Fall through to Pass 3
   }
 
-  return { error: "PARSE_ERROR", raw: text ? text.substring(0, 500) : "empty response" };
+  // --- Pass 3: smart-char repair (curly-quote delimiters), then parse ---
+  try {
+    return JSON.parse(_escapeCtrlCharsInJsonStrings_(normalizeSmartChars(jsonStr)));
+  } catch (e) {
+    // All passes failed
+  }
+
+  return { error: "PARSE_ERROR", raw: text.substring(0, 500) };
+}
+
+/**
+ * Escapes raw control characters that appear INSIDE JSON string literals,
+ * leaving structural whitespace between tokens untouched.
+ * Newline/CR/tab become their escape sequences; other control chars are
+ * dropped. Already-escaped sequences pass through unchanged.
+ */
+function _escapeCtrlCharsInJsonStrings_(jsonStr) {
+  const out = [];
+  let inString = false;
+  let escaped  = false;
+  for (let i = 0; i < jsonStr.length; i++) {
+    const ch = jsonStr[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out.push(ch);
+      continue;
+    }
+    if (escaped) { out.push(ch); escaped = false; continue; }
+    if (ch === '\\') { out.push(ch); escaped = true; continue; }
+    if (ch === '"')  { inString = false; out.push(ch); continue; }
+    if (ch === '\n') { out.push('\\n'); continue; }
+    if (ch === '\r') { out.push('\\r'); continue; }
+    if (ch === '\t') { out.push('\\t'); continue; }
+    const code = jsonStr.charCodeAt(i);
+    if (code < 0x20 || code === 0x7F) continue; // drop other control chars
+    out.push(ch);
+  }
+  return out.join('');
 }
 
 /**
@@ -1655,11 +1682,11 @@ function stripReadySuffix(file) {
 }
 
 /**
- * Appends a timestamped revision comment to the Production Notes doc for an episode,
- * AND writes a corresponding entry to Episode_Log (Entry_Type: "revision").
+ * Writes a revision comment to Episode_Log (Entry_Type: "revision").
+ * Episode_Log is the system of record for revision comments.
+ * stagingFolderId is unused but retained — callers pass it positionally.
  */
 function appendRevisionComment(epUid, stagingFolderId, comment, commenter, assetType) {
-  const agentName   = "Asset_Scanner";
   const attribution = commenter  || getGovernance("ASSIGNEE_HOST");
   const assetScope  = assetType  || "general";
 
@@ -1671,49 +1698,6 @@ function appendRevisionComment(epUid, stagingFolderId, comment, commenter, asset
     body:       comment || "No comment provided. See Drive file comments for details.",
     visibleTo:  "both"
   });
-
-  try {
-    const manifest = getManifest(stagingFolderId);
-    if (!manifest) {
-      logToAuditTrail(agentName, "error", epUid, "", `[WARNING] Manifest not found — Production Notes doc entry skipped.`, "WARNING");
-      return;
-    }
-
-    const notesDocId = manifest.asset_ids ? manifest.asset_ids.production_notes : null;
-    if (!notesDocId) {
-      logToAuditTrail(agentName, "error", epUid, "", `[WARNING] Production Notes doc ID not in manifest — doc entry skipped.`, "WARNING");
-      return;
-    }
-
-    const doc       = DocumentApp.openById(notesDocId);
-    const body      = doc.getBody();
-    const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
-
-    body.appendParagraph("─────────────────────────────────────────────");
-    body.appendParagraph(`REVISION REQUEST — ${timestamp}`)
-      .setHeading(DocumentApp.ParagraphHeading.HEADING3);
-    body.appendParagraph(`Requested by: ${attribution}`);
-    body.appendParagraph(`Asset type: ${assetScope}`);
-    body.appendParagraph(comment || "No comment provided. See Drive file comments for details.");
-
-    doc.saveAndClose();
-
-    logToAuditTrail(agentName, "state_change", epUid, "", `[INFO] Revision comment from ${attribution} appended to Production Notes.`, "INFO");
-
-  } catch (e) {
-    logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Failed to append revision comment to Production Notes: ${e.message}`, "ERROR");
-    if (e.isManifestCorrupt) {
-      spawnTask({
-        episodeUid:       epUid,
-        actionTitle:      "BLOCKED: Episode manifest corrupt — manual recovery required",
-        assignee:         getGovernance("ASSIGNEE_PRODUCER"),
-        assignedBy:       "The Fairy Team",
-        status:           "open",
-        priority:         "urgent",
-        executiveSummary: `episode_manifest.json in folder ${e.folderId || stagingFolderId} failed JSON.parse. A revision-comment write to Production Notes was blocked. Manually inspect and repair the manifest file.`
-      });
-    }
-  }
 }
 
 // =============================================================================
@@ -1815,6 +1799,7 @@ function dailyPulse() {
     const recordingDateCol = epHeaders.indexOf("Recording_Date");
     const releaseDateCol   = epHeaders.indexOf("Release_Date");
     const finalEpIdCol     = epHeaders.indexOf("Final_Episode_ID");
+    const rawFolIdCol      = epHeaders.indexOf("Raw_Folder_ID");
 
     // Tasks column indices
     const taskEpUidCol    = tasksHeaders.indexOf("Episode_UID");
@@ -1844,6 +1829,7 @@ function dailyPulse() {
       const guestName = guestNameCol !== -1 ? String(epData[i][guestNameCol] || epUid) : epUid;
       const contactId = contactIdCol !== -1 ? String(epData[i][contactIdCol] || "")    : "";
       const prodFolId = prodFolCol   !== -1 ? String(epData[i][prodFolCol]   || "")    : "";
+      const rawFolId  = rawFolIdCol  !== -1 ? String(epData[i][rawFolIdCol]  || "")    : "";
 
       try {
         // =======================================================================
@@ -1859,8 +1845,21 @@ function dailyPulse() {
               taskEpUidCol, taskStatusCol, taskWorkflowCol, taskIdCol, taskDueDateCol, agentName
             );
           }
+          // §1: Spawn Upload_Raw_Assets task on or after recording day (window math — AD #126)
+          if (recordingDateCol !== -1 && taskEpUidCol !== -1 &&
+              taskStatusCol !== -1 && taskWorkflowCol !== -1) {
+            const recDateVal = epData[i][recordingDateCol];
+            if (recDateVal) {
+              const recDay = new Date(recDateVal); recDay.setHours(0, 0, 0, 0);
+              if (recDay.getTime() <= today.getTime()) {
+                _pulse_spawnUploadRawTask(epUid, guestName, contactId, rawFolId,
+                  tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol, agentName);
+              }
+            }
+          }
           // Transcript watch: transcript detected → flip to in_production + run chain
           if (prodFolId && _pulse_detectTranscript(prodFolId)) {
+            _pulse_completeUploadRawTask(epUid, agentName); // §2 auto-complete on transcript detect
             patchEpisodes(epUid, { Status: "in_production" });
             _pulse_spawnUploadTask(epUid, guestName, contactId, tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol);
             heavyUsed += _pulse_contentChain(epUid, guestName, prodFolId, agentName, heavyBudget - heavyUsed);
@@ -1929,12 +1928,197 @@ function dailyPulse() {
       }
     }
 
+    // =========================================================================
+    // STAGE 7: Purge sweep (system-level) — delete aged rejected assets (§4)
+    // =========================================================================
+    _pulse_purgeRejectedAssets(agentName);
+
+    // =========================================================================
+    // STAGE 8: Asset_ID uniqueness integrity check (Responsiveness spoke §5)
+    // =========================================================================
+    _pulse_checkAssetIdIntegrity(agentName);
+
     bumpVersion("tasks",    "dailyPulse");
     bumpVersion("episodes", "dailyPulse");
     logToAuditTrail(agentName, "human_action", "", "", "[INFO] Daily Pulse complete.", "INFO");
 
   } catch(e) {
     logToAuditTrail(agentName, "error", "", "", "[ERROR] Daily Pulse threw a fatal error: " + e.message, "ERROR");
+  }
+}
+
+/**
+ * SPOKE Asset Deletion §4 — purge sweep (system-level, once per pulse).
+ * Permanently deletes Asset_Library rows with Status='rejected' whose episode's
+ * Release_Date + 30 days < today. This is the one deletion path under the
+ * otherwise-permanent Asset_Library (AD #99 exception, locked this session).
+ * Rules:
+ *   - Episodes without a Release_Date are never purged.
+ *   - The Drive file is trashed BY Drive_File_ID — folder location is cosmetic
+ *     (a non-fatal §1 move may have left the file outside Reels/Delete).
+ *   - File trash is non-fatal; the row is still deleted so the sweep converges.
+ *   - bumpVersion('asset_library') fires once if >=1 row is deleted.
+ *   - Audit_Trail logs each purged row plus a sweep summary.
+ * Self-contained (opens its own data) so it is callable from dev_tools.
+ */
+function _pulse_purgeRejectedAssets(agentName) {
+  var PURGE_AFTER_DAYS = 30;
+  try {
+    var ss = SpreadsheetApp.openById(getMasterSheetId());
+
+    // Build epUid -> Release_Date(ms or null) from Episodes (header-driven).
+    var epSheet = ss.getSheetByName("Episodes");
+    if (!epSheet) return;
+    var epData = epSheet.getDataRange().getValues();
+    if (!epData.length) return;
+    var epHdr = epData[0];
+    var eUidC = epHdr.indexOf("Episode_UID");
+    var relC  = epHdr.indexOf("Release_Date");
+    if (eUidC === -1 || relC === -1) return;
+
+    var releaseMs = {};
+    for (var e = 1; e < epData.length; e++) {
+      var u = String(epData[e][eUidC] || "");
+      if (!u) continue;
+      var rv = epData[e][relC];
+      var ms = null;
+      if (rv instanceof Date && !isNaN(rv.getTime())) {
+        ms = rv.getTime();
+      } else if (rv && String(rv).trim() !== "") {
+        var d = new Date(String(rv));
+        if (!isNaN(d.getTime())) ms = d.getTime();
+      }
+      releaseMs[u] = ms;
+    }
+
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return;
+    var alData = alSheet.getDataRange().getValues();
+
+    var nowMs    = Date.now();
+    var windowMs = PURGE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+    var toPurge  = []; // { rowNum, assetId, epUid, fileId }
+
+    for (var r = 1; r < alData.length; r++) {
+      if (String(alData[r][ASSET_LIBRARY_COLS.Status - 1] || "").toLowerCase() !== "rejected") continue;
+      var epUid = String(alData[r][ASSET_LIBRARY_COLS.Episode_UID - 1] || "");
+      var rel   = releaseMs[epUid];
+      if (rel == null) continue;             // no Release_Date -> never purge
+      if (rel + windowMs >= nowMs) continue; // still inside the 30-day window
+      toPurge.push({
+        rowNum:  r + 1,
+        assetId: String(alData[r][ASSET_LIBRARY_COLS.Asset_ID      - 1] || ""),
+        epUid:   epUid,
+        fileId:  String(alData[r][ASSET_LIBRARY_COLS.Drive_File_ID - 1] || "")
+      });
+    }
+
+    if (!toPurge.length) return;
+
+    // Delete bottom-up so sheet row numbers stay valid; trash file by ID (non-fatal).
+    for (var p = toPurge.length - 1; p >= 0; p--) {
+      var item = toPurge[p];
+      if (item.fileId) {
+        try {
+          DriveApp.getFileById(item.fileId).setTrashed(true);
+        } catch (fe) {
+          logToAuditTrail(agentName, "error", item.epUid, "",
+            "[WARNING] Purge: could not trash file " + item.fileId +
+            " for " + item.assetId + ": " + fe.message, "WARNING");
+        }
+      }
+      alSheet.deleteRow(item.rowNum);
+      logToAuditTrail(agentName, "state_change", item.epUid, "",
+        "PURGED rejected asset: Asset_ID=" + item.assetId +
+        " file=" + (item.fileId || "none"), "INFO");
+    }
+
+    bumpVersion("asset_library", "purgeRejectedAssets");
+    logToAuditTrail(agentName, "state_change", "", "",
+      "PURGE_SWEEP: " + toPurge.length + " rejected asset(s) deleted (Release_Date + " +
+      PURGE_AFTER_DAYS + "d elapsed)", "INFO");
+
+  } catch (e) {
+    logToAuditTrail(agentName, "error", "", "",
+      "[ERROR] Purge sweep failed: " + e.message, "ERROR");
+  }
+}
+
+/**
+ * Responsiveness/Polish spoke §5 — Asset_ID uniqueness integrity check.
+ * Asset_ID is the Asset_Library primary key; ~20 lookup sites patch the first
+ * matching row and are entitled to assume uniqueness (the 2026-06-10 collision
+ * was hand-introduced data and misrouted a rejectAsset write). Detection only,
+ * no auto-fix — data repair is Audra's.
+ * Rules:
+ *   - Duplicate Asset_ID values -> one WARNING audit line naming IDs + row numbers.
+ *   - Spawns one urgent Data_Integrity task; idempotent — skips while any
+ *     Data_Integrity task is open/in_progress (suppressBump: dailyPulse bumps tasks).
+ *   - Never throws into the pulse; failures log as WARNING and return.
+ * Self-contained (opens its own data) so it is callable from dev_tools.
+ */
+function _pulse_checkAssetIdIntegrity(agentName) {
+  try {
+    var ss      = SpreadsheetApp.openById(getMasterSheetId());
+    var alName  = getGovernance("ASSET_LIBRARY_TAB_NAME") || "Asset_Library";
+    var alSheet = ss.getSheetByName(alName);
+    if (!alSheet) return;
+    var data = alSheet.getDataRange().getValues();
+
+    var seen = {}, dupes = {};
+    for (var i = 1; i < data.length; i++) {
+      var id = String(data[i][ASSET_LIBRARY_COLS.Asset_ID - 1] || "").trim();
+      if (!id) continue;
+      if (seen[id]) {
+        if (!dupes[id]) dupes[id] = [seen[id]];
+        dupes[id].push(i + 1);
+      } else {
+        seen[id] = i + 1;
+      }
+    }
+
+    var ids = Object.keys(dupes);
+    if (!ids.length) return;
+
+    var detail = ids.map(function(id) {
+      return id + " (rows " + dupes[id].join(", ") + ")";
+    }).join("; ");
+
+    logToAuditTrail(agentName, "error", "", "",
+      "[WARNING] ASSET_ID_DUPLICATES: " + detail, "WARNING");
+
+    // Idempotent spawn: one open Data_Integrity task at a time.
+    var tSheet = ss.getSheetByName("Tasks");
+    if (tSheet) {
+      var tData   = tSheet.getDataRange().getValues();
+      var th      = tData[0];
+      var stepC   = th.indexOf("Workflow_Step");
+      var statusC = th.indexOf("Status");
+      if (stepC !== -1 && statusC !== -1) {
+        for (var t = 1; t < tData.length; t++) {
+          if (String(tData[t][stepC]) !== "Data_Integrity") continue;
+          var tSt = String(tData[t][statusC]);
+          if (tSt === "open" || tSt === "in_progress") return;
+        }
+      }
+    }
+
+    spawnTask({
+      workflowStep:     "Data_Integrity",
+      actionTitle:      "Duplicate Asset_IDs detected in Asset_Library",
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "urgent",
+      executiveSummary: "Asset_Library has duplicate Asset_ID values: " + detail +
+        ". Asset_ID is the primary key; lookups patch the first matching row, so " +
+        "writes can land on the wrong row while duplicates exist. Repair by hand: " +
+        "re-ID or delete the duplicate rows."
+    }, true);
+  } catch (e) {
+    logToAuditTrail(agentName, "error", "", "",
+      "[WARNING] Asset_ID integrity check failed: " + e.message, "WARNING");
   }
 }
 
@@ -1983,6 +2167,14 @@ function _pulse_detectTranscript(prodFolderId) {
  */
 function _pulse_contentChain(epUid, guestName, prodFolderId, agentName, heavyBudgetRemaining) {
   if (String(getGovernance("PULSE_CONTENT_ENABLED") || "").toUpperCase() !== "TRUE") return 0;
+  // §3 Expectation gate: no transcript + open Upload_Raw_Assets task → expected wait, skip quietly
+  if (!_pulse_detectTranscript(prodFolderId)) {
+    if (_pulse_hasOpenUploadRawTask(epUid)) {
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] No transcript for " + guestName + " — waiting on raw asset upload. Content chain skipped.", "INFO");
+      return 0;
+    }
+  }
   let manifest = getManifest(prodFolderId);
   let heavyFired = 0;
 
@@ -2089,6 +2281,91 @@ function _pulse_spawnUploadTask(epUid, guestName, contactId, tasksData, taskEpUi
 }
 
 /**
+ * Spawns an Upload_Raw_Assets task on recording day.
+ * Idempotent — one per episode: skips if any non-cancelled task already exists.
+ */
+function _pulse_spawnUploadRawTask(epUid, guestName, contactId, rawFolId,
+    tasksData, taskEpUidCol, taskStatusCol, taskWorkflowCol, agentName) {
+  if (taskEpUidCol !== -1 && taskStatusCol !== -1 && taskWorkflowCol !== -1) {
+    for (var t = 1; t < tasksData.length; t++) {
+      if (String(tasksData[t][taskEpUidCol])    !== epUid)               continue;
+      if (String(tasksData[t][taskWorkflowCol]) !== "Upload_Raw_Assets") continue;
+      if (String(tasksData[t][taskStatusCol])   !== "cancelled")         return;
+    }
+  }
+  spawnTask({
+    episodeUid:   epUid,
+    contactId:    contactId,
+    workflowStep: "Upload_Raw_Assets",
+    actionTitle:  "Upload raw assets — " + guestName,
+    assignee:     getGovernance("ASSIGNEE_PRODUCER"),
+    assignedBy:   "The Fairy Team",
+    status:       "open",
+    priority:     "normal",
+    payloadLink:  rawFolId ? "https://drive.google.com/drive/folders/" + rawFolId : ""
+  });
+}
+
+/**
+ * Marks the open Upload_Raw_Assets task for an episode complete.
+ * Called when transcript-detect fires. Idempotent — skips silently if absent or already done.
+ */
+function _pulse_completeUploadRawTask(epUid, agentName) {
+  try {
+    var ss    = SpreadsheetApp.openById(getMasterSheetId());
+    var sheet = ss.getSheetByName("Tasks");
+    if (!sheet) return;
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var epUidC  = headers.indexOf("Episode_UID");
+    var statusC = headers.indexOf("Status");
+    var stepC   = headers.indexOf("Workflow_Step");
+    var idC     = headers.indexOf("Task_ID");
+    if (epUidC === -1 || statusC === -1 || stepC === -1 || idC === -1) return;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][epUidC]) !== epUid)              continue;
+      if (String(data[i][stepC])  !== "Upload_Raw_Assets") continue;
+      var st = String(data[i][statusC]);
+      if (st !== "open" && st !== "in_progress")           continue;
+      updateTaskStatus(String(data[i][idC]), "complete");
+      logToAuditTrail(agentName, "state_change", epUid, "",
+        "[INFO] Upload_Raw_Assets task auto-completed on transcript detect for " + epUid + ".", "INFO");
+      return;
+    }
+  } catch (e) {
+    logToAuditTrail(agentName, "error", epUid, "",
+      "[WARNING] _pulse_completeUploadRawTask failed: " + e.message, "WARNING");
+  }
+}
+
+/**
+ * Returns true if an open or in_progress Upload_Raw_Assets task exists for the episode.
+ * Used by the §3 expectation gate in _pulse_contentChain.
+ */
+function _pulse_hasOpenUploadRawTask(epUid) {
+  try {
+    var ss    = SpreadsheetApp.openById(getMasterSheetId());
+    var sheet = ss.getSheetByName("Tasks");
+    if (!sheet) return false;
+    var data    = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var epUidC  = headers.indexOf("Episode_UID");
+    var statusC = headers.indexOf("Status");
+    var stepC   = headers.indexOf("Workflow_Step");
+    if (epUidC === -1 || statusC === -1 || stepC === -1) return false;
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][epUidC]) !== epUid)              continue;
+      if (String(data[i][stepC])  !== "Upload_Raw_Assets") continue;
+      var st = String(data[i][statusC]);
+      if (st === "open" || st === "in_progress")           return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * Spawns an urgent Errors task to alert Audra of a content-chain failure.
  */
 function _pulse_spawnErrorTask(epUid, guestName, stage, errorMsg) {
@@ -2151,6 +2428,9 @@ function clearReminderRows() {
     sheet.getRange(i + 1, statCol + 1).setValue('complete');
     cleared++;
   }
+  // #17 audit (2026-06-12): dev-tool, but it mutates Tasks - clients gating
+  // on the tasks version must see the sweep.
+  if (cleared > 0) bumpVersion('tasks', 'clearReminderRows');
   logToAuditTrail('clearReminderRows', 'state_change', '', '',
     '[INFO] Cleared ' + cleared + ' reminder task rows (Recording_Reminder / Release_Reminder).', 'INFO');
   return { cleared: cleared };

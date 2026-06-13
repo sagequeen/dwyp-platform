@@ -474,6 +474,7 @@ function runHousekeeping() {
       try {
         parsePipelineBlock(epUid);
         repairStagingSubfolders(epUid);
+        runMendingFairy(epUid, status);
         processed++;
       } catch (e) {
         logToAuditTrail(agentName, "error", epUid, "", `[ERROR] Housekeeping threw for ${epUid}: ${e.message}`, "ERROR");
@@ -508,20 +509,598 @@ function testParsePipelineBlock() {
 
 
 // =============================================================================
+// MENDING FAIRY
+// =============================================================================
+// Judgment-layer repair pass. Called from runHousekeeping() for each active
+// episode (in_production | ready_to_release). Never mutates live or archived.
+//
+// V1 OPERATIONS:
+//   I4 -- companion .txt regen (T1, additive)
+//   I1 -- manifest/Episodes reconcile (T2, internal)
+//   O1 -- guest bio enrich (T2, outbound, delegates to Herald)
+//
+// LEDGER (manifest.mend_ledger):
+//   { [issueKey]: { attempts: N, lastAttempt: ISO, status: 'open'|'healed'|'task_spawned' } }
+//   Backoff: after MEND_MAX_ATTEMPTS failed auto-attempts, escalate to spawnTask and stop.
+//   Idempotent: skip any entry with status 'healed' or 'task_spawned'.
+//
+// AUDIT ACTOR: 'Mending'
+//   state_change for fixes, error for unfixable/blocked.
+// =============================================================================
+
+var MEND_MAX_ATTEMPTS = 3;
+
+/**
+ * Entry function. Called by runHousekeeping() after parsePipelineBlock() and
+ * repairStagingSubfolders() for each active episode.
+ *
+ * Pre-release guard: only processes in_production and ready_to_release.
+ * Fail-closed on manifest corrupt -- inherits parsePipelineBlock() pattern.
+ *
+ * @param {string} epUid   - Episode_UID
+ * @param {string} status  - Episode Status (already read by caller, passed to avoid re-read)
+ */
+function runMendingFairy(epUid, status) {
+  var ACTOR = 'Mending';
+
+  // Pre-release guard
+  if (status !== 'in_production' && status !== 'ready_to_release') return;
+
+  logToAuditTrail(ACTOR, 'state_change', epUid, '',
+    '[INFO] runMendingFairy starting.', 'INFO');
+
+  // -- Resolve production folder and manifest -----------------------------------
+  var prodFolderId = getStagingFolderIdByUid(epUid);
+  if (!prodFolderId) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[WARN] Production_Folder_ID not found -- Mending skipped.', 'WARNING');
+    return;
+  }
+
+  var manifest;
+  try {
+    manifest = getManifest(prodFolderId);
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      (e.isManifestCorrupt
+        ? '[ERROR] Manifest corrupt -- Mending blocked to prevent data loss. '
+        : '[ERROR] Cannot read manifest -- Mending skipped. ')
+      + e.message, 'ERROR');
+    return;
+  }
+  if (!manifest) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[WARN] Manifest not found -- Mending skipped.', 'WARNING');
+    return;
+  }
+
+  // -- Load mend ledger (or empty object for first run) ------------------------
+  var ledger = manifest.mend_ledger || {};
+
+  // -- Contact lookup (read once here; passed to O1 to avoid duplicate reads) --
+  var contactId = null;
+  var contact   = null;
+  try {
+    contactId = getContactIdByEpisodeUid(epUid);
+    if (contactId) contact = getContactById(contactId);
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[WARN] Contact lookup failed -- O1 will be skipped. ' + e.message, 'WARNING');
+  }
+
+  // -- Run v1 operations (each wrapped; one op failure does not abort others) --
+  try { _mend_I4_txtRegen(epUid, prodFolderId, ledger); }
+  catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '', '[ERROR] I4 threw: ' + e.message, 'ERROR');
+  }
+
+  try { _mend_I1_reconcile(epUid, prodFolderId, manifest, ledger); }
+  catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '', '[ERROR] I1 threw: ' + e.message, 'ERROR');
+  }
+
+  if (contactId && contact) {
+    try { _mend_O1_guestBioEnrich(epUid, contactId, contact, ledger); }
+    catch (e) {
+      logToAuditTrail(ACTOR, 'error', epUid, '', '[ERROR] O1 threw: ' + e.message, 'ERROR');
+    }
+  }
+
+  // -- Persist updated ledger (single patchManifest at end of run) -------------
+  try {
+    patchManifest(prodFolderId, { mend_ledger: ledger });
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[ERROR] Failed to persist mend_ledger: ' + e.message, 'ERROR');
+  }
+
+  logToAuditTrail(ACTOR, 'state_change', epUid, '', '[INFO] runMendingFairy complete.', 'INFO');
+}
+
+
+// =============================================================================
+// MENDING LEDGER HELPERS
+// =============================================================================
+//
+// TWO-AXIS DESIGN (explicit):
+//   Axis 1 -- backoff / attempt ceiling: _mendDecide() and _mendUpdate().
+//             Answers: should we try again, or have we given up?
+//   Axis 2 -- tier (T1/T2/T3) auto-vs-task logic: lives inside each op.
+//             T1 (additive/reversible): always auto + log; no spawnTask
+//               except as escalation after MEND_MAX_ATTEMPTS.
+//             T2 (content regen): auto only when fill-when-absent or
+//               provably system-authored; spawnTask when ambiguous/conflicting.
+//             T3 (destructive/ambiguous): always spawnTask; no auto path.
+//             The tier is a fixed property of each op, not a runtime
+//             parameter -- each _mend_* function encodes its own tier logic.
+// =============================================================================
+
+/**
+ * Returns the autonomy decision for an issue key:
+ *   'skip'     -- already healed or task spawned; do nothing
+ *   'escalate' -- hit attempt ceiling; caller should spawnTask and stop
+ *   'run'      -- proceed with auto-attempt
+ *
+ * Only handles the backoff axis. Auto-vs-task tier logic lives in each op.
+ */
+function _mendDecide(ledger, key, maxAttempts) {
+  var entry = ledger[key];
+  if (!entry) return 'run';
+  if (entry.status === 'healed' || entry.status === 'task_spawned') return 'skip';
+  if ((entry.attempts || 0) >= maxAttempts) return 'escalate';
+  return 'run';
+}
+
+/**
+ * Mutates the in-memory ledger entry for key.
+ * Ledger is persisted by a single patchManifest at the end of runMendingFairy.
+ *
+ * @param {Object}  ledger        - mutable ledger object from manifest
+ * @param {string}  key           - issue key (e.g. 'I4:fileId', 'I1:guest_name')
+ * @param {string}  status        - 'open' | 'healed' | 'task_spawned'
+ * @param {boolean} bumpAttempts  - true to increment attempts counter
+ */
+function _mendUpdate(ledger, key, status, bumpAttempts) {
+  if (!ledger[key]) ledger[key] = { attempts: 0, lastAttempt: '', status: 'open' };
+  if (bumpAttempts) ledger[key].attempts = (ledger[key].attempts || 0) + 1;
+  ledger[key].status      = status;
+  ledger[key].lastAttempt = new Date().toISOString();
+}
+
+
+// =============================================================================
+// I4 -- COMPANION .TXT REGEN (T1, additive)
+// =============================================================================
+
+/**
+ * Scans Manual_Exports/ and its direct subfolders for PNG files missing a .txt
+ * companion of the same base name. Regenerates the .txt from Asset_Library
+ * Caption_Host. Fill-when-absent only -- never overwrites an existing .txt.
+ *
+ * Issue key: 'I4:{pngDriveFileId}' (stable across renames).
+ * T1: auto + log. Escalates to spawnTask only after MEND_MAX_ATTEMPTS failures.
+ */
+function _mend_I4_txtRegen(epUid, prodFolderId, ledger) {
+  var ACTOR = 'Mending';
+
+  var stagingFolder;
+  try {
+    stagingFolder = DriveApp.getFolderById(prodFolderId);
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[I4] Cannot open staging folder: ' + e.message, 'ERROR');
+    return;
+  }
+
+  var exportIt = stagingFolder.getFoldersByName('Manual_Exports');
+  if (!exportIt.hasNext()) return; // no exports folder yet -- nothing to check
+
+  var exportsFolder = exportIt.next();
+  var captionMap    = _mend_I4_buildCaptionMap(epUid);
+
+  // Collect folders to scan: exports root + all immediate subfolders
+  // (Singles/, day-name folders, SWIPE/ -- fixed one-level structure)
+  var foldersToScan = [exportsFolder];
+  var subIt = exportsFolder.getFolders();
+  while (subIt.hasNext()) foldersToScan.push(subIt.next());
+
+  for (var fi = 0; fi < foldersToScan.length; fi++) {
+    var folder = foldersToScan[fi];
+
+    // Build .txt presence set for O(1) lookup
+    var txtSet  = {};
+    var txtIter = folder.getFilesByType('text/plain');
+    while (txtIter.hasNext()) txtSet[txtIter.next().getName()] = true;
+
+    var pngIter = folder.getFilesByType('image/png');
+    while (pngIter.hasNext()) {
+      var pngFile     = pngIter.next();
+      var pngName     = pngFile.getName();
+      var baseName    = pngName.slice(0, -4); // strip .png (safe: filtered by MIME type)
+      var expectedTxt = baseName + '.txt';
+
+      if (txtSet[expectedTxt]) continue; // companion already present
+
+      var issueKey = 'I4:' + pngFile.getId();
+      var dec      = _mendDecide(ledger, issueKey, MEND_MAX_ATTEMPTS);
+      if (dec === 'skip') continue;
+
+      logToAuditTrail(ACTOR, 'state_change', epUid, '',
+        '[I4] Detected missing .txt companion for "' + pngName +
+        '". Tier=T1 decision=' + dec + '.', 'INFO');
+
+      if (dec === 'escalate') {
+        // Re-check caption map at escalation time to produce an actionable reason.
+        var escPureBase = baseName.replace(/-\d+$/, '');
+        var escCaption  = captionMap[baseName] || captionMap[escPureBase] || '';
+        var escReason   = escCaption
+          ? 'Caption_Host was found but Drive writes failed ' + MEND_MAX_ATTEMPTS + ' times. ' +
+            'Check Drive permissions for the Manual_Exports folder.'
+          : 'PNG is present but no Caption_Host exists for it in Asset_Library -- ' +
+            'the asset row may have been deleted. Verify whether the PNG should be ' +
+            'kept; if so, re-export from the Schedule surface to regenerate the .txt.';
+        spawnTask({
+          episodeUid:       epUid,
+          actionTitle:      'Mending: PNG missing .txt companion -- repair manually',
+          assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+          assignedBy:       'The Fairy Team',
+          status:           'open',
+          priority:         'normal',
+          executiveSummary: '[I4] PNG "' + pngName + '" in Manual_Exports for episode ' +
+            epUid + ' is missing its .txt caption companion after ' +
+            MEND_MAX_ATTEMPTS + ' nightly attempts. ' + escReason
+        });
+        logToAuditTrail(ACTOR, 'error', epUid, '',
+          '[I4] Task spawned -- unresolvable .txt gap for "' + pngName + '". ' + escReason, 'WARNING');
+        _mendUpdate(ledger, issueKey, 'task_spawned', false);
+        continue;
+      }
+
+      // dec === 'run': look up caption and create .txt
+      var pureBase = baseName.replace(/-\d+$/, ''); // strip -N duplicate suffix
+      var caption  = captionMap[baseName] || captionMap[pureBase] || '';
+
+      if (!caption) {
+        logToAuditTrail(ACTOR, 'error', epUid, '',
+          '[I4] No Caption_Host found for "' + pngName +
+          '" in Asset_Library -- deferring (attempt ' +
+          ((ledger[issueKey] ? ledger[issueKey].attempts : 0) + 1) + ').', 'WARNING');
+        _mendUpdate(ledger, issueKey, 'open', true);
+        continue;
+      }
+
+      try {
+        folder.createFile(Utilities.newBlob(caption, 'text/plain', expectedTxt));
+        logToAuditTrail(ACTOR, 'state_change', epUid, '',
+          '[I4] Created "' + expectedTxt + '" from Caption_Host. Outcome: auto.', 'INFO');
+        _mendUpdate(ledger, issueKey, 'healed', true);
+      } catch (e) {
+        logToAuditTrail(ACTOR, 'error', epUid, '',
+          '[I4] Drive write failed for "' + expectedTxt + '": ' + e.message, 'ERROR');
+        _mendUpdate(ledger, issueKey, 'open', true);
+      }
+    }
+  }
+}
+
+/**
+ * Builds a _safeFilename-keyed caption lookup for non-reel assets of this episode.
+ * Used by _mend_I4_txtRegen to match PNG filenames back to Caption_Host values.
+ * Skips reel rows (they export .mp4, not .png).
+ */
+function _mend_I4_buildCaptionMap(epUid) {
+  var map = {};
+  try {
+    var ss    = SpreadsheetApp.openById(getMasterSheetId());
+    var alTab = ss.getSheetByName(getGovernance('ASSET_LIBRARY_TAB_NAME') || 'Asset_Library');
+    if (!alTab) return map;
+    var rows = alTab.getDataRange().getValues();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][ASSET_LIBRARY_COLS.Episode_UID - 1]) !== epUid) continue;
+      if (String(rows[i][ASSET_LIBRARY_COLS.Asset_Type  - 1]).toLowerCase() === 'reel') continue;
+      var dn  = String(rows[i][ASSET_LIBRARY_COLS.Display_Name - 1] || '');
+      var cap = String(rows[i][ASSET_LIBRARY_COLS.Caption_Host - 1] || '');
+      if (dn && cap) {
+        var safe = _safeFilename(dn);
+        if (safe) map[safe] = cap;
+      }
+    }
+  } catch (e) {
+    logToAuditTrail('Mending', 'error', epUid, '',
+      '[I4] Caption map build failed: ' + e.message, 'WARNING');
+  }
+  return map;
+}
+
+
+// =============================================================================
+// I1 -- MANIFEST / EPISODES RECONCILE (T2, internal)
+// =============================================================================
+
+/**
+ * Detects drift between the episode manifest and the Episodes row on a defined
+ * field set, then takes the appropriate T2 action:
+ *   fill-when-absent -- auto (one side empty, other populated)
+ *   conflict         -- spawnTask immediately; never picks a winner
+ *
+ * Normalization: all values cast to string, trimmed. Comparison is case-sensitive.
+ * Empty: normalized === ''.  Sentinels (non-empty strings) are treated as present.
+ *
+ * Conflict backoff: a conflict is not transient -- retrying won't resolve it.
+ * Task is spawned on first detection, ledger marked task_spawned, skipped on all
+ * subsequent runs. No 3-attempt cycle.
+ *
+ * Fill backoff: write failures may be transient. Uses MEND_MAX_ATTEMPTS before
+ * escalating to a task (same pattern as I4).
+ *
+ * Ledger keys are per-field per-episode: 'I1:guest_name', 'I1:contact_id'.
+ * A stuck conflict on one field does not gate the other.
+ *
+ * Reconciled fields (v1):
+ *   manifest.guest_name <-> Episodes.Guest_Name
+ *   manifest.contact_id <-> Episodes.Contact_ID
+ */
+function _mend_I1_reconcile(epUid, prodFolderId, manifest, ledger) {
+  var ACTOR = 'Mending';
+
+  var FIELDS = [
+    { mk: 'guest_name', ek: 'Guest_Name' },
+    { mk: 'contact_id', ek: 'Contact_ID' }
+  ];
+
+  var epRow;
+  try {
+    epRow = getEpisodeRow(epUid);
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, '',
+      '[I1] getEpisodeRow failed: ' + e.message, 'ERROR');
+    return;
+  }
+  if (!epRow) {
+    logToAuditTrail(ACTOR, 'error', epUid, '', '[I1] Episode row not found.', 'WARNING');
+    return;
+  }
+
+  for (var fi = 0; fi < FIELDS.length; fi++) {
+    var mk  = FIELDS[fi].mk;
+    var ek  = FIELDS[fi].ek;
+    var key = 'I1:' + mk;
+
+    var mVal = String(manifest[mk] || '').trim();
+    var eVal = String(epRow[ek]   || '').trim();
+
+    // Both empty -- nothing to reconcile
+    if (!mVal && !eVal) continue;
+
+    // Consistent -- if there was an open entry, heal it; either way skip
+    if (mVal === eVal) {
+      if (ledger[key] && ledger[key].status === 'open') {
+        _mendUpdate(ledger, key, 'healed', false);
+        logToAuditTrail(ACTOR, 'state_change', epUid, '',
+          '[I1] Field "' + mk + '" now consistent -- healed.', 'INFO');
+      }
+      continue;
+    }
+
+    var dec = _mendDecide(ledger, key, MEND_MAX_ATTEMPTS);
+    if (dec === 'skip') continue;
+
+    // ---- Conflict path (both set, values differ) ----------------------------
+    // Not transient: spawn task immediately, mark task_spawned, never retry.
+    if (mVal && eVal) {
+      spawnTask({
+        episodeUid:       epUid,
+        actionTitle:      'Mending: manifest/Episodes conflict -- ' + ek,
+        assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+        assignedBy:       'The Fairy Team',
+        status:           'open',
+        priority:         'normal',
+        executiveSummary: '[I1] Field "' + ek + '" has conflicting values: ' +
+          'manifest ' + mk + '="' + mVal + '" vs Episodes ' + ek + '="' + eVal + '". ' +
+          'Likely cause: post-intake rename or contact re-key. ' +
+          'Correct the wrong value manually, then re-run housekeeping for episode ' +
+          epUid + '. Mending will not pick a winner.'
+      });
+      logToAuditTrail(ACTOR, 'error', epUid, '',
+        '[I1] Conflict on "' + mk + '": manifest="' + mVal + '" episodes="' + eVal +
+        '". Task spawned -- will not retry.', 'WARNING');
+      _mendUpdate(ledger, key, 'task_spawned', false);
+      continue;
+    }
+
+    // ---- Fill-when-absent path (exactly one side empty) ---------------------
+    // Transient write failures use MEND_MAX_ATTEMPTS backoff before escalation.
+    var fillTarget = !mVal ? 'manifest' : 'episodes';
+    var fillValue  = !mVal ? eVal : mVal;
+
+    logToAuditTrail(ACTOR, 'state_change', epUid, '',
+      '[I1] Fill-when-absent on "' + mk + '": ' + fillTarget + ' is empty, ' +
+      'filling from ' + (!mVal ? 'Episodes' : 'manifest') +
+      ' with "' + fillValue + '". Tier=T2 decision=' + dec + '.', 'INFO');
+
+    if (dec === 'escalate') {
+      spawnTask({
+        episodeUid:       epUid,
+        actionTitle:      'Mending: auto-fill failed for ' + ek + ' after ' + MEND_MAX_ATTEMPTS + ' attempts',
+        assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+        assignedBy:       'The Fairy Team',
+        status:           'open',
+        priority:         'normal',
+        executiveSummary: '[I1] Could not auto-fill "' + ek + '" for episode ' + epUid +
+          ' after ' + MEND_MAX_ATTEMPTS + ' nightly attempts. ' +
+          'The value to fill is "' + fillValue + '" (sourced from ' +
+          (!mVal ? 'Episodes tab' : 'manifest') + '). Verify and fill manually.'
+      });
+      logToAuditTrail(ACTOR, 'error', epUid, '',
+        '[I1] Escalation task spawned for fill failure on "' + mk + '".', 'WARNING');
+      _mendUpdate(ledger, key, 'task_spawned', false);
+      continue;
+    }
+
+    // dec === 'run': attempt the fill
+    try {
+      if (fillTarget === 'manifest') {
+        var mPatch = {};
+        mPatch[mk] = fillValue;
+        patchManifest(prodFolderId, mPatch);
+      } else {
+        var ePatch = {};
+        ePatch[ek] = fillValue;
+        patchEpisodes(epUid, ePatch);
+      }
+      logToAuditTrail(ACTOR, 'state_change', epUid, '',
+        '[I1] Filled ' + fillTarget + '["' + mk + '"] = "' + fillValue +
+        '". Outcome: auto.', 'INFO');
+      _mendUpdate(ledger, key, 'healed', true);
+    } catch (e) {
+      logToAuditTrail(ACTOR, 'error', epUid, '',
+        '[I1] Fill failed for "' + mk + '" (attempt ' +
+        ((ledger[key] ? ledger[key].attempts : 0) + 1) + '): ' + e.message, 'ERROR');
+      _mendUpdate(ledger, key, 'open', true);
+    }
+  }
+}
+
+
+// =============================================================================
+// O1 -- GUEST BIO ENRICH (T2, outbound, delegates to Herald)
+// =============================================================================
+
+/**
+ * Re-triggers Herald bio enrichment for contacts with an empty or
+ * 'Enrichment Pending' Bio_Summary. Fill-only -- never overwrites a populated bio.
+ * Delegates to runHeraldBio(); never re-implements Herald logic.
+ *
+ * Ledger key: 'O1:{contactId}' -- per contact, not per episode. If the same
+ * contact has two active episodes, the first episode's Herald run writes the bio;
+ * the second episode reads the contact fresh at runMendingFairy start and sees
+ * the bio already populated, so returns without a second Herald call.
+ *
+ * Identity check (simplified): contact must have Display_Name AND at least one
+ * researchable signal (email, website, any social field). No signals -> spawnTask
+ * immediately (not transient; backoff would not help). With signals, use
+ * MEND_MAX_ATTEMPTS backoff for transient Herald / Gemini failures before
+ * escalating to a task.
+ */
+function _mend_O1_guestBioEnrich(epUid, contactId, contact, ledger) {
+  var ACTOR      = 'Mending';
+  var contactKey = 'O1:' + contactId;
+
+  var dec = _mendDecide(ledger, contactKey, MEND_MAX_ATTEMPTS);
+  if (dec === 'skip') return;
+
+  var bio         = String(contact.Bio_Summary || '').trim();
+  var displayName = String(contact.Display_Name || '').trim();
+
+  // Fill-only: bio already present and not a pending sentinel -- nothing to do
+  if (bio && bio !== 'Enrichment Pending') return;
+
+  logToAuditTrail(ACTOR, 'state_change', epUid, contactId,
+    '[O1] Empty/pending bio for ' + (displayName || contactId) +
+    '. Tier=T2 decision=' + dec + '.', 'INFO');
+
+  // Identity signal check: Herald needs at least a name + one research lead
+  var hasName   = !!displayName;
+  var hasSignal = !!(
+    String(contact.Email            || '').trim() ||
+    String(contact.Website          || '').trim() ||
+    String(contact.Social_Instagram || '').trim() ||
+    String(contact.Social_X         || '').trim() ||
+    String(contact.Social_LinkedIn  || '').trim() ||
+    String(contact.Social_YouTube   || '').trim() ||
+    String(contact.Social_Podcast   || '').trim() ||
+    String(contact.Social_Other     || '').trim()
+  );
+
+  // No signals: identity unconfirmed -- not transient, spawn task and stop
+  if (!hasName || !hasSignal) {
+    spawnTask({
+      episodeUid:       epUid,
+      contactId:        contactId,
+      actionTitle:      'Mending: guest bio empty -- add contact signals to enable research',
+      assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+      assignedBy:       'The Fairy Team',
+      status:           'open',
+      priority:         'normal',
+      executiveSummary: '[O1] Contact ' + (displayName || contactId) +
+        ' has an empty Bio_Summary and no researchable signals ' +
+        '(no email, website, or social handles on the contact record). ' +
+        'Add at least one signal, then run Herald from the Fairy Remote Control ' +
+        'or wait for the nightly Mending pass.'
+    });
+    logToAuditTrail(ACTOR, 'error', epUid, contactId,
+      '[O1] No research signals for ' + (displayName || contactId) +
+      ' -- task spawned, will not retry.', 'WARNING');
+    _mendUpdate(ledger, contactKey, 'task_spawned', false);
+    return;
+  }
+
+  // Herald has failed MEND_MAX_ATTEMPTS times -- escalate
+  if (dec === 'escalate') {
+    spawnTask({
+      episodeUid:       epUid,
+      contactId:        contactId,
+      actionTitle:      'Mending: Herald bio failed after ' + MEND_MAX_ATTEMPTS +
+        ' attempts -- ' + (displayName || contactId),
+      assignee:         getGovernance('ASSIGNEE_PRODUCER'),
+      assignedBy:       'The Fairy Team',
+      status:           'open',
+      priority:         'normal',
+      executiveSummary: '[O1] Herald bio enrichment for ' + (displayName || contactId) +
+        ' (episode ' + epUid + ') did not produce a bio after ' +
+        MEND_MAX_ATTEMPTS + ' nightly attempts. ' +
+        'Contact has researchable signals so Herald should be able to proceed -- ' +
+        'run Herald manually from the Fairy Remote Control to investigate.'
+    });
+    logToAuditTrail(ACTOR, 'error', epUid, contactId,
+      '[O1] Escalation task spawned after ' + MEND_MAX_ATTEMPTS +
+      ' failed Herald attempts for ' + (displayName || contactId) + '.', 'WARNING');
+    _mendUpdate(ledger, contactKey, 'task_spawned', false);
+    return;
+  }
+
+  // dec === 'run': delegate to Herald bio entry point
+  var attemptNum = (ledger[contactKey] ? ledger[contactKey].attempts : 0) + 1;
+  try {
+    runHeraldBio(contactId);
+
+    // Verify: re-read contact to confirm bio was actually written
+    var updated = getContactById(contactId);
+    var newBio  = String((updated && updated.Bio_Summary) || '').trim();
+
+    if (newBio && newBio !== 'Enrichment Pending') {
+      logToAuditTrail(ACTOR, 'state_change', epUid, contactId,
+        '[O1] Bio enriched for ' + (displayName || contactId) + '. Outcome: auto.', 'INFO');
+      _mendUpdate(ledger, contactKey, 'healed', true);
+    } else {
+      logToAuditTrail(ACTOR, 'error', epUid, contactId,
+        '[O1] Herald ran but bio still empty/pending (attempt ' + attemptNum + ').', 'WARNING');
+      _mendUpdate(ledger, contactKey, 'open', true);
+    }
+  } catch (e) {
+    logToAuditTrail(ACTOR, 'error', epUid, contactId,
+      '[O1] runHeraldBio threw (attempt ' + attemptNum + '): ' + e.message, 'ERROR');
+    _mendUpdate(ledger, contactKey, 'open', true);
+  }
+}
+
+
+// =============================================================================
 // CORPUS SYNC (Vertex AI RAG Engine)
 // =============================================================================
 //
 // DISABLED — 2026-05-01
 //
-// The Vertex AI RAG importRagFiles API returns 404 for the us-south1 region
-// where the dwyp-rag corpus lives. Both v1 and v1beta1 endpoints were tried.
-// us-central1 does support the import API but could not connect to Google Drive
-// as a source. Manual import via GCP Console (Vertex AI → RAG Engine → corpus
-// → Import files) works and is the current workaround.
+// us-south1 is the locked, working region for this corpus and all associated GCS buckets.
+// The Vertex AI RAG importRagFiles API returns 404 in us-south1 (both v1 and v1beta1).
+// us-central1 supports the import API but cannot connect to Google Drive as a source.
+// Do not route calls to us-central1 — Drive-sourced imports do not work there.
+// Manual import via GCP Console (Vertex AI → RAG Engine → corpus → Import files)
+// is the current workaround.
 //
 // To revisit: check if Google has expanded importRagFiles support to us-south1,
-// or if there is a service account / OAuth scope that unlocks Drive-sourced
-// imports in us-central1. The code below is correct and ready to uncomment.
+// or if there is a service account / OAuth scope that unlocks Drive-sourced imports.
+// The code below is correct for us-south1 and ready to uncomment.
 //
 // GOVERNANCE KEYS USED (when active):
 //   STUDIO_CORPUS_ID       — full Vertex AI RAG corpus resource name

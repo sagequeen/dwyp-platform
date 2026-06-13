@@ -53,6 +53,8 @@ landing.
 
 ## Per-Surface Action Inventory
 
+> **Reality sync (2026-06-09):** Many 🟡 "planned/build-pending" markers below are stale. Per State v7.7, the **Schedule** surface (#5 — place/rearrange/unschedule/edit-doorway/export) and the **per-asset AI companion** (Images/Reels/Episode/Schedule, as unified `companionChat`) and **derivative edit** (`saveDerivativeAsset`) are **shipped and live**. **Help Desk (#8) is genuinely still 🟡 — not built.** Treat State as authoritative for build status; this doc's icons reflect May design-time state. Full icon reconciliation is a pending Hub pass.
+
 ### 1. Left Rail
 
 The navigation surface. Holds no actions of its own beyond navigation.
@@ -82,7 +84,7 @@ The default view when an episode tab is tapped with no within-session state and 
 | Add task (note-attached-to-episode) | ✅ | Inspiration release valve; mobile-permitted (Reframe #3) |
 | View reference docs (Episode Card, Guest Brief, transcript link) | 🟡 | Read-only by default (Edit Is A Mode); Phase 2.1 component |
 | Edit reference doc | 🟡 | Contextual `Edit Contact` / `Edit Description` buttons; Save commits + triggers automation (S3) |
-| Open Schedule | 🟡 | Tap Schedule entry; global surface assembles (not yet built) |
+| Open Schedule | 🟡 | Tap Schedule sub-item under guest; per-guest surface opens |
 | Open Writer doc | ✅ | Tap Writer task or doc tile; canvas assembles |
 | Open Design canvas | ✅ | Tap Design task or asset tile; canvas assembles |
 | Open Episode Review (audio/video) | ✅ | Custom HTML5 player, GCS-served (S2) |
@@ -132,7 +134,7 @@ Source-of-truth for guest records. Reference + edit surface. Feeds Herald enrich
 
 ### 5. Schedule (canvas)
 
-**Not yet built.** Global placement surface — assign kept assets from Asset_Library to week slots, view locked posts, export guest bundle. Grouped by guest/week (Q11 resolved). Composition verbs (choose options, refine, background generation) live in Design (#7), not here. Two-Room Model: Design makes, Schedule places; doorways pass Asset_ID, not state.
+Per-guest surface, sub-item under each guest's nav root (Q11 resolved). Pool = Asset_Library rows at `Status='schedule'` for that episode. Workspace: The Week (template-driven Mon–Sat from `Posting_Schedule`) and Swipe Package (free-pick guest bundle). Composition verbs live in Design (#7), not here. Two-Room Model: Design makes, Schedule places; doorways pass Asset_ID, not state.
 
 | Verb | Status | Notes |
 |---|---|---|
@@ -418,7 +420,7 @@ From `DWYP_App_Structure.md` v1.3:
 | Q8 | Default center pane when episode tab is selected and has no pending task | Phase 2.4 |
 | Q9 | Pinned-docs context budget — default-pinned ≠ default-injected vs whole-panel-injects-with-truncation | Phase 2.4 + Publish AI Companion design |
 | Q10 | Templates location — storage scheme | Phase 2.1 + Writer spoke |
-| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved Hub, May 2026** — global surface, grouped by guest/week |
+| Q11 | Schedule placement — inside Publish per-project, or a level above as roll-up | **Resolved (updated May 2026)** — per-guest, sub-item under each guest's nav root. Not a global surface. |
 | Q12 | Feedback loop capture target — Interactions tab vs Audit_Trail append vs Asset_Library chat_history column | Phase 2 schema review |
 | Q13 | Background image strategy at pre-compose — library-first with Gemini fallback, or fresh per slot | Vert Fairy job spec |
 | Q14 | Slot recipe table storage location | Build-time decision |

@@ -83,7 +83,7 @@
 //             On confirmed identity: normal flow unchanged.
 //             On unconfirmed identity (pending path):
 //             — runHeraldBio() skips all Gemini research/extraction steps;
-//               writes "Enrichment Pending" to Bio_Summary.
+//               leaves Bio_Summary untouched (content-or-blank, D12).
 //             — runHeraldBrief() skips Gemini brief generation; writes a
 //               pending brief doc to Contact Library (same writeGuestBriefDoc
 //               helper) listing possible matches; writes identity_pending: true
@@ -170,7 +170,7 @@ function runHerald(contactId, episodeUid) {
     });
 
     logToAuditTrail(actor, "state_change", episodeUid, contactId,
-      `Identity unconfirmed for ${displayNameCheck} — Enrichment Pending. Audra task spawned.`, "WARNING");
+      `Identity unconfirmed for ${displayNameCheck} — Verify_Guest_Identity task spawned for Audra.`, "WARNING");
 
     if (episodeUid) {
       try {
@@ -179,7 +179,7 @@ function runHerald(contactId, episodeUid) {
           author:     actor,
           entryType:  "system",
           assetType:  "general",
-          body:       `Herald: Identity unconfirmed for ${displayNameCheck} — Enrichment Pending. Audra notified via Verify_Guest_Identity task.`,
+          body:       `Herald: Identity unconfirmed for ${displayNameCheck} — Audra notified via Verify_Guest_Identity task.`,
           resolved:   false,
           visibleTo:  "both"
         });
@@ -311,17 +311,12 @@ function runHeraldBio(contactId, identityResult) {
     }
   }
 
-  // FIX 20 — Pending path: identity unconfirmed. Skip all Gemini passes.
-  // Write "Enrichment Pending" to Bio_Summary. Non-fatal on write failure.
+  // D12 — Pending path: identity unconfirmed. Skip all Gemini passes.
+  // Bio_Summary is content-or-blank: leave it untouched (no sentinel write).
+  // Pending status is carried by the Verify_Guest_Identity task spawned in runHerald.
   if (identityResult && identityResult.confirmed === false) {
     logToAuditTrail(actor, "state_change", null, contactId,
-      `[INFO] Identity unconfirmed for ${displayName} — skipping research pass. Writing Enrichment Pending to Bio_Summary.`, "INFO");
-    try {
-      writeBioSummary(contactId, "Enrichment Pending");
-    } catch (e) {
-      logToAuditTrail(actor, "error", null, contactId,
-        `[WARNING] Failed to write Enrichment Pending to Bio_Summary: ${e.message}`, "WARNING");
-    }
+      `[INFO] Identity unconfirmed for ${displayName} — skipping research pass. Bio_Summary left as-is; status carried by task.`, "INFO");
     return bioResult;
   }
 
@@ -953,6 +948,12 @@ function getContactById(contactId) {
  * Never touches any other column, including Personal_Note.
  */
 function writeBioSummary(contactId, bioText) {
+  // D12 — content-or-blank guard. Strip the "**Bio_Summary:**" markdown label
+  // Gemini sometimes prepends, so the cell holds bio prose only.
+  const cleanBio = String(bioText == null ? "" : bioText)
+    .replace(/^\s*\*{0,2}\s*Bio[_ ]?Summary\s*:\s*\*{0,2}\s*/i, "")
+    .trim();
+
   const ss    = SpreadsheetApp.openById(getMasterSheetId());
   const sheet = ss.getSheetByName("Contacts");
   if (!sheet) throw new Error("Contacts tab not found.");
@@ -966,7 +967,7 @@ function writeBioSummary(contactId, bioText) {
 
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][idCol]).trim() === String(contactId).trim()) {
-      sheet.getRange(i + 1, bioCol + 1).setValue(bioText);
+      sheet.getRange(i + 1, bioCol + 1).setValue(cleanBio);
       bumpVersion("contacts", "writeBioSummary");
       return;
     }

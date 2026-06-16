@@ -50,6 +50,58 @@ function test_checkSignerSa() {
   Logger.log(resp.getContentText());
 }
 
+// Read-only. Inspects revision cycle-state for ACTIVE_EP_UID. Answers three things:
+//   1) Do the two folder resolvers agree? Set (finalize) + read (getEpisodeRevisionHistory)
+//      use EPISODES_COLS.Production_Folder_ID (hardcoded); clear (completeEpisodeRevision)
+//      uses getStagingFolderIdByUid (headers.indexOf). If they differ, the clear lands on a
+//      different manifest than the read -> composer stays locked no matter the routing.
+//   2) What the manifest actually holds (revision_cycle / revision_finalized).
+//   3) What the UI read returns (phase / finalized / cycle).
+function test_inspectRevisionState() {
+  var uid = ACTIVE_EP_UID;
+  Logger.log('[inspectRevisionState] UID = ' + uid);
+
+  var folderIndexOf = getStagingFolderIdByUid(uid); // headers.indexOf resolver
+  var ss   = SpreadsheetApp.openById(getMasterSheetId());
+  var data = ss.getSheetByName('Episodes').getDataRange().getValues();
+  var folderHardcoded = '';
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][EPISODES_COLS.Episode_UID - 1]) === String(uid)) {
+      folderHardcoded = String(data[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
+      break;
+    }
+  }
+  Logger.log('  folder via getStagingFolderIdByUid (indexOf)            = [' + folderIndexOf + ']');
+  Logger.log('  folder via EPISODES_COLS.Production_Folder_ID=' + EPISODES_COLS.Production_Folder_ID + ' (hardcoded) = [' + folderHardcoded + ']');
+  Logger.log('  RESOLVERS MATCH = ' + (String(folderIndexOf) === String(folderHardcoded)));
+
+  var m = getManifest(folderIndexOf);
+  Logger.log('  manifest.revision_cycle     = ' + (m && m.revision_cycle));
+  Logger.log('  manifest.revision_finalized = ' + (m && m.revision_finalized));
+  Logger.log('  _readRevisionCycleState = ' + JSON.stringify(_readRevisionCycleState(folderIndexOf)));
+
+  var hist = getEpisodeRevisionHistory(uid);
+  Logger.log('  getEpisodeRevisionHistory.phase=' + (hist && hist.phase) +
+             ' finalized=' + (hist && hist.finalized) + ' cycle=' + (hist && hist.cycle));
+}
+
+// Unwedge: clears the stuck revision_finalized flag for ACTIVE_EP_UID so the host's
+// composer unlocks and a fresh revise round can be tested. Leaves the cycle as-is.
+// Run test_inspectRevisionState first to capture the before-state.
+function test_clearRevisionFinalized() {
+  var uid = ACTIVE_EP_UID;
+  var folderId = getStagingFolderIdByUid(uid);
+  if (!folderId) { Logger.log('[clearRevisionFinalized] No folder for ' + uid + ' -- aborting.'); return; }
+  var before = getManifest(folderId);
+  Logger.log('[clearRevisionFinalized] before: finalized=' + (before && before.revision_finalized) +
+             ' cycle=' + (before && before.revision_cycle));
+  patchManifest(folderId, { revision_finalized: false });
+  var after = getManifest(folderId);
+  Logger.log('[clearRevisionFinalized] after:  finalized=' + (after && after.revision_finalized) +
+             ' cycle=' + (after && after.revision_cycle));
+  Logger.log('[clearRevisionFinalized] Done. Host composer should unlock on next episode load.');
+}
+
 
 // =============================================================================
 // STAGE 0 — Intake (calendar scan → Secretary + Herald)

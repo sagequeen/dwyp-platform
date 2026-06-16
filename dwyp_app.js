@@ -191,7 +191,7 @@ var EPISODES_COLS = {
   Production_Folder_ID: 8,
   Recording_Date:      9,
   Calendar_Event_ID:   10,
-  Video_Status:        11,
+  Video_Status:        11,   // INERT (SPOKE 2-A): logically retired — no reader/writer. Column kept physical; entry kept for the future physical-delete spoke.
   Final_Episode_ID:    12,
   Episode_URL:         13,
   Episode_Type:        14,
@@ -398,6 +398,8 @@ function getEpisodes() {
   var episodes = [];
   var uploadStaleMs = _uploadStaleThresholdMs();
   var nowMs         = Date.now();
+  // Single Tasks read powers each row's derived phase (SPOKE_A) — no per-row scan.
+  var openStepsByEp = _openStepsByEpisode(ss);
   for (var i = 1; i < data.length; i++) {
     var row    = data[i];
     var status = row[EPISODES_COLS.Status - 1];
@@ -418,7 +420,7 @@ function getEpisodes() {
       Status:               status,
       Production_Folder_ID: row[EPISODES_COLS.Production_Folder_ID - 1],
       Recording_Date:       row[EPISODES_COLS.Recording_Date - 1] ? String(row[EPISODES_COLS.Recording_Date - 1]) : "",
-      Video_Status:         row[EPISODES_COLS.Video_Status - 1],
+      phase:                _phaseFrom(status, openStepsByEp[String(row[EPISODES_COLS.Episode_UID - 1])] || {}),
       Final_Episode_ID:     row[EPISODES_COLS.Final_Episode_ID - 1],
       Episode_URL:          row[EPISODES_COLS.Episode_URL - 1],
       Episode_Type:         row[EPISODES_COLS.Episode_Type - 1],
@@ -647,7 +649,7 @@ function getSocialAssetCandidateCounts(episodeUid) {
       if (String(row[ASSET_LIBRARY_COLS.Episode_UID  - 1]) !== String(episodeUid)) continue;
       if (String(row[ASSET_LIBRARY_COLS.Status       - 1]).toLowerCase() !== "candidate") continue;
       var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
-      if (avail === "placed" || avail === "paired") continue;
+      if (avail === "placed") continue;
       var assetType = normType(row[ASSET_LIBRARY_COLS.Asset_Type - 1]);
       if (assetType === "reel")                    reels++;
       if (IMAGE_TYPES.indexOf(assetType) !== -1)   images++;
@@ -660,40 +662,13 @@ function getSocialAssetCandidateCounts(episodeUid) {
 }
 
 /**
- * Writes Video_Status on the Episodes row matching episodeUid.
- * @param {string} episodeUid
- * @param {string} status  — 'approved' | 'revision_requested'
- * @returns {{ success: boolean, error?: string }}
- */
-function writeVideoStatus(episodeUid, status) {
-  try {
-    var sheetId = getMasterSheetId();
-    var ss      = SpreadsheetApp.openById(sheetId);
-    var sheet   = ss.getSheetByName("Episodes");
-    var data    = sheet.getDataRange().getValues();
-
-    for (var i = 1; i < data.length; i++) {
-      if (String(data[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
-        sheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue(status);
-        bumpVersion("episodes", "writeVideoStatus");
-        return { success: true };
-      }
-    }
-    return { success: false, error: "Episode not found: " + episodeUid };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-}
-
-/**
- * Marks Video_Status = "approved" and spawns Upload_Final_Episode task for Audra.
+ * Closes JT's review and spawns the Upload_Final_Episode task for Audra.
+ * Phase derives from open tasks (SPOKE_C): closing Review_Episode + the open
+ * Upload_Final_Episode task is what makes phase resolve to 'approved'.
  * Idempotent: skips spawn if an open Upload_Final_Episode task already exists.
  */
 function approveEpisodeForRelease(episodeUid) {
   try {
-    var result = writeVideoStatus(episodeUid, "approved");
-    if (!result.success) return result;
-
     var sheetId   = getMasterSheetId();
     var ss        = SpreadsheetApp.openById(sheetId);
     var taskSheet = ss.getSheetByName("Tasks");
@@ -726,11 +701,34 @@ function approveEpisodeForRelease(episodeUid) {
 
     var epSheet   = ss.getSheetByName("Episodes");
     var epData    = epSheet.getDataRange().getValues();
-    var guestName = episodeUid;
+    var guestName = episodeUid, stagingFolderId = "";
     for (var i = 1; i < epData.length; i++) {
       if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      guestName       = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
+      stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || "");
       break;
+    }
+
+    // Deep-link the upload task to the Episode/ child folder (cognitive offload —
+    // Audra lands inside Episode/, not the Staging root where she'd risk Raw/wrong-guest).
+    // Falls back to the Staging root on any resolution failure; never blocks the spawn.
+    var uploadLink = "";
+    if (stagingFolderId) {
+      var stagingRootUrl = "https://drive.google.com/drive/folders/" + stagingFolderId;
+      try {
+        var epFolderIt = DriveApp.getFolderById(stagingFolderId).getFoldersByName("Episode");
+        if (epFolderIt.hasNext()) {
+          uploadLink = "https://drive.google.com/drive/folders/" + epFolderIt.next().getId();
+        } else {
+          uploadLink = stagingRootUrl;
+          logToAuditTrail("approveEpisodeForRelease", "error", episodeUid, "",
+            "[WARNING] Episode/ child folder not found in Staging — Upload_Final_Episode payload falls back to Staging root.", "WARNING");
+        }
+      } catch (linkErr) {
+        uploadLink = stagingRootUrl;
+        logToAuditTrail("approveEpisodeForRelease", "error", episodeUid, "",
+          "[WARNING] Could not resolve Episode/ deep-link (" + linkErr.message + ") — Upload_Final_Episode payload falls back to Staging root.", "WARNING");
+      }
     }
 
     spawnTask({
@@ -740,7 +738,8 @@ function approveEpisodeForRelease(episodeUid) {
       assignee:     getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:   "The Fairy Team",
       status:       "open",
-      priority:     "normal"
+      priority:     "normal",
+      payloadLink:  uploadLink
     });
 
     return { success: true };
@@ -823,7 +822,7 @@ function getSocialAssets(episodeUid, assetType) {
       if (String(row[ASSET_LIBRARY_COLS.Status      - 1]).toLowerCase() !== "candidate") continue;
       if (types.indexOf(normalizeType(row[ASSET_LIBRARY_COLS.Asset_Type - 1])) === -1) continue;
       var avail = String(row[ASSET_LIBRARY_COLS.Availability - 1]).toLowerCase();
-      if (avail === "placed" || avail === "paired") continue;
+      if (avail === "placed") continue;
 
       var fileId = String(row[ASSET_LIBRARY_COLS.Drive_File_ID - 1]);
       var assetId = String(row[ASSET_LIBRARY_COLS.Asset_ID - 1]);
@@ -1522,10 +1521,8 @@ function saveDerivativeAsset(assetId, action, canvasJson, captionText, quoteText
       alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Caption_Host).setValue(caption);
       if (canvasJson) alSheet.getRange(rowNum, ASSET_LIBRARY_COLS.Canvas_State).setValue(canvasJson);
       bumpVersion('asset_library', 'saveDerivativeAsset');
-      try {
-        var audit = ss.getSheetByName('Audit_Trail');
-        if (audit) audit.appendRow([now, 'DWYP_App', 'DERIVATIVE_SAVE', assetId]);
-      } catch (e) {}
+      var epUid = String(src[ASSET_LIBRARY_COLS.Episode_UID - 1] || '');
+      logToAuditTrail('DWYP_App', 'DERIVATIVE_SAVE', epUid, '', assetId);
       return { ok: true, assetId: assetId };
     }
 
@@ -1546,10 +1543,8 @@ function saveDerivativeAsset(assetId, action, canvasJson, captionText, quoteText
       newRow[ASSET_LIBRARY_COLS.Created_By    - 1] = 'jt';
       alSheet.appendRow(newRow);
       bumpVersion('asset_library', 'saveDerivativeAsset');
-      try {
-        var audit2 = ss.getSheetByName('Audit_Trail');
-        if (audit2) audit2.appendRow([now, 'DWYP_App', 'DERIVATIVE_COPY', assetId + ' → ' + newId]);
-      } catch (e) {}
+      var epUidCopy = String(src[ASSET_LIBRARY_COLS.Episode_UID - 1] || '');
+      logToAuditTrail('DWYP_App', 'DERIVATIVE_COPY', epUidCopy, '', assetId + ' → ' + newId);
       return { ok: true, assetId: newId };
     }
 
@@ -2117,8 +2112,8 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
 }
 
 /**
- * Full episode revision request: sets Video_Status, logs to Episode_Log, and spawns
- * a Revise_Episode task for Audra. Replaces the two-step client chain (F-4).
+ * Full episode revision request: logs to Episode_Log and spawns a Revise_Episode
+ * task for Audra (phase derives from the task). Replaces the two-step client chain (F-4).
  * @param {string} episodeUid
  * @param {string} notes       — JT's revision description
  * @param {string} authorEmail — passed from client (APP_CONFIG.userEmail)
@@ -2126,7 +2121,6 @@ function moveReviewFile(fileId, episodeUid, type, decision) {
  */
 function submitEpisodeRevisionRequest(episodeUid, notes, authorEmail) {
   try {
-    writeVideoStatus(episodeUid, "revision_requested");
     appendEpisodeLogEntry(episodeUid, "feedback", "video", notes, "both", authorEmail);
     // Spawn or append to existing Revise_Episode task for producer
     var today = new Date().toISOString().split("T")[0];
@@ -2473,7 +2467,7 @@ function _findOpenReviseEpisodeTaskId(episodeUid) {
 }
 
 /**
- * Completes the Upload_Produced_Episode task, flips Video_Status to 'review',
+ * Completes the Upload_Produced_Episode task, moves the episode to 'review',
  * and spawns the Review_Episode task for the host (gated on no open Review_Episode).
  * @param {number} rowIndex  1-based Tasks sheet row
  * @param {string} episodeUid
@@ -2495,7 +2489,6 @@ function completeUploadEpisode(rowIndex, episodeUid) {
       if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
       guestName = String(epData[i][EPISODES_COLS.Guest_Name - 1] || episodeUid);
       contactId = String(epData[i][EPISODES_COLS.Contact_ID - 1] || '');
-      epSheet.getRange(i + 1, EPISODES_COLS.Video_Status).setValue('review');
       break;
     }
     // Clear the durable upload-in-progress marker (AD #130e) alongside the status flip.
@@ -2522,14 +2515,15 @@ function completeUploadEpisode(rowIndex, episodeUid) {
  */
 function completeProxyReplace(episodeUid) {
   try {
-    var openReviseTaskId = _findOpenReviseEpisodeTaskId(episodeUid);
-    if (openReviseTaskId) {
-      return completeEpisodeRevision(episodeUid, openReviseTaskId);
-    }
+    // Door 2 (oopsie): a direct proxy-slot replace ONLY overwrites the GCS object.
+    // It never flips the turn, clears the revision lock, or bumps the cycle -- even
+    // when a revise cycle is open. The revision hand-back is Door 1 (the Revise task's
+    // "Upload revised cut", routed through completeEpisodeRevision). Intent comes from
+    // which affordance the producer used, not from incidental task state.
     _clearEpisodeUploadMarker(episodeUid);
     bumpVersion('episodes', 'completeProxyReplace');
     logToAuditTrail('completeProxyReplace', 'state_change', episodeUid, '',
-      '[INFO] Proxy replaced via slot (no open revise). Upload marker cleared.', 'INFO');
+      '[INFO] Proxy file replaced via slot (oopsie path). No turn/lock/cycle change.', 'INFO');
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -2917,8 +2911,98 @@ function _computeRevisionTMinus(releaseDate) {
  * folder URL for the deep-link payload. Withdrawn rows (tombstones) are filtered
  * out — never rendered.
  * @param {string} episodeUid
- * @returns {{ ok, videoStatus, rows, stagingFolderUrl, cycle, finalized, tMinus }}
+ * @returns {{ ok, phase, rows, stagingFolderUrl, cycle, finalized, tMinus }}
  */
+/**
+ * Single source of truth for an episode's lifecycle phase (SPOKE_A).
+ * Derived purely from open tasks + Episodes Status — never from Video_Status.
+ * SPOKE_C repoints all former Video_Status readers here.
+ *
+ * Returns exactly one of:
+ *   'review'     — an open Review_Episode task exists (JT's court)
+ *   'revise'     — an open Revise_Episode task exists (producer addressing notes)
+ *   'approved'   — an open Upload_Final_Episode task exists (post-Approve, pre-final-render)
+ *   'released'   — Episodes Status in {ready_to_release, live, archived}
+ *   'production' — none of the above
+ *
+ * Steps are mutually exclusive in practice (each transition completes the prior
+ * step's task), so listed order doubles as precedence.
+ *
+ * @param {string} episodeUid
+ * @returns {string} phase
+ */
+function _deriveEpisodePhase(episodeUid) {
+  var ss = SpreadsheetApp.openById(getMasterSheetId());
+
+  var status = '';
+  var found  = false;
+  var epSheet = ss.getSheetByName('Episodes');
+  if (epSheet) {
+    var epData = epSheet.getDataRange().getValues();
+    for (var i = 1; i < epData.length; i++) {
+      if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) === String(episodeUid)) {
+        status = String(epData[i][EPISODES_COLS.Status - 1] || '');
+        found  = true;
+        break;
+      }
+    }
+  }
+
+  var phase = _phaseFrom(status, _openStepsByEpisode(ss)[String(episodeUid)] || {});
+
+  // Diagnostic only (Flag 2): a 'production' fallback while Status='review' means the
+  // open Review/Revise task that should drive the phase is missing — a silent
+  // regression of JT's in-flight review/revise. Status is the durable signal now that
+  // Video_Status is retired (SPOKE_C). WARN; do NOT alter the derived phase.
+  // Single-episode path only (no dashboard-load spam).
+  if (found && phase === 'production' && status.toLowerCase() === 'review') {
+    logToAuditTrail('_deriveEpisodePhase', 'error', episodeUid, '',
+      '[WARNING] Derived phase=production but Status=review' +
+      ' — expected open task missing; possible silent phase regression.', 'WARNING');
+  }
+
+  return phase;
+}
+
+/**
+ * Pure phase resolver — given an episode Status and a set of its open workflow
+ * steps ({ Review_Episode: true, ... }), returns the derived phase. Shared by
+ * _deriveEpisodePhase (single episode) and getEpisodes (batch).
+ */
+function _phaseFrom(status, openSteps) {
+  if (openSteps['Review_Episode'])       return 'review';
+  if (openSteps['Revise_Episode'])       return 'revise';
+  if (openSteps['Upload_Final_Episode']) return 'approved';
+  var s = String(status || '').toLowerCase();
+  if (s === 'ready_to_release' || s === 'live' || s === 'archived') return 'released';
+  return 'production';
+}
+
+/**
+ * Builds a map of Episode_UID -> set of its open (non-complete, non-cancelled)
+ * workflow steps from a single Tasks read. Powers batch phase derivation in
+ * getEpisodes without an O(N) per-row sheet scan.
+ *
+ * @param {Spreadsheet} ss - already-open master spreadsheet
+ * @returns {Object} { episodeUid: { Workflow_Step: true, ... }, ... }
+ */
+function _openStepsByEpisode(ss) {
+  var map = {};
+  var taskSheet = ss.getSheetByName('Tasks');
+  if (!taskSheet) return map;
+  var tData = taskSheet.getDataRange().getValues();
+  for (var t = 1; t < tData.length; t++) {
+    var uid = String(tData[t][TASKS_COLS.Episode_UID - 1] || '');
+    if (!uid) continue;
+    var st = String(tData[t][TASKS_COLS.Status - 1]);
+    if (st === 'complete' || st === 'cancelled') continue;
+    var step = String(tData[t][TASKS_COLS.Workflow_Step - 1] || '');
+    if (!step) continue;
+    (map[uid] || (map[uid] = {}))[step] = true;
+  }
+  return map;
+}
+
 function getEpisodeRevisionHistory(episodeUid) {
   try {
     var sheetId = getMasterSheetId();
@@ -2926,10 +3010,9 @@ function getEpisodeRevisionHistory(episodeUid) {
 
     var epSheet = ss.getSheetByName('Episodes');
     var epData  = epSheet.getDataRange().getValues();
-    var videoStatus = 'pending', stagingFolderId = '', uploadStartedAt = '', releaseDate = '';
+    var stagingFolderId = '', uploadStartedAt = '', releaseDate = '';
     for (var i = 1; i < epData.length; i++) {
       if (String(epData[i][EPISODES_COLS.Episode_UID - 1]) !== String(episodeUid)) continue;
-      videoStatus     = String(epData[i][EPISODES_COLS.Video_Status        - 1] || 'pending');
       stagingFolderId = String(epData[i][EPISODES_COLS.Production_Folder_ID - 1] || '');
       uploadStartedAt = String(epData[i][EPISODES_COLS.Upload_Started_At    - 1] || '');
       releaseDate     = epData[i][EPISODES_COLS.Release_Date - 1] || '';
@@ -2978,7 +3061,8 @@ function getEpisodeRevisionHistory(episodeUid) {
     var cycleState = _readRevisionCycleState(stagingFolderId);
     var tMinus     = _computeRevisionTMinus(releaseDate);
 
-    return { ok: true, videoStatus: videoStatus, rows: rows, stagingFolderUrl: stagingFolderUrl,
+    return { ok: true, phase: _deriveEpisodePhase(episodeUid),
+             rows: rows, stagingFolderUrl: stagingFolderUrl,
              uploadStartedAt: uploadStartedAt, uploadStale: uploadStale,
              cycle: cycleState.cycle, finalized: cycleState.finalized, tMinus: tMinus };
   } catch (err) {
@@ -3192,8 +3276,8 @@ function _resolveEpisodeCommentRow_(sheet, rowIndex, episodeUid, expectedBody) {
  * Finalize — JT's commitment that the current cycle's comment set is complete
  * (re-semanticized from the retired round-seal). Persists the finalized flag in
  * the manifest (cycle-state authority), consumes the awareness task, spawns or
- * appends the actionable Revise_Episode task with the upload deep-link, closes
- * JT's Review_Episode, and writes Video_Status = 'revision_requested'.
+ * appends the actionable Revise_Episode task with the upload deep-link, and closes
+ * JT's Review_Episode (phase flips to 'revise' off the open Revise_Episode task).
  *
  * A corrupt or missing manifest aborts before any task write — the finalized lock
  * is load-bearing (post-finalize comment/withdraw blocks read it).
@@ -3303,7 +3387,6 @@ function requestEpisodeRevisions(episodeUid, authorEmail) {
       });
     }
 
-    writeVideoStatus(episodeUid, 'revision_requested');
     bumpVersion('episodes', 'requestEpisodeRevisions');
     bumpVersion('tasks',    'requestEpisodeRevisions');
 
@@ -3320,8 +3403,8 @@ function requestEpisodeRevisions(episodeUid, authorEmail) {
 /**
  * Unified revise completion (AD #130a/b). Validates the revised proxy exists in GCS
  * (sole proxy backend — no Drive folder scan), then always returns the episode to JT:
- * Video_Status = review + Review_Episode spawn gated on no open Review_Episode. The
- * former Drive-scan validation and the '-> pending' end state are retired. Both the
+ * Review_Episode spawn gated on no open Review_Episode (phase flips back to 'review').
+ * The former Drive-scan validation and the '-> pending' end state are retired. Both the
  * dashboard Revise_Episode "Complete" and the proxy-slot replace converge here.
  * @param {string} episodeUid
  * @param {string} taskId       — TASK-... ID of the Revise_Episode task (optional)
@@ -3343,7 +3426,6 @@ function completeEpisodeRevision(episodeUid, taskId) {
     }
 
     // Revised proxy accepted -> back to JT's court.
-    writeVideoStatus(episodeUid, 'review');     // bumps episodes
     _clearEpisodeUploadMarker(episodeUid);
 
     // Re-upload opens the next revision cycle: bump the manifest cycle + clear the
@@ -3363,9 +3445,10 @@ function completeEpisodeRevision(episodeUid, taskId) {
     if (taskId) updateTaskStatus(taskId, 'complete');
     _spawnReviewEpisodeIfNone(episodeUid, guestName, contactId);
 
-    bumpVersion('tasks', 'completeEpisodeRevision');
+    bumpVersion('episodes', 'completeEpisodeRevision');
+    bumpVersion('tasks',    'completeEpisodeRevision');
     logToAuditTrail('completeEpisodeRevision', 'state_change', episodeUid, contactId,
-      '[INFO] Revised proxy accepted. Video_Status -> review, Review_Episode (re)spawned if none open.', 'INFO');
+      '[INFO] Revised proxy accepted. Episode returned to review; Review_Episode (re)spawned if none open.', 'INFO');
 
     return { ok: true };
   } catch (err) {

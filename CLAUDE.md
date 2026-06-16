@@ -75,7 +75,7 @@ Every doc declares whether it is **decided fact** or **not-yet-fact** by filenam
 | Prefix | Meaning | Lifecycle |
 |---|---|---|
 | `PROPOSAL_` | Not yet fact. An idea under development — may be rejected wholesale. | Stays a proposal through all maturing. Renamed to `SPOKE_` only when scoped for handoff to Code. |
-| `SPOKE_` | Scoped, executable work. Carries scope statement, Code Integrity Mandate reference, clasp checkpoints. | Pasted into Code, discarded after the session. Outcome lands in State. |
+| `SPOKE_` | Scoped, executable work. Carries scope statement, Code Integrity Mandate reference, clasp checkpoints. | Lives in `docs/` while active; pasted into Code to execute. The completing spoke **deletes the doc in its final commit** (mandatory closeout). Outcome lands in State. |
 
 A proposal is a proposal until it becomes a spoke. There is no intermediate tier.
 
@@ -208,7 +208,7 @@ Documentation is forward-looking, not technical history. Project knowledge is re
 2. **Single source of truth per fact.** When the same fact would appear in two docs, one is canonical and the other points at it. No silent duplication.
 3. **No supersede notices, no "what this displaces" tables, no version-trail prose.** History lives in git. If a doc replaces another, the replaced doc is deleted in the same commit.
 4. **Cross-reference drift is a bug.** If doc X says "see Y v2.9" and Y is now v3.1, fix the reference at the source. Do not add a "still applies despite version" note.
-5. **Closed spokes: outcomes captured in State (done + hanging).** The spoke doc itself is discarded — never repo'd, never archived.
+5. **Completed one-shots are RETAINED, not auto-deleted (policy amended 2026-06-14, Audra).** When a `SPOKE_`/`HANDOFF_`/`TEST_` one-shot is complete: capture outcomes in State, then set its `STATUS:` first line to `COMPLETE — safe to delete` and **leave it in `docs/`.** Do NOT delete it in the completing commit. Deletion is a deliberate **batch purge on Audra's say-so**, never an automatic closeout step — she keeps completed docs visible so they aren't lost track of. This policy governs the delete-at-completion language in the Doc-Sync SoP and State Update Protocol below: follow this, not those. Provenance stamp (prefix + `STATUS:` first line), not file location, is still what keeps a reader from mistaking a working doc for canon — and the `COMPLETE — safe to delete` marker is what flags the batch-purge queue.
 6. **AI audience.** Tables, bullets, terse phrasing. No narrative throat-clearing. No prose flourishes that don't survive retrieval chunking.
 
 **Surface back before acting when:**
@@ -220,11 +220,11 @@ Documentation is forward-looking, not technical history. Project knowledge is re
 
 ## Doc-Sync SoP (Hub + Code)
 
-**Repo boundary.** Only the canonical permanent docs (Tier 1–3) are `.md` files in the repo. Spoke prompts and handoff/design `.md`s are **never** repo files — pasted directly into Code, discarded after the session. Repo'ing working docs is the failure mode this SoP prevents.
+**Repo boundary.** Working docs live in `docs/` and ARE committed — but each carries a provenance stamp (`PROPOSAL_` / `SPOKE_` / `HANDOFF_` / `TEST_` prefix + a `STATUS:` first line) so a reader never mistakes one for canon. The stamp, not the location, is the guard. `PROPOSAL_`s persist in `docs/` until converted to a spoke or rejected (then deleted). `SPOKE_` / `HANDOFF_` / `TEST_` one-shots are **deleted from `docs/` by the completing spoke in its final commit** — a mandatory closeout, not a nicety. The failure mode this SoP now prevents is not "working docs in the repo" but "a finished one-shot left undeleted and later read as live." Guard = stamp + delete-at-completion.
 
 **Sheet-edit ownership.** Code has no Master Sheet access and writes nothing there. Audra makes all sheet edits by hand (columns, enum validation, User Registry values). Code writes code that reads structures and expects them to exist. Spoke language must reflect this — "Audra adds column" not "Code adds column."
 
-**Code — session end.** Update `DWYP_Platform_State.md` with **done** + **hanging**. State is the only working artifact that touches the repo; it is the contract between sessions. Mechanics: State Update Protocol, below. **Code must notify explicitly when a spoke is complete** — do not silently move on.
+**Code — session end.** Update `DWYP_Platform_State.md` with **done** + **hanging**. State is the contract between sessions. Mechanics: State Update Protocol, below. **Code must notify explicitly when a spoke is complete** — do not silently move on — and the completing commit must delete the spoke's own `docs/` one-shot.
 
 **Hub — thread start.** Confirm Audra has synced State before relying on it. This is the *only* sync prompt Hub gives.
 
@@ -238,7 +238,7 @@ After completing a spoke, task set, or significant session:
 
 1. **Offer to update Platform State.** Name the specific changes before writing.
 2. **Update Platform Reference only when** a new architectural decision is locked or schema changes — not for bug fixes or polish. Reference is append-only.
-3. **One-off `.md` files** (spoke prompts, design notes) are pasted into Code, never repo'd. Outcomes land in State; the file is discarded.
+3. **One-shot `.md` files** (`SPOKE_` / `HANDOFF_` / `TEST_` / design notes) live in `docs/` while active and are **deleted from `docs/` in the completing spoke's final commit**. Outcomes land in State. `PROPOSAL_`s stay in `docs/` until converted to a spoke or rejected.
 4. **Update Build Playbook** when a phase or item completes — mark done, note any surface-back items, identify next.
 5. **Codebase Map** updated by Code when responsibility-level changes happen (new file, deleted file, function moved between files). Implementation-detail changes do not trigger an update.
 
@@ -260,3 +260,4 @@ Do not silently proceed to the next item without confirming the State update is 
 - Do not load Tier 3 docs pre-emptively. Trigger-load only.
 - **`.st-ep-*` prefix collision.** Two unrelated class families share this prefix: the Studio Episode surface family (`st-ep-video`, `st-ep-notes`, etc.) and the Tasks → Episodes band/card family (`st-ep-cue`, `st-ep-completed-*`, etc.). When working on either surface, scope grep queries and edits explicitly to the intended family. A raw `.st-ep-*` grep returns matches from both.
 - **Render-site precision: "renders in X" ≠ "renders only in X."** When diagnosing cross-surface bugs (pane bleed, duplicate elements, height anomalies), require raw grep data on all render sites — not narrative summaries. Which function sets `.style.display` on a given element ID, and from which call sites? The only reliable diagnostic is a complete render-site inventory.
+- **Schema removals shift positional reads — never casually delete a column.** Sheet cells are addressed two ways: hardcoded constant maps (`EPISODES_COLS.Final_Episode_ID = 12`) and dynamic `headers.indexOf("…")`. Physically deleting a column shifts every column to its right by one; the `indexOf` readers self-heal, the hardcoded-index readers silently read the wrong column — **partial, hard-to-spot breakage is the failure mode.** Separate two operations: (1) **Logical retirement** — stop writes, repoint readers, leave the inert column physically in place. Near-zero blast radius; satisfies the no-denorm goal because an unread column is not a desyncable signal. (2) **Physical deletion** — its own dedicated spoke: decrement every constant past the gap, full positional-read audit (hardcoded *and* `indexOf`), executed in lockstep with Audra's hand-delete. Default to (1); reach for (2) only when tidiness genuinely demands it. Same trap protects neighbors the model depends on (deleting `Visible_To` col 9 would shift `Revision_Round`/`Resolved_At`/`Resolution_Note`). When a removal is on the table, **identify the positional-read landmine explicitly before acting** — surface it, don't discover it.

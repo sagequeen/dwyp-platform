@@ -517,7 +517,7 @@ function testParsePipelineBlock() {
 // V1 OPERATIONS:
 //   I4 -- companion .txt regen (T1, additive)
 //   I1 -- manifest/Episodes reconcile (T2, internal)
-//   O1 -- guest bio enrich (T2, outbound, delegates to Herald)
+//   O1 -- guest bio enrich (T2, outbound, delegates to Herald) [gated by Governance_Config MEND_O1_GUESTBIO_ENABLED, default OFF]
 //
 // LEDGER (manifest.mend_ledger):
 //   { [issueKey]: { attempts: N, lastAttempt: ISO, status: 'open'|'healed'|'task_spawned' } }
@@ -529,6 +529,11 @@ function testParsePipelineBlock() {
 // =============================================================================
 
 var MEND_MAX_ATTEMPTS = 3;
+
+// D12: nightly guest-bio-enrich sweep (O1) is gated by Governance_Config key
+// MEND_O1_GUESTBIO_ENABLED (default OFF — set to TRUE to restore the nightly
+// retry). Enrichment is otherwise human-triggered via the Contacts Enrich button.
+// The op self-gates with a silent return when disabled; see _mend_O1_guestBioEnrich.
 
 /**
  * Entry function. Called by runHousekeeping() after parsePipelineBlock() and
@@ -967,8 +972,8 @@ function _mend_I1_reconcile(epUid, prodFolderId, manifest, ledger) {
 // =============================================================================
 
 /**
- * Re-triggers Herald bio enrichment for contacts with an empty or
- * 'Enrichment Pending' Bio_Summary. Fill-only -- never overwrites a populated bio.
+ * Re-triggers Herald bio enrichment for contacts with an empty
+ * Bio_Summary. Fill-only -- never overwrites a populated bio.
  * Delegates to runHeraldBio(); never re-implements Herald logic.
  *
  * Ledger key: 'O1:{contactId}' -- per contact, not per episode. If the same
@@ -986,14 +991,18 @@ function _mend_O1_guestBioEnrich(epUid, contactId, contact, ledger) {
   var ACTOR      = 'Mending';
   var contactKey = 'O1:' + contactId;
 
+  // D12 — gated behind Governance_Config MEND_O1_GUESTBIO_ENABLED. Default OFF.
+  // Silent return when disabled (mirrors PULSE_CONTENT_ENABLED) -- no per-episode noise.
+  if (String(getGovernance('MEND_O1_GUESTBIO_ENABLED') || '').toUpperCase() !== 'TRUE') return;
+
   var dec = _mendDecide(ledger, contactKey, MEND_MAX_ATTEMPTS);
   if (dec === 'skip') return;
 
   var bio         = String(contact.Bio_Summary || '').trim();
   var displayName = String(contact.Display_Name || '').trim();
 
-  // Fill-only: bio already present and not a pending sentinel -- nothing to do
-  if (bio && bio !== 'Enrichment Pending') return;
+  // Fill-only: bio already present -- nothing to do (Bio_Summary is content-or-blank, D12)
+  if (bio) return;
 
   logToAuditTrail(ACTOR, 'state_change', epUid, contactId,
     '[O1] Empty/pending bio for ' + (displayName || contactId) +
@@ -1068,7 +1077,7 @@ function _mend_O1_guestBioEnrich(epUid, contactId, contact, ledger) {
     var updated = getContactById(contactId);
     var newBio  = String((updated && updated.Bio_Summary) || '').trim();
 
-    if (newBio && newBio !== 'Enrichment Pending') {
+    if (newBio) {
       logToAuditTrail(ACTOR, 'state_change', epUid, contactId,
         '[O1] Bio enriched for ' + (displayName || contactId) + '. Outcome: auto.', 'INFO');
       _mendUpdate(ledger, contactKey, 'healed', true);

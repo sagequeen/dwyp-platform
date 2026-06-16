@@ -251,6 +251,8 @@ Items confirmed but not yet sequenced. Pick up after Phase 4 stabilizes.
 - **NF-3 AI Video Review (END ALL)** — speculative future: AI-assisted episode review pass.
 - **Comment System + Revise Sync implementation** — per Reference architecture (see Episode Review — Comments & Revise Sync section in Platform Reference).
 - **Design ↔ Publish asset travel implementation** — per Reference architecture (see Design ↔ Publish Asset Travel section in Platform Reference).
+- **Secretary / intake date-handling spoke (found in testing 2026-06-13).** Two linked bugs: (1) **Date change doesn't propagate** — editing an episode's recording date (directly in the sheet *or* via a calendar re-scan) does not update or re-spawn the scheduling task; the task goes stale against the real date. (2) **Secretary is blind to past-dated calendar events** — it only scans forward, so an `upcoming` guest whose calendar date slips into the past is never processed and the episode is stranded in `upcoming`. This is not an edge case: a real Upcoming guest can be rescheduled to a now-past date, and Secretary should still pick it up. (Surfaced because the only workaround for advancing a test episode was to back-date manually.)
+- **Arrange — drag-in from TBD (found in testing 2026-06-13).** Arrange mode only supports drag-*between* existing scheduled cards, not drag-*into* the schedule from the TBD region. With an empty schedule there is no usable drop target, so a TBD episode can't be scheduled at all. Fix: make TBD episodes droppable into the schedule, including an empty-schedule landing zone. UI/chrome work — pair with Phase 3 Arrange/Episodes-view touch.
 
 ---
 

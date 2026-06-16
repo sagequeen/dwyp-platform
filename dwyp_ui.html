@@ -4494,7 +4494,7 @@ body.studio-open .app-header { display: none; }
     <div id="episodeDetailContent"></div>
   </main>
 
-  <!-- Episode Review View (shell — content rendered by renderEpisodeReview) -->
+  <!-- Episode Review View (shell — mobile shows the desktop-only wall via showEpisodeReview) -->
   <main class="view" id="episodeReviewView">
     <div id="episodeReviewContent"></div>
   </main>
@@ -5665,7 +5665,9 @@ var epReviewState = {
   revisionRound:   0,
   composerLocked:  false,
   uploadStartedAt: '',
-  uploadStale:     false
+  uploadStale:     false,
+  revPollTimer:    null,
+  revPollVisHandler: null
 };
 
 // Per-session abort flags for in-flight episode uploads, keyed by taskId or 'proxy-'+uid.
@@ -5984,6 +5986,7 @@ function openStudio(tab) {
 }
 
 function closeStudio() {
+  _stEpStopRevPoll();
   if (st.fabricCanvas) { st.fabricCanvas.dispose(); st.fabricCanvas = null; }
   if (st.keyHandler)   { document.removeEventListener('keydown', st.keyHandler); st.keyHandler = null; }
   if (st.resizeHandler){ window.removeEventListener('resize', st.resizeHandler); st.resizeHandler = null; }
@@ -8979,11 +8982,11 @@ function stGetEpDateline(ep) {
   return 'TBD';
 }
 
-// Headphones: 3-state derived from Video_Status.
+// Headphones: 3-state derived from phase (task-derived, SPOKE_C).
 function stGetEpHeadphones(ep) {
-  var vs = String(ep.Video_Status || '');
-  if (vs === 'review')             return 'lit';
-  if (vs === 'revision_requested') return 'secondary';
+  var p = String(ep.phase || '');
+  if (p === 'review') return 'lit';
+  if (p === 'revise') return 'secondary';
   return 'muted';
 }
 
@@ -8996,18 +8999,18 @@ function stGetEpFilm(ep) {
 
 // Top-right action label on month-band card (muted text — icons carry color).
 function stGetEpActionLabel(ep) {
-  var vs = String(ep.Video_Status || '');
-  if (vs === 'revision_requested') return 'Review/Revise';
-  if (vs === 'review')             return 'In Review';
+  var p = String(ep.phase || '');
+  if (p === 'revise') return 'Review/Revise';
+  if (p === 'review') return 'In Review';
   return '';
 }
 
 // Bottom state line on month-band card.
 function stGetEpStateLine(ep) {
-  var vs = String(ep.Video_Status || '');
-  if (vs === 'revision_requested') return 'Revision in progress';
-  if (vs === 'review')             return 'Awaiting JT review';
-  if (vs === 'approved')           return 'Approved';
+  var p = String(ep.phase || '');
+  if (p === 'revise')   return 'Revision in progress';
+  if (p === 'review')   return 'Awaiting JT review';
+  if (p === 'approved') return 'Approved';
   var s = String(ep.Status || '');
   if (s === 'in_production')    return 'In production';
   if (s === 'ready_to_release') return 'Ready to release';
@@ -9028,7 +9031,7 @@ function stGetEpStateIcon(ep) {
 // or a state-derived label for non-task blocking actions (e.g. JT episode approval).
 function stGetEpBlockingTask(ep, epTasks) {
   // Non-task blocking action: episode is awaiting JT approval
-  if (String(ep.Video_Status || '') === 'review') return 'Approve episode';
+  if (String(ep.phase || '') === 'review') return 'Approve episode';
 
   var BLOCKING_ORDER = [
     'Upload_Produced_Episode', 'Produce_Episode', 'Revise_Episode',
@@ -9218,7 +9221,7 @@ function stRenderEpCardTaskList(ep, epTasks) {
     html += '</div>';
   });
 
-  var epVs = String(ep.Video_Status || '');
+  var epPhase = String(ep.phase || '');
 
   filtered.forEach(function(task) {
     var tid  = esc(task.Task_ID);
@@ -9253,7 +9256,10 @@ function stRenderEpCardTaskList(ep, epTasks) {
     } else if (ws === 'Revise_Episode') {
       html += '<button class="btn btn-complete" id="complete-' + tid + '"' +
               ' onclick="startEpisodeReplace(\'' + tid + '\')">' +
-              '<svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload Proxy</button>';
+              '<svg width="12" height="12" data-lucide="upload-cloud"></svg> Upload revised cut</button>';
+      html += '<button class="btn btn-open-link" id="norework-' + tid + '"' +
+              ' onclick="completeEpisodeRevisionTask(\'' + tid + '\',\'' + epUid + '\',\'norework-' + tid + '\')">' +
+              '<svg width="12" height="12" data-lucide="corner-up-left"></svg> No changes &mdash; send back</button>';
       html += '<input type="file" id="ep-file-' + tid + '" accept="video/*" style="display:none"' +
               ' onchange="onEpisodeFileSelected(\'' + tid + '\',' + ridx + ',\'' + epUid + '\',this)">';
       html += '<div class="ep-upload-panel" id="ep-upload-panel-' + tid + '" style="display:none">' +
@@ -9352,14 +9358,15 @@ function stRenderEpCardTaskList(ep, epTasks) {
     html += '</div>';
   }
 
-  // Proxy slot affordance — shown when a review proxy exists (Video_Status non-empty).
-  // Replace overwrites the GCS object in place; no state changes.
-  if (epVs && epVs !== 'pending') {
+  // Proxy slot affordance — shown once the episode has left production (a review
+  // proxy exists). Replace overwrites the GCS object in place; no state changes.
+  if (epPhase && epPhase !== 'production' && isOwner()) {
     html += '<div class="st-ep-task">';
-    html += '<div class="st-ep-task-title">Review proxy</div>';
+    html += '<div class="st-ep-task-title">Replace proxy file (oopsie)</div>';
+    html += '<div class="st-ep-task-meta">Overwrites the review file in place. Does not change status, turn, or the revision cycle. To hand a revised cut to the host, use the Revise task.</div>';
     html += '<div class="st-ep-task-actions">';
-    html += '<button class="btn btn-complete" id="proxy-replace-btn-' + uid + '"' +
-            ' onclick="startProxyReplace(\'' + uid + '\')">Replace proxy</button>';
+    html += '<button class="btn btn-open-link" id="proxy-replace-btn-' + uid + '"' +
+            ' onclick="startProxyReplace(\'' + uid + '\')">Replace file (fix a bad upload)</button>';
     html += '</div>';
     html += '<input type="file" id="proxy-file-' + uid + '" accept="video/*" style="display:none"' +
             ' onchange="onProxyFileSelected(\'' + uid + '\', this)">';
@@ -9449,7 +9456,7 @@ function stCompleteFinalEpisodeUpload(taskId, rowIndex, episodeUid) {
 // Isolated Remove of the full-res final — confirms, then calls server.
 function stRemoveFinalEpisode(episodeUid) {
   var btn = document.getElementById('remove-btn-' + episodeUid);
-  if (!confirm('Remove the final episode file from Episode/?\n\nThe file will be trashed, Final_Episode_ID cleared, and status reverted to review. Video_Status (approved) is preserved.\n\nThis cannot be undone from the app.')) return;
+  if (!confirm('Remove the final episode file from Episode/?\n\nThe file will be trashed, Final_Episode_ID cleared, and status reverted to review.\n\nThis cannot be undone from the app.')) return;
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
   google.script.run
     .withSuccessHandler(function(res) {
@@ -10700,6 +10707,9 @@ function stDeleteReel() {
 
 // ── DESIGN TAB — Sub-tab switching ───────────────────────────
 function stSetDesignTab(tab) {
+  // Leaving (or re-entering) any tab tears down the review poll; the episode
+  // tab restarts it via stLoadDesignEpisode below.
+  _stEpStopRevPoll();
   if (tab === 'schedule') { stShowSchedule(st.episodeUid); return; }
 
   st.designTab = tab;
@@ -10829,8 +10839,8 @@ function stLoadDesignEpisode(uid) {
   epReviewState.uploadStartedAt = (ep && ep.Upload_Started_At) || '';
   epReviewState.uploadStale     = !!(ep && ep.Upload_Stale);
   // Cycle/finalized state is manifest-authoritative; getEpisodeRevisionHistory
-  // (below) overwrites these defaults. Composer never locks on Video_Status.
-  epRevInit(uid, ep && ep.Video_Status);
+  // (below) overwrites these defaults. Phase is task-derived (SPOKE_C).
+  epRevInit(uid, ep && ep.phase);
 
   epChatReset(uid);
   epNotesLoad(uid);
@@ -10849,7 +10859,8 @@ function stLoadDesignEpisode(uid) {
 
   // One getAllVersions() call covers stale check (cache hit) and version recording (cache miss).
   // episodeUrl: no version gate — fetched only on miss, cached without versionsAtFetch.
-  // episodeRev: gates on `episodes` domain.
+  // episodeRev: gates on `episodes` AND `tasks` — phase is task-derived (SPOKE_C), so a
+  // task-only transition (Submit/finalize/re-upload) must invalidate the cached phase.
   google.script.run
     .withSuccessHandler(function(versions) {
       if (!urlEntry) {
@@ -10867,7 +10878,7 @@ function stLoadDesignEpisode(uid) {
       if (_cacheIsStale('episodeRev', uid, versions)) {
         google.script.run
           .withSuccessHandler(function(res) {
-            _cacheSet('episodeRev', uid, res, { episodes: versions.episodes });
+            _cacheSet('episodeRev', uid, res, { episodes: versions.episodes, tasks: versions.tasks });
             _stEpApplyRevisions(res);
           })
           .withFailureHandler(function() {})
@@ -10893,6 +10904,60 @@ function stLoadDesignEpisode(uid) {
       }
     })
     .getAllVersions();
+
+  // Live re-fetch trigger: keep JT's turn current while he stays on this surface.
+  _stEpStartRevPoll(uid);
+}
+
+// Composer-lock live re-fetch. The surface otherwise refetches revision history
+// only on (re-)entry, so a JT who stays here never sees his turn flip when Audra
+// finalizes/re-uploads in another session. While the surface is active, re-check
+// episodeRev staleness (episodes+tasks-version gated, same path as entry) and refetch.
+// Reuses the existing cache/version path — no new fetch endpoint.
+function _stEpRevPoll() {
+  // Self-guard: tear down if the episode surface is no longer the active one.
+  var inStudio = (document.getElementById('studioOverlay').style.display !== 'none');
+  var uid = epReviewState.episodeUid;
+  if (!inStudio || st.designTab !== 'episode' || !uid) { _stEpStopRevPoll(); return; }
+
+  google.script.run
+    .withSuccessHandler(function(versions) {
+      if (epReviewState.episodeUid !== uid) return; // surface moved on mid-flight
+      if (_cacheIsStale('episodeRev', uid, versions)) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (epReviewState.episodeUid !== uid) return;
+            _cacheSet('episodeRev', uid, res, { episodes: versions.episodes, tasks: versions.tasks });
+            _stEpApplyRevisions(res);
+          })
+          .withFailureHandler(function() {})
+          .getEpisodeRevisionHistory(uid);
+      }
+    })
+    .withFailureHandler(function() {})
+    .getAllVersions();
+}
+
+// Starts (idempotently) the live re-fetch: a low-frequency interval plus an
+// immediate refetch whenever the tab regains visibility. Torn down on surface exit.
+function _stEpStartRevPoll(uid) {
+  _stEpStopRevPoll();
+  epReviewState.revPollVisHandler = function() {
+    if (document.visibilityState === 'visible') _stEpRevPoll();
+  };
+  document.addEventListener('visibilitychange', epReviewState.revPollVisHandler);
+  epReviewState.revPollTimer = setInterval(_stEpRevPoll, 25000);
+}
+
+function _stEpStopRevPoll() {
+  if (epReviewState.revPollTimer) {
+    clearInterval(epReviewState.revPollTimer);
+    epReviewState.revPollTimer = null;
+  }
+  if (epReviewState.revPollVisHandler) {
+    document.removeEventListener('visibilitychange', epReviewState.revPollVisHandler);
+    epReviewState.revPollVisHandler = null;
+  }
 }
 
 function _stEpApplyStreamUrl(res) {
@@ -10933,10 +10998,10 @@ function _stEpApplyRevisions(res) {
 
 // Fills the Studio episode composer card (#stEpComposerCard) and verdict footer
 // (#stEpEpFooter) from cycle state (epRev). The composer never locks pre-finalize;
-// post-finalize it blocks new notes (manifest finalized flag, not Video_Status).
+// post-finalize it blocks new notes (manifest finalized flag, not phase).
 // Finalize + the comment checklist live in the Revisions rail pane, not here.
 function _stEpApplyComposerLock(uid) {
-  var approved  = (epRev.videoStatus === 'approved');
+  var approved  = (epRev.phase === 'approved');
   var finalized = epRev.finalized;
   var card = document.getElementById('stEpComposerCard');
   if (card) {
@@ -11238,17 +11303,17 @@ var epRev = {
   cycle:       1,
   finalized:   false,
   tMinus:      null,
-  videoStatus: 'pending',
+  phase:       'production',
   open:        {}   // cycle -> true when a historical cycle has been expanded
 };
 
-function epRevInit(uid, videoStatus) {
+function epRevInit(uid, phase) {
   epRev.episodeUid  = uid;
   epRev.rows        = [];
   epRev.cycle       = 1;
   epRev.finalized   = false;
   epRev.tMinus      = null;
-  epRev.videoStatus = videoStatus || 'pending';
+  epRev.phase       = phase || 'production';
   epRev.open        = {};
 }
 
@@ -11259,7 +11324,7 @@ function epRevApplyHistory(res) {
   epRev.cycle       = res.cycle || 1;
   epRev.finalized   = !!res.finalized;
   epRev.tMinus      = res.tMinus || null;
-  epRev.videoStatus = res.videoStatus || 'pending';
+  epRev.phase       = res.phase || 'production';
   epRevRender();
 }
 
@@ -11404,7 +11469,6 @@ function _epRevInvalidate() {
 function epRevRefreshComposers() {
   var uid = epRev.episodeUid;
   if (document.getElementById('stEpComposerCard')) _stEpApplyComposerLock(uid);
-  if (document.getElementById('epComposerCard'))   _epReviewFillComposer(uid);
 }
 
 // ── Audra: resolve / decline (status writes are owner-only) ───
@@ -12359,9 +12423,10 @@ function stEpApprove(episodeUid) {
   google.script.run
     .withSuccessHandler(function(result) {
       if (result && result.success) {
-        // Display Video_Status is server-owned; refresh comes from cache invalidation,
-        // not a client write. The composer/footer reflect approval from epRev.videoStatus.
-        epRev.videoStatus = 'approved';
+        // approveEpisodeForRelease closes Review_Episode + spawns Upload_Final_Episode;
+        // phase=='approved' then derives from that open task. Optimistic local set;
+        // authoritative refresh comes from cache invalidation (episodes+tasks gated).
+        epRev.phase = 'approved';
         _stEpApplyComposerLock(episodeUid);
         _cacheInvalidate('episodeRev', episodeUid);
         _cacheInvalidate('schedule', episodeUid);
@@ -12375,7 +12440,7 @@ function stEpApprove(episodeUid) {
       showToast('Error: ' + ((err && err.message) || err), true);
       if (appBtn) { appBtn.disabled = false; appBtn.textContent = 'Approve Episode'; }
     })
-    .writeVideoStatus(episodeUid, 'approved');
+    .approveEpisodeForRelease(episodeUid);
 }
 
 // ── DESIGN TAB — H&Q chips panel ─────────────────────────────
@@ -12749,11 +12814,11 @@ function getEpisodeBadges(ep) {
   });
 
   b.hasRevision =
-    ep.Video_Status === "revision_requested" ||
+    ep.phase === "revise" ||
     ep.Images_Status === "revision_requested";
 
   b.allApproved =
-    ep.Video_Status  === "approved" &&
+    (ep.phase === "approved" || ep.phase === "released") &&
     ep.Images_Status === "approved" &&
     !epTasks.some(function(t) { return REVIEW_STEPS_ALL.indexOf(t.Workflow_Step) !== -1; });
 
@@ -12894,7 +12959,7 @@ function getDashboardIconStates(ep, epTasks) {
   var reelsActive = (status === 'in_production' || status === 'review' || status === 'ready_to_release');
   return {
     audio:  epTasks.some(function(t) { return t.Workflow_Step === "Review_Episode"; })
-            ? 'amber' : (ep.Video_Status === 'approved' ? 'green' : 'gray'),
+            ? 'amber' : ((ep.phase === 'approved' || ep.phase === 'released') ? 'green' : 'gray'),
     images: 'gray',
     reels:  reelsActive ? 'amber' : 'gray',
   };
@@ -13419,15 +13484,31 @@ function goBack() {
 }
 
 function showEpisodeReview(episodeUid) {
+  // Surface Principle: reviewing an episode is sustained-focus work and lives on
+  // the desktop Studio. Desktop routes into the Studio episode review surface (same
+  // path the rail uses); mobile gets a hard wall, not a degraded review view.
   var ep = state.episodes.find(function(e) { return e.Episode_UID === episodeUid; });
-  if (!ep) return;
-  state.currentEpisode = ep;
+
+  if (!ctIsMobileVp()) {
+    var studioOpen = (document.getElementById('studioOverlay').style.display !== 'none');
+    if (!studioOpen) openStudio('design');
+    stSelectGuestView(episodeUid, ep && ep.Guest_Name, 'episode');
+    return;
+  }
+
+  state.currentEpisode = ep || null;
   state.backTarget     = "episodeDetail";
   hideAllViews();
   document.getElementById("episodeReviewView").classList.add("active");
   document.getElementById("backBtn").classList.add("visible");
-  document.getElementById("headerTitle").textContent = ep.Guest_Name || "Episode Review";
-  renderEpisodeReview(ep);
+  document.getElementById("headerTitle").textContent = (ep && ep.Guest_Name) || "Episode Review";
+  document.getElementById("episodeReviewContent").innerHTML =
+    '<div class="empty-state" style="text-align:center;padding:48px 24px">' +
+    '<svg width="32" height="32" data-lucide="monitor" style="margin:0 auto 12px;display:block;opacity:0.5"></svg>' +
+    '<p style="font-weight:700;margin-bottom:6px">Open on desktop to review</p>' +
+    '<small>Reviewing an episode is focused work that lives in the desktop Studio. Open this episode on a computer to leave notes and approve.</small>' +
+    '</div>';
+  lucide.createIcons();
 }
 
 function showReelsReview(episodeUid) {
@@ -13452,106 +13533,6 @@ function showImagesReview(episodeUid) {
   document.getElementById("backBtn").classList.add("visible");
   document.getElementById("headerTitle").textContent = ep.Guest_Name || "Images Review";
   renderImagesReview(ep);
-}
-
-function renderEpisodeReview(ep) {
-  var uid = esc(ep.Episode_UID);
-  epReviewState.episodeUid      = ep.Episode_UID;
-  epReviewState.frozenTimestamp = null;
-  epReviewState.uploadStartedAt = (ep && ep.Upload_Started_At) || '';
-  epReviewState.uploadStale     = !!(ep && ep.Upload_Stale);
-  // Cycle/finalized state is manifest-authoritative (history call below).
-  epRevInit(ep.Episode_UID, ep && ep.Video_Status);
-
-  var html = "";
-
-  // Player card — filled async
-  html += '<div class="rv-player-card" id="rvPlayerCard">';
-  html += '<div class="rv-player-notice"><div class="spinner" style="margin:0 auto"></div></div>';
-  html += "</div>";
-
-  // Compose box — filled by _epReviewFillComposer (open / finalized / approved)
-  html += '<div class="rv-notes-card" id="epComposerCard"></div>';
-
-  // Revisions checklist — populated async by the shared renderer
-  html += '<div class="rv-notes-card"><div class="rv-pane-hdr" style="border:none;padding:2px 0 8px">';
-  html += '<span class="rv-pane-hdr-lbl">Revisions</span></div>';
-  html += '<div id="epRevisionRail" class="rv-pane-body" style="padding:0"></div></div>';
-
-  // Verdict — Approve only (Finalize lives in the checklist's finalize bar)
-  html += '<div class="task-card"><div class="task-actions" id="epReviewActions">';
-  html += '<button class="btn btn-approve" id="epReviewApproveBtn" onclick="approveEpisodeVideo(\'' + uid + '\')">';
-  html += '<svg width="12" height="12" data-lucide="square-check-big"></svg> Approve</button>';
-  html += "</div></div>";
-
-  document.getElementById("episodeReviewContent").innerHTML = html;
-  _epReviewFillComposer(ep.Episode_UID);
-  lucide.createIcons();
-
-  // Async: load native video via streaming URL
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var card = document.getElementById("rvPlayerCard");
-      if (!card) return;
-      // Refuse stale playback while an upload-in-progress marker is set (AD #130e).
-      if (epReviewState.uploadStartedAt) { _epReviewApplyUploadMarker(); return; }
-      if (res && res.url) {
-        card.innerHTML =
-          '<div class="rv-player-wrap">' +
-          '<video id="epReviewVideo" src="' + res.url + '" controls playsinline preload="metadata"></video>' +
-          '</div>';
-      } else {
-        card.innerHTML = '<div class="rv-player-notice">No video found. Check Episode folder.</div>';
-      }
-    })
-    .withFailureHandler(function() {
-      var card = document.getElementById("rvPlayerCard");
-      if (card) card.innerHTML = '<div class="rv-player-notice">Could not load video.</div>';
-    })
-    .getProxyStreamUrl(ep.Episode_UID);
-
-  // Async: revision history (cycle/finalized state) + checklist render
-  google.script.run
-    .withSuccessHandler(function(res) {
-      epRevApplyHistory(res);
-      _epReviewFillComposer(ep.Episode_UID);
-      // Upload-in-progress marker (AD #130e) — authoritative from server.
-      epReviewState.uploadStartedAt = (res && res.uploadStartedAt) || '';
-      epReviewState.uploadStale     = !!(res && res.uploadStale);
-      if (epReviewState.uploadStartedAt) _epReviewApplyUploadMarker();
-    })
-    .withFailureHandler(function() {})
-    .getEpisodeRevisionHistory(ep.Episode_UID);
-}
-
-// Fills the mobile compose box from cycle state. Never locks pre-finalize;
-// post-finalize it blocks new notes (manifest finalized flag, not Video_Status).
-function _epReviewFillComposer(uid) {
-  var card = document.getElementById('epComposerCard');
-  if (!card) return;
-  if (epRev.videoStatus === 'approved') {
-    card.innerHTML = '<div class="rv-notes-label">Leave a note</div><div class="ep-composer-locked-notice">Episode approved.</div>';
-  } else if (epRev.finalized) {
-    card.innerHTML = '<div class="rv-notes-label">Leave a note</div><div class="ep-composer-locked-notice">Revisions submitted &mdash; waiting for edits.</div>';
-  } else {
-    card.innerHTML =
-      '<div class="rv-notes-label">Leave a note</div>' +
-      '<div class="ep-composer-ts" id="epComposerTs">&mdash;</div>' +
-      '<textarea class="ep-composer-textarea" id="epComposerText" placeholder="Note about this moment..." onfocus="epComposerFocus()" rows="3"></textarea>' +
-      '<div class="ep-composer-actions">' +
-      '<button class="ep-btn-cancel" onclick="epComposerCancel()">Cancel</button>' +
-      '<button class="ep-btn-send" id="epComposerSendBtn" onclick="epComposerSend(\'' + esc(uid) + '\')">Send</button>' +
-      '</div>';
-  }
-}
-
-// Renders the upload-in-progress / interrupted notice into the mobile review player
-// card, replacing the player. Mobile is review-only — no self-heal button (Surface Principle).
-function _epReviewApplyUploadMarker() {
-  var card = document.getElementById('rvPlayerCard');
-  if (!card) return;
-  card.innerHTML = '<div class="rv-player-notice">' +
-    _epUploadMarkerHtml(epReviewState.uploadStartedAt, epReviewState.uploadStale, '') + '</div>';
 }
 
 function renderReelsReview(ep) {
@@ -13923,104 +13904,14 @@ function decideFile(fileId, episodeUid, type, decision) {
     .moveReviewFile(fileId, episodeUid, type, decision);
 }
 
-// ── EPISODE REVIEW — COMPOSE LOOP ────────────────────────────
-function epComposerFocus() {
-  var video = document.getElementById("epReviewVideo");
-  if (!video || video.paused) return;
-  video.pause();
-  epReviewState.frozenTimestamp = video.currentTime;
-  var s  = Math.floor(epReviewState.frozenTimestamp);
-  var ts = document.getElementById("epComposerTs");
-  if (ts) {
-    ts.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-    ts.classList.add("has-ts");
-  }
-}
-
-function epComposerCancel() {
-  var textarea = document.getElementById("epComposerText");
-  if (textarea) textarea.value = "";
-  epReviewState.frozenTimestamp = null;
-  var ts = document.getElementById("epComposerTs");
-  if (ts) { ts.innerHTML = "&mdash;"; ts.classList.remove("has-ts"); }
-  var video = document.getElementById("epReviewVideo");
-  if (video && video.paused) video.play();
-}
-
-function epComposerSend(episodeUid) {
-  if (epRev.finalized) { showToast("Revisions are submitted for this round.", true); return; }
-  var textarea = document.getElementById("epComposerText");
-  var body     = textarea ? textarea.value.trim() : "";
-  if (!body) { epComposerCancel(); return; }
-
-  var ts = epReviewState.frozenTimestamp;
-  var tsRaw = null;
-  if (ts != null) {
-    var s = Math.floor(ts);
-    tsRaw = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-  }
-  var displayBody = tsRaw ? "[" + tsRaw + "] " + body : body;
-
-  // Comment leaves the compose box for the Revisions set; box clears.
-  var optRow = epRevAddOptimistic(displayBody, APP_CONFIG.userEmail);
-
-  if (textarea) textarea.value = "";
-  epReviewState.frozenTimestamp = null;
-  var tsEl = document.getElementById("epComposerTs");
-  if (tsEl) { tsEl.innerHTML = "&mdash;"; tsEl.classList.remove("has-ts"); }
-  var video = document.getElementById("epReviewVideo");
-  if (video && video.paused) video.play();
-
-  // Round is server-authoritative (manifest cycle); raw timecode, server brackets it.
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.ok) {
-        epRevRemoveRow(optRow);
-        if (res && res.finalized) {
-          epRev.finalized = true; epRevRender(); _epReviewFillComposer(episodeUid);
-          showToast("This round was finalized - your note was not added.", true);
-        } else {
-          showToast("Note failed to save: " + ((res && res.error) || "unknown"), true);
-        }
-      } else if (res.round && res.round !== optRow.revisionRound) {
-        optRow.revisionRound = res.round; epRevRender();
-      }
-    })
-    .withFailureHandler(function(err) {
-      epRevRemoveRow(optRow);
-      showToast("Error: " + ((err && err.message) || err), true);
-    })
-    .submitEpisodeCommentRow(episodeUid, tsRaw, body, epRev.cycle, APP_CONFIG.userEmail);
-}
-
-// ── EPISODE REVIEW ACTIONS ───────────────────────────────────
-function approveEpisodeVideo(episodeUid) {
-  setButtonLoading("epReviewApproveBtn", true);
-  google.script.run
-    .withSuccessHandler(function(result) {
-      if (result.success) {
-        // Video_Status is server-owned; showEpisodeDetail refetches fresh state.
-        showToast("Approved");
-        showEpisodeDetail(episodeUid);
-      } else {
-        showToast("Error: " + result.error, true);
-        setButtonLoading("epReviewApproveBtn", false);
-      }
-    })
-    .withFailureHandler(function(err) {
-      showToast("Error: " + (err.message || err), true);
-      setButtonLoading("epReviewApproveBtn", false);
-    })
-    .approveEpisodeForRelease(episodeUid);
-}
-
-function completeEpisodeRevisionTask(taskId, episodeUid) {
-  setButtonLoading("complete-" + taskId, true);
+function completeEpisodeRevisionTask(taskId, episodeUid, btnId) {
+  btnId = btnId || ("complete-" + taskId);
+  setButtonLoading(btnId, true);
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.ok) {
         showToast("Error: " + (res && res.error ? res.error : "unknown"), true);
-        setButtonLoading("complete-" + taskId, false);
+        setButtonLoading(btnId, false);
         return;
       }
       removeTaskFromState(taskId);
@@ -14029,7 +13920,7 @@ function completeEpisodeRevisionTask(taskId, episodeUid) {
     })
     .withFailureHandler(function(err) {
       showToast("Error: " + ((err && err.message) || err), true);
-      setButtonLoading("complete-" + taskId, false);
+      setButtonLoading(btnId, false);
     })
     .completeEpisodeRevision(episodeUid, taskId);
 }
@@ -14252,7 +14143,7 @@ function renderTaskButtons(task) {
     html += '  <svg width="12" height="12" data-lucide="message-square"></svg> View Comments';
     html += "</button>";
     html += '<button class="btn btn-complete" id="complete-' + tid + '" onclick="completeEpisodeRevisionTask(\'' + tid + "','" + revEpUid + '\')">';
-    html += '  <svg width="12" height="12" data-lucide="check"></svg> Complete';
+    html += '  <svg width="12" height="12" data-lucide="corner-up-left"></svg> No changes &mdash; send back';
     html += "</button>";
   } else if (ws === "Revise_Reels") {
     // Dedicated swap flow (closeReelRevision side effects) - generic Complete
@@ -14602,24 +14493,36 @@ function _doResumableUpload(file, sessionUri, taskId, rowIndex, episodeUid) {
 }
 
 function _onEpUploadComplete(taskId, rowIndex, episodeUid) {
-  google.script.run
+  // Route the completion by task type. A Revise_Episode re-upload is a revision
+  // hand-back (Door 1): it MUST go through completeEpisodeRevision, which clears the
+  // revision lock, bumps the cycle, and returns the turn to the host. A first upload
+  // (Upload_Produced_Episode / Produce_Episode) goes through completeUploadEpisode.
+  // Routing a revise re-upload through the first-upload path leaves the composer
+  // locked on the new cut -- the bug this rebuild targets.
+  var task     = (state.tasks || []).find(function(t) { return t.Task_ID === taskId; });
+  var isRevise = !!(task && task.Workflow_Step === "Revise_Episode");
+
+  var runner = google.script.run
     .withSuccessHandler(function(result) {
-      if (result.success) {
+      var ok = isRevise ? (result && result.ok) : (result && result.success);
+      if (ok) {
         removeTaskFromState(taskId);
-        // Video_Status is server-owned; refreshCurrentView refetches fresh state.
+        // Phase is server-derived from tasks; refreshCurrentView refetches fresh state.
         fireConfetti();
-        showToast("Uploaded — Review Episode task spawned");
+        showToast(isRevise ? "Revised cut sent back for review" : "Uploaded — Review Episode task spawned");
         refreshCurrentView();
       } else {
-        showToast("Error: " + result.error, true);
+        showToast("Error: " + ((result && result.error) || "unknown"), true);
         _resetEpUploadUI(taskId);
       }
     })
     .withFailureHandler(function(err) {
       showToast("Error: " + (err.message || err), true);
       _resetEpUploadUI(taskId);
-    })
-    .completeUploadEpisode(rowIndex, episodeUid);
+    });
+
+  if (isRevise) runner.completeEpisodeRevision(episodeUid, taskId);
+  else          runner.completeUploadEpisode(rowIndex, episodeUid);
 }
 
 function _updateEpUploadUI(taskId, uploaded, total, statusText) {

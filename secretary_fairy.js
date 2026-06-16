@@ -712,6 +712,19 @@ function createContactStub(signals) {
   const now = new Date();
 
 
+  // Source records contact origin: calendar | form | manual | quick_add.
+  // A missing source means a caller failed to supply origin — write "system" as
+  // a tripwire sentinel (not a normal category) and log it loud so the gap gets
+  // fixed at the call site.
+  let contactSource = signals.source;
+  if (!contactSource) {
+    contactSource = "system";
+    logToAuditTrail("Secretary", "error", "", contactId,
+      `[WARNING] Source fallback fired — origin not supplied for ${signals.name || contactId}. Wrote "system" sentinel.`,
+      "WARNING");
+  }
+
+
   // v1.5 Contacts schema — 23 columns.
   // Fields omitted here are written by Herald (social fields, Bio_Summary,
   // Contact_Library_Folder_ID, Organization) or are JT-managed
@@ -734,7 +747,7 @@ function createContactStub(signals) {
     Personal_Note:             "",
     Bio_Summary:               "",
     Tags:                      "",
-    Source:                    signals.source   || "system",
+    Source:                    contactSource,
     Created_At:                now,
     Last_Activity:             now,
     Headshot_URL:              "",
@@ -797,7 +810,7 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
     organization: null,         // Not available from calendar
     referral:     null,
     website:      null,
-    source:       "system"
+    source:       "calendar"
   };
 
 
@@ -1005,9 +1018,10 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
 function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episodeUid, rawFolderId, stagingFolderId) {
   // v1.5 Episodes schema — 14 columns.
   // Episode_Sequence and Release_Date: manual, Audra-owned, never written by GAS.
-  // Video_Status and Images_Status: web app–written, initialized to "pending".
+  // Images_Status: web app–written, initialized to "pending". Video_Status retired
+  // (SPOKE_C) — column left inert, no longer initialized; phase derives from tasks.
   // Episode_URL: manual, Audra populates at release.
-  // Episode_Type: defaults to "standard"; Secretary has no signal to override.
+  // Episode_Type: defaults to "guest"; Secretary has no signal to override.
 
   upsertEpisodes({
     Episode_UID:          episodeUid,
@@ -1018,10 +1032,9 @@ function createEpisodeRecord(contactId, guestName, eventId, recordingDate, episo
     Production_Folder_ID: stagingFolderId,
     Recording_Date:       recordingDate,
     Calendar_Event_ID:    eventId,
-    Video_Status:         "pending",
     Images_Status:        "pending",
     Episode_URL:          "",
-    Episode_Type:         "standard"
+    Episode_Type:         "guest"
   });
 }
 

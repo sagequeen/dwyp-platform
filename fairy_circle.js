@@ -1538,9 +1538,8 @@ function upsertEpisodes(episodeData) {
     // Manual columns (Episode_Sequence, Release_Date, Episode_URL) write empty string.
     const DEFAULTS = {
       Status:        "waiting",
-      Video_Status:  "pending",
       Images_Status: "pending",
-      Episode_Type:  "standard"
+      Episode_Type:  "guest"
     };
 
     const row = headers.map(h => {
@@ -2369,11 +2368,40 @@ function _pulse_hasOpenUploadRawTask(epUid) {
  * Spawns an urgent Errors task to alert Audra of a content-chain failure.
  */
 function _pulse_spawnErrorTask(epUid, guestName, stage, errorMsg) {
+  var title = "Pipeline error: " + guestName + " — " + stage;
   try {
+    // Idempotent spawn: one open Errors task per (episode, stage). Mirrors the
+    // open-task guard in _pulse_checkAssetIdIntegrity / spawnReviseAssetTask.
+    // Title encodes guestName + stage, so distinct stages each surface while a
+    // persistent same-stage failure dedups across pulses.
+    var ss     = SpreadsheetApp.openById(getMasterSheetId());
+    var tSheet = ss.getSheetByName("Tasks");
+    if (tSheet) {
+      var tData   = tSheet.getDataRange().getValues();
+      var th      = tData[0];
+      var epC     = th.indexOf("Episode_UID");
+      var stepC   = th.indexOf("Workflow_Step");
+      var titleC  = th.indexOf("Action_Title");
+      var statusC = th.indexOf("Status");
+      if (epC !== -1 && stepC !== -1 && titleC !== -1 && statusC !== -1) {
+        for (var t = 1; t < tData.length; t++) {
+          if (String(tData[t][stepC])  !== "Errors")        continue;
+          if (String(tData[t][epC])    !== String(epUid))   continue;
+          if (String(tData[t][titleC]) !== title)           continue;
+          var tSt = String(tData[t][statusC]);
+          if (tSt === "open" || tSt === "in_progress") {
+            logToAuditTrail("Daily_Pulse", "state_change", epUid, "",
+              "[INFO] Error task already open for " + title + " — skipping spawn.", "INFO");
+            return;
+          }
+        }
+      }
+    }
+
     spawnTask({
       episodeUid:       epUid,
       workflowStep:     "Errors",
-      actionTitle:      "Pipeline error: " + guestName + " — " + stage,
+      actionTitle:      title,
       assignee:         getGovernance("ASSIGNEE_PRODUCER"),
       assignedBy:       "The Fairy Team",
       status:           "open",

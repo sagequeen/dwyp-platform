@@ -196,6 +196,7 @@ var EPISODES_COLS = {
   Episode_URL:         13,
   Episode_Type:        14,
   Upload_Started_At:   15,
+  Contact_ID_2:        16,  // Roundtable second-guest FK — appended at end (no positional shift). Header-driven readers self-heal; this positional index degrades safely (reads undefined) until Audra adds the column.
 };
 
 
@@ -416,6 +417,7 @@ function getEpisodes() {
       Release_Date:         row[EPISODES_COLS.Release_Date - 1] ? String(row[EPISODES_COLS.Release_Date - 1]) : "",
       Episode_UID:          row[EPISODES_COLS.Episode_UID - 1],
       Contact_ID:           row[EPISODES_COLS.Contact_ID - 1],
+      Contact_ID_2:         row[EPISODES_COLS.Contact_ID_2 - 1] || "",
       Guest_Name:           row[EPISODES_COLS.Guest_Name - 1],
       Status:               status,
       Production_Folder_ID: row[EPISODES_COLS.Production_Folder_ID - 1],
@@ -3877,10 +3879,13 @@ function deleteContactRow(rowIndex, contactId) {
       var epData = epSheet.getDataRange().getValues();
       var epHead = epData[0];
       var epCid  = epHead.indexOf("Contact_ID");
+      var epCid2 = epHead.indexOf("Contact_ID_2");  // Roundtable second-guest FK — -1 until the column exists.
       var epUid  = epHead.indexOf("Episode_UID");
       if (epCid !== -1) {
         for (var i = 1; i < epData.length; i++) {
-          if (String(epData[i][epCid]).trim() === String(contactId).trim()) {
+          var linked = String(epData[i][epCid]).trim() === String(contactId).trim() ||
+                       (epCid2 !== -1 && String(epData[i][epCid2]).trim() === String(contactId).trim());
+          if (linked) {
             return { success: false, blocked: "episode",
                      error: "Contact is linked to episode " +
                             (epUid !== -1 ? epData[i][epUid] : "(unknown)") +
@@ -4108,7 +4113,8 @@ function enrichContactFromApp(contactId) {
 function _findActiveEpisodeForContact_(contactId) {
   var ACTIVE = { upcoming: true, in_production: true, review: true, ready_to_release: true };
   var candidates = getEpisodes().filter(function(ep) {
-    return ep.Contact_ID === contactId && ACTIVE[ep.Status];
+    // Roundtable: a guest may be linked via either FK (Contact_ID or Contact_ID_2).
+    return (ep.Contact_ID === contactId || ep.Contact_ID_2 === contactId) && ACTIVE[ep.Status];
   });
   if (!candidates.length) return null;
   candidates.sort(function(a, b) {

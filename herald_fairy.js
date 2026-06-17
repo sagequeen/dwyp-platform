@@ -110,6 +110,20 @@
 function runHerald(contactId, episodeUid) {
   const actor = "Herald";
 
+  // Roundtable cardinality (SPOKE Roundtable_Cardinality v1).
+  // Runs before the single-guest identity pass. On a confirmed roundtable it
+  // writes the dual linkage and skips enrichment — both guests are known
+  // returning guests, so Bio/Brief research would be redundant. Fails SAFE:
+  // any error or ambiguity falls through to the normal single-guest flow.
+  try {
+    if (resolveRoundtable(contactId, episodeUid)) {
+      return; // Roundtable handled — enrichment intentionally skipped.
+    }
+  } catch (e) {
+    logToAuditTrail(actor, "error", episodeUid, contactId,
+      `[WARNING] Roundtable detection threw — proceeding as single guest: ${e.message}`, "WARNING");
+  }
+
   // FIX 20 — Identity check before Bio/Brief pass.
   // Read contact for display name and supplementary signals.
   // Fail-open on any error: null identityResult falls through to confirmed path.
@@ -226,6 +240,242 @@ function runHerald(contactId, episodeUid) {
         `appendEpisodeLog failed in runHerald: ${e.message}`, "WARNING");
     }
   }
+}
+
+
+// =============================================================================
+// ROUNDTABLE CARDINALITY (SPOKE Roundtable_Cardinality v1)
+// A roundtable is always exactly two PREVIOUS guests. Secretary creates the
+// episode single-guest (its title truncation drops the second name); Herald is
+// the LLM that recovers it. The event title persisted in the manifest is the
+// only surviving signal for guest 2.
+//
+// Fail SAFE (decision 4): roundtable assignment requires positive confirmation
+// (two names, both matching existing contacts). Any error, missing signal, or
+// ambiguity defaults to single-guest or spawns a human task — never a guessed
+// roundtable. An already-roundtable row is never downgraded or re-enriched.
+// =============================================================================
+
+/**
+ * Detects and applies a roundtable. Returns true when the episode is handled as
+ * a roundtable (caller skips enrichment), false to continue single-guest flow.
+ */
+function resolveRoundtable(contactId, episodeUid) {
+  const actor = "Herald";
+  if (!episodeUid) return false; // form path / manual re-run with no episode context -> single guest
+
+  // No-clobber: never re-process or downgrade an episode already roundtable.
+  const epRow = readEpisodeRowByUid(episodeUid);
+  if (epRow && String(epRow.Episode_Type || "").trim().toLowerCase() === "roundtable") {
+    logToAuditTrail(actor, "state_change", episodeUid, contactId,
+      `[INFO] Episode already roundtable — enrichment skipped, no re-detection.`, "INFO");
+    return true;
+  }
+
+  // Read the event title from the manifest (Secretary persists it at creation).
+  let rawTitle = "";
+  try {
+    const stagingFolderId = getStagingFolderIdByUid(episodeUid);
+    if (stagingFolderId) {
+      const manifest = getManifest(stagingFolderId) || {};
+      rawTitle = String(manifest.event_title || "").trim();
+    }
+  } catch (e) {
+    logToAuditTrail(actor, "error", episodeUid, contactId,
+      `[WARNING] Roundtable: manifest title read failed — single-guest default: ${e.message}`, "WARNING");
+    return false;
+  }
+  if (!rawTitle) return false; // no title signal (pre-manifest episodes / form path) -> single guest
+
+  // LLM-parse the title into guest name(s). Tolerant of and / & / , / with.
+  const names = parseGuestNamesFromTitle(rawTitle);
+  if (!Array.isArray(names) || names.length !== 2) return false; // single guest (or parse failure -> fail safe)
+
+  // Match BOTH names to EXISTING contacts. Exact Display_Name match only — no
+  // fuzzy guessing. A roundtable is two previous guests, so both must resolve.
+  const matchA = findContactByName(names[0]);
+  const matchB = findContactByName(names[1]);
+
+  if (!matchA || !matchB) {
+    const unresolved = [matchA ? null : names[0], matchB ? null : names[1]].filter(n => n);
+    spawnTask({
+      actionTitle:      `Possible roundtable — confirm second guest: ${rawTitle}`,
+      assignee:         getGovernance("ASSIGNEE_PRODUCER"),
+      assignedBy:       "The Fairy Team",
+      status:           "open",
+      priority:         "normal",
+      contactId:        contactId,
+      episodeUid:       episodeUid,
+      workflowStep:     "Verify_Guest_Identity",
+      executiveSummary: `The calendar title "${rawTitle}" names two people, but ${unresolved.join(" and ")} did not match an existing contact. A roundtable needs both guests already in Contacts. Resolve the name(s), then set Contact_ID_2 + Episode_Type=roundtable on the episode, or re-run Herald.`
+    });
+    logToAuditTrail(actor, "state_change", episodeUid, contactId,
+      `[INFO] Two names in title, unmatched (${unresolved.join(", ")}) — roundtable not auto-applied; single-guest flow continues.`, "WARNING");
+    return false; // guest 1 still gets normal enrichment
+  }
+
+  const cidA = String(matchA.Contact_ID).trim();
+  const cidB = String(matchB.Contact_ID).trim();
+  if (cidA === cidB) {
+    logToAuditTrail(actor, "state_change", episodeUid, contactId,
+      `[WARNING] Roundtable: both title names resolved to the same contact (${cidA}) — single-guest default.`, "WARNING");
+    return false;
+  }
+
+  // Reconcile guest 1 against Secretary's pick. The title is authoritative for
+  // the pair; keep Secretary's Contact_ID when it is one of the two (avoids a
+  // Drive folder rename), otherwise overwrite so the row reflects both guests.
+  const current = String(contactId).trim();
+  const fields = {
+    Episode_Type: "roundtable",
+    Guest_Name:   `${matchA.Display_Name} & ${matchB.Display_Name}`
+  };
+  if (current === cidA) {
+    fields.Contact_ID_2 = cidB;
+  } else if (current === cidB) {
+    fields.Contact_ID_2 = cidA;
+  } else {
+    fields.Contact_ID   = cidA;
+    fields.Contact_ID_2 = cidB;
+  }
+
+  patchEpisodes(episodeUid, fields); // bumpVersion('episodes') handled inside patchEpisodes
+
+  logToAuditTrail(actor, "state_change", episodeUid, contactId,
+    `[INFO] Roundtable confirmed: ${fields.Guest_Name} (${fields.Contact_ID || current} + ${fields.Contact_ID_2}). Enrichment skipped.`, "INFO");
+
+  // Briefs-to-folder (v1, locked): copy both guests' existing briefs into the
+  // episode folder. Pure Drive copy — no LLM. Non-fatal.
+  try {
+    copyRoundtableBriefs(episodeUid, [cidA, cidB]);
+  } catch (e) {
+    logToAuditTrail(actor, "error", episodeUid, contactId,
+      `[WARNING] Roundtable brief copy failed: ${e.message}`, "WARNING");
+  }
+
+  try {
+    appendEpisodeLog({
+      episodeUid: episodeUid,
+      author:     actor,
+      entryType:  "system",
+      assetType:  "general",
+      body:       `Herald: roundtable detected (${fields.Guest_Name}). Both guests already known — enrichment skipped; existing briefs copied to the episode folder.`,
+      resolved:   false,
+      visibleTo:  "both"
+    });
+  } catch (e) {
+    logToAuditTrail(actor, "error", episodeUid, contactId,
+      `appendEpisodeLog failed in roundtable path: ${e.message}`, "WARNING");
+  }
+
+  return true;
+}
+
+/**
+ * Reads a full Episodes row by Episode_UID as a header-keyed object, or null.
+ */
+function readEpisodeRowByUid(episodeUid) {
+  const ss    = SpreadsheetApp.openById(getMasterSheetId());
+  const sheet = ss.getSheetByName("Episodes");
+  if (!sheet) return null;
+  const data    = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const uidCol  = headers.indexOf("Episode_UID");
+  if (uidCol === -1) return null;
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][uidCol]).trim() === String(episodeUid).trim()) {
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = data[i][idx]; });
+      return row;
+    }
+  }
+  return null;
+}
+
+/**
+ * LLM-parses a calendar event title into guest name(s). Host (Jennifer
+ * Trepanier) and non-guest tokens are excluded. Returns an array of names.
+ * Fail safe: returns [] on any error (caller treats as single guest).
+ */
+function parseGuestNamesFromTitle(rawTitle) {
+  const prompt =
+    `A calendar event title for a podcast interview is below. Extract the GUEST name(s) only.\n\n` +
+    `TITLE: ${rawTitle}\n\n` +
+    `RULES:\n` +
+    `- The host is Jennifer Trepanier — never include her, her nickname, or "JT".\n` +
+    `- Exclude producers and non-person words ("Interview", "DWYP", "Podcast", "Recording", dates).\n` +
+    `- A title may name one guest or two co-guests joined by "and", "&", "with", or a comma.\n` +
+    `- Return each guest's name exactly as written in the title.\n\n` +
+    `Return ONLY valid JSON. No markdown. No preamble.\n` +
+    `{ "guests": ["<name>", ...] }`;
+  const systemInstruction = "You extract podcast guest names from a calendar title. Return only valid JSON. No markdown. No explanation.";
+  try {
+    const raw  = callGeminiAPINoSearch(prompt, systemInstruction, "Herald");
+    const data = extractJson(raw);
+    if (!data || !Array.isArray(data.guests)) return [];
+    return data.guests.map(n => String(n || "").trim()).filter(n => n);
+  } catch (e) {
+    logToAuditTrail("Herald", "error", null, "",
+      `[WARNING] Guest-name parse threw for "${rawTitle}" — treating as single guest: ${e.message}`, "WARNING");
+    return [];
+  }
+}
+
+/**
+ * Copies each guest's most recent existing GuestBrief doc into the roundtable
+ * episode's Guest_Swipe folder. Pure Drive copy. Per-guest failures are
+ * non-fatal and logged.
+ */
+function copyRoundtableBriefs(episodeUid, contactIds) {
+  const actor = "Herald";
+  const stagingFolderId = getStagingFolderIdByUid(episodeUid);
+  if (!stagingFolderId) {
+    logToAuditTrail(actor, "error", episodeUid, "",
+      `[WARNING] Roundtable brief copy: no Production_Folder_ID for ${episodeUid}.`, "WARNING");
+    return;
+  }
+  const swipeFolderId = ensureGuestSwipeFolder(stagingFolderId, episodeUid, contactIds[0]);
+  const swipeFolder   = DriveApp.getFolderById(swipeFolderId);
+
+  contactIds.forEach(cid => {
+    try {
+      const contact = getContactById(cid);
+      const libId   = contact && contact.Contact_Library_Folder_ID;
+      if (!libId) {
+        logToAuditTrail(actor, "error", episodeUid, cid,
+          `[WARNING] Roundtable brief copy: no Contact Library folder for ${cid}.`, "WARNING");
+        return;
+      }
+      const brief = latestGuestBriefDoc(libId);
+      if (!brief) {
+        logToAuditTrail(actor, "error", episodeUid, cid,
+          `[WARNING] Roundtable brief copy: no GuestBrief doc found for ${cid}.`, "WARNING");
+        return;
+      }
+      brief.makeCopy(brief.getName(), swipeFolder);
+      logToAuditTrail(actor, "state_change", episodeUid, cid,
+        `[INFO] Roundtable: copied "${brief.getName()}" into the episode Guest_Swipe folder.`, "INFO");
+    } catch (e) {
+      logToAuditTrail(actor, "error", episodeUid, cid,
+        `[WARNING] Roundtable brief copy failed for ${cid}: ${e.message}`, "WARNING");
+    }
+  });
+}
+
+/**
+ * Returns the most recently updated GuestBrief_* file in a folder, or null.
+ */
+function latestGuestBriefDoc(folderId) {
+  const folder = DriveApp.getFolderById(folderId);
+  const files  = folder.getFiles();
+  let latest = null, latestTime = 0;
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getName().indexOf("GuestBrief_") !== 0) continue;
+    const t = f.getLastUpdated().getTime();
+    if (t >= latestTime) { latest = f; latestTime = t; }
+  }
+  return latest;
 }
 
 
@@ -1225,6 +1475,7 @@ function getPriorCompletedEpisodes(contactId, currentEpUid) {
   const data    = sheet.getDataRange().getValues();
   const headers = data[0];
   const cidCol  = headers.indexOf("Contact_ID");
+  const cid2Col = headers.indexOf("Contact_ID_2");  // Roundtable second-guest FK — -1 until the column exists.
   const uidCol  = headers.indexOf("Episode_UID");
   const statCol = headers.indexOf("Status");
 
@@ -1233,10 +1484,12 @@ function getPriorCompletedEpisodes(contactId, currentEpUid) {
   const prior = [];
   for (let i = 1; i < data.length; i++) {
     const rowCid    = String(data[i][cidCol]).trim();
+    const rowCid2   = cid2Col !== -1 ? String(data[i][cid2Col]).trim() : "";
     const rowUid    = String(data[i][uidCol]).trim();
     const rowStatus = String(data[i][statCol]).trim();
 
-    if (rowCid !== String(contactId).trim()) continue;
+    // Roundtable: the guest may be linked via either FK.
+    if (rowCid !== String(contactId).trim() && rowCid2 !== String(contactId).trim()) continue;
     if (rowUid === String(currentEpUid).trim()) continue;
     if (rowStatus !== "ready_to_release" && rowStatus !== "archived") continue;
 

@@ -900,11 +900,19 @@ function runSecretaryForNewEvent(event, guestName, recordingDate, agentName, pre
     `[INFO] Asset subfolders created in Staging: Episode, Images/Approved, Images/Save, Images/Delete, Thumbnails, Reels/Approved, Reels/Save, Reels/Delete.`, "INFO");
 
 
-  // Write initial manifest to Staging folder
+  // Write initial manifest to Staging folder.
+  // event_title + attendee_emails persisted so Herald can resolve guest
+  // cardinality (roundtable detection) from the UID alone — the title is the
+  // only place the second guest survives Secretary's single-guest truncation.
+  const attendeeEmails = attendees
+    .map(a => a.getEmail())
+    .filter(e => e);
   writeManifest(stagingFolderId, {
     episode_uid:           episodeUid,
     contact_id:            contactId,
     guest_name:            guestName,
+    event_title:           event.getTitle(),
+    attendee_emails:       attendeeEmails,
     recording_date:        recordingDate.toISOString(),
     raw_folder_id:         rawFolderId,
     staging_folder_id:     stagingFolderId,

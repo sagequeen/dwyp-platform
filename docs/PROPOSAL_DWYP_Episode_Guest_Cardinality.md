@@ -7,7 +7,11 @@ Root cause for both halves: the Episodes schema assumes **one episode ↔ one gu
 
 ## Half A — Roundtable: one episode, two guests (NEAR-TERM)
 
+> **Scoped into `SPOKE_DWYP_Roundtable_Cardinality.md` (2026-06-14, re-scoped same day)** — v1 = **Herald-driven auto-detection**: Secretary creates the episode + folder; Herald (LLM) reads the event title, matches guests to existing Contacts, sets the dual linkage + type. Manual entry **rejected** (Audra won't hand-materialize folders). Half B (multi-part) remains exploring here.
+
 **Fact:** a roundtable is **always exactly two previous guests** — people already in Contacts with their own prior episodes. Today the schema flattens them into free-text `Guest_Name` and a single `Contact_ID`, discarding the structured link to both guests' profiles and histories.
+
+**Legacy mechanism this retires (AD #42):** roundtable episodes currently point their single `Contact_ID` at a **permanent, manually-created "Roundtable" pseudo-contact** (`Source=manual`, `Relationship_Type=Roundtable`), with real names in free-text `Guest_Name`. The pseudo-contact exists *only* to give the one-FK schema something to point at. Once `Contact_ID` + `Contact_ID_2` point at the two real guests, the pseudo-contact has no job — **retire it** (and supersede AD #42 at the Reference source in Phase 3 doc-sync). Interim: episodes added before `Contact_ID_2` ships should still use the AD #42 pattern (point at the pseudo-contact) and be migrated by the cardinality spoke.
 
 **Decision (leaning locked, Audra 2026-06-14): appended second FK column, not CSV-in-cell.**
 
@@ -17,12 +21,11 @@ Root cause for both halves: the Episodes schema assumes **one episode ↔ one gu
 
 **Why appended column over comma-separated `Contact_ID` (the actual constraint, not the rule):** a CSV `Contact_ID` (`"id1,id2"`) **breaks every existing single-value reader** — match/lookup/join/folder-name all fail on a multi-ID cell, on exactly the roundtable rows. The appended column leaves existing readers untouched (they read `Contact_ID` = guest 1, graceful degradation), and only roundtable-aware code opts into `Contact_ID_2`. The anti-denorm principle agrees, but the deciding factor is non-breakage, not philosophy. (CSV would only be safe if all `Contact_ID` reads funneled through one resolver — unverified, and moot given the appended column is unconditionally safe.)
 
-**Detection — how Secretary knows (leaning marker-convention).** Secretary reads calendar events and currently has "no signal to override" `Episode_Type` (code comment at the writer). It must not *infer* roundtable from attendee lists — fragile (producers/hosts/guests-who-are-contacts muddy it). Give it an explicit signal Audra controls:
-- **Lean: calendar title marker** (e.g. `Roundtable:` / `[RT] Alice & Bob`). Secretary keys on the marker → sets `Episode_Type = roundtable`, resolves **two** guests by matching the title names/emails to **existing** Contacts (both are previous guests, so this is matching, not creating), writes `Contact_ID` + `Contact_ID_2`, skips enrichment.
-- **Fallback: manual app promotion** — Secretary makes a normal episode; Audra flips it to roundtable + picks guest 2 in the app. Zero new Secretary logic; reliable; fine given rarity. Use when a title match is ambiguous.
-- **Rejected: attendee-email inference** — too fragile to distinguish guests from hosts/producers.
+**Detection — Herald-driven (decided 2026-06-14).** Roundtables MUST be auto-detected via the calendar — no manual entry (Audra won't hand-materialize folders). Secretary creates the episode + folder; **Herald (the existing LLM call) reads the event title, identifies the guest(s), matches them to existing Contacts, and decides single-vs-roundtable.** LLM interpretation, not brittle marker/regex parsing — tolerant of JT's natural title variation (`Buck and Mai` / `Buck & Mai` / `Buck, Mai`). Confidence-gated: an unmatched/ambiguous name spawns a `Verify_Guest_Identity` task rather than a silent guess.
+- **Rejected: manual app promotion** — Audra won't hand-enter or materialize folders.
+- **Rejected: brittle attendee-email / regex inference** — superseded by LLM interpretation in Herald.
 
-**Pipeline behavior:** two *previous* guests = already enriched. A roundtable episode must **skip Herald/intake enrichment**; `Episode_Type = roundtable` is the signal — confirm the pipeline branches on it rather than blindly enriching. (Open: does it today?)
+**Pipeline behavior + detection-repoint (sharpened):** two *previous* guests = already enriched, so a roundtable must **skip Herald/intake enrichment**. Open question, now concrete: **how does current code detect a roundtable — via the AD #42 pseudo-contact (`Contact_ID == Roundtable contact`) or via `Episode_Type`?** Since `Episode_Type` was all `standard` until 2-C, detection almost certainly keys on the pseudo-contact today. The cardinality spoke must **repoint detection to `Episode_Type = roundtable`** (now that the enum value is meaningful) and the two real `Contact_ID`s, then retire the pseudo-contact. Confirm the current detection path in the spoke's Stage-1 inventory before changing it.
 
 **Briefs-to-folder (locked, orthogonal — do regardless):** copy both guests' existing briefs into the roundtable episode folder so the session has full context at hand. Low-tech, independent of representation.
 
